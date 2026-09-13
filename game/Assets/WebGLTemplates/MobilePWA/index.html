@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <title>{{{ PRODUCT_NAME }}}</title>
+
+    <!-- viewport-fit=cover is what lets the game draw behind the notch and the home
+         indicator; the safe-area insets are then honoured inside Unity by HudRoot. -->
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+
+    <!-- Added to Home Screen on iOS: launches without Safari's address bar or toolbar. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="{{{ PRODUCT_NAME }}}">
+    <meta name="theme-color" content="#78b5dd">
+
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <!-- iOS uses this, not the manifest icons, for the Home Screen tile. -->
+    <link rel="apple-touch-icon" href="TemplateData/icons/icon-180.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="TemplateData/icons/icon-192.png">
+    <link rel="stylesheet" href="TemplateData/style.css">
+#if SHOW_DIAGNOSTICS
+    <link rel="stylesheet" href="<<<TemplateData/diagnostics.css>>>">
+    <script src="<<<TemplateData/diagnostics.js>>>"></script>
+#endif
+  </head>
+  <body>
+    <div id="unity-container">
+      <canvas id="unity-canvas" tabindex="-1"></canvas>
+    </div>
+
+    <div id="loading-screen">
+      <div id="loading-title">{{{ PRODUCT_NAME }}}</div>
+      <div id="progress-track"><div id="progress-fill"></div></div>
+      <div id="loading-hint">Loading&hellip;</div>
+    </div>
+
+    <div id="start-screen" class="hidden">
+      <div id="start-button">PLAY</div>
+      <div id="start-hint">Add to Home Screen for fullscreen</div>
+    </div>
+
+    <div id="unity-warning"></div>
+
+    <script>
+      var container = document.querySelector("#unity-container");
+      var canvas = document.querySelector("#unity-canvas");
+      var loadingScreen = document.querySelector("#loading-screen");
+      var progressFill = document.querySelector("#progress-fill");
+      var loadingHint = document.querySelector("#loading-hint");
+      var startScreen = document.querySelector("#start-screen");
+      var startButton = document.querySelector("#start-button");
+      var startHint = document.querySelector("#start-hint");
+      var warningBanner = document.querySelector("#unity-warning");
+
+      function unityShowBanner(msg, type) {
+        function updateBannerVisibility() {
+          warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+        }
+        var div = document.createElement('div');
+        div.innerHTML = msg;
+        warningBanner.appendChild(div);
+        if (type == 'error') {
+          div.style = 'background: #b3261e; color: #fff; padding: 10px;';
+        } else {
+          if (type == 'warning') div.style = 'background: #f5c542; padding: 10px;';
+          setTimeout(function () {
+            if (div.parentNode) warningBanner.removeChild(div);
+            updateBannerVisibility();
+          }, 5000);
+        }
+        updateBannerVisibility();
+      }
+
+      // Stop iOS rubber-band scrolling and double-tap zoom from fighting the joystick.
+      ['touchstart', 'touchmove', 'touchend', 'gesturestart', 'gesturechange'].forEach(function (name) {
+        document.addEventListener(name, function (e) {
+          if (e.touches && e.touches.length > 1) e.preventDefault();
+        }, { passive: false });
+      });
+      document.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+      var buildUrl = "Build";
+      var loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}";
+      var config = {
+        arguments: [],
+        dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+        frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+#if USE_THREADS
+        workerUrl: buildUrl + "/{{{ WORKER_FILENAME }}}",
+#endif
+#if USE_WASM
+        codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+#endif
+#if SYMBOLS_FILENAME
+        symbolsUrl: buildUrl + "/{{{ SYMBOLS_FILENAME }}}",
+#endif
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+        productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+        productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+        showBanner: unityShowBanner,
+        // An iPhone reports a device pixel ratio of 3. Rendering a 3D scene at native 3x on a
+        // phone GPU is the single easiest way to drop to 20fps, and on a screen this small the
+        // difference above 2x is invisible. This cap is the most valuable perf line here.
+        devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2)
+      };
+
+      var unityInstanceRef = null;
+
+      // Sizing is left entirely to CSS (a fixed, inset-0 container at 100% x 100dvh).
+      // Driving it from JS pixel values fights the browser's own viewport handling and
+      // overflows the canvas whenever the reported viewport and the layout viewport differ.
+
+      var script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = function () {
+        createUnityInstance(canvas, config, function (progress) {
+          progressFill.style.width = (100 * progress) + "%";
+        }).then(function (unityInstance) {
+          unityInstanceRef = unityInstance;
+          loadingScreen.classList.add("hidden");
+
+          // iOS will not start an AudioContext without a user gesture, so the game waits
+          // behind an explicit tap rather than starting silently.
+          var standalone = window.navigator.standalone === true ||
+            window.matchMedia('(display-mode: standalone)').matches;
+          if (standalone) startHint.style.display = "none";
+
+          startScreen.classList.remove("hidden");
+          startButton.addEventListener("click", function () {
+            startScreen.classList.add("hidden");
+            canvas.focus();
+          }, { once: true });
+        }).catch(function (message) {
+          loadingHint.textContent = "Could not start: " + message;
+          unityShowBanner(message, 'error');
+        });
+      };
+      script.onerror = function () {
+        loadingHint.textContent = "Could not download the game files.";
+      };
+      document.body.appendChild(script);
+
+      window.addEventListener("load", function () {
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.register("ServiceWorker.js");
+        }
+      });
+    </script>
+  </body>
+</html>

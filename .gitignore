@@ -1,0 +1,45 @@
+# Unity generated
+game/Library/
+game/Temp/
+game/Obj/
+game/Build/
+game/Builds/
+game/Logs/
+game/UserSettings/
+game/MemoryCaptures/
+game/Recordings/
+
+# Asset meta data - only ignore for folders that are themselves ignored
+!game/Assets/**/*.meta
+
+# Visual Studio / Rider
+.vs/
+.idea/
+game/*.csproj
+game/*.unityproj
+game/*.sln
+game/*.suo
+game/*.user
+game/*.userprefs
+game/*.pidb
+game/*.booproj
+game/*.svd
+game/*.pdb
+game/*.mdb
+game/*.opendb
+game/*.VC.db
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Crash reports
+sysinfo.txt
+game/crashlytics-build.properties
+
+# Build logs produced by the headless build script
+build-*.log
+
+# Node (only used for the local static server during testing)
+node_modules/
