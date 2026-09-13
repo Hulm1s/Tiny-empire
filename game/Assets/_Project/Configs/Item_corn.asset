@@ -17,6 +17,7 @@ MonoBehaviour:
   color: {r: 0.96, g: 0.78, b: 0.22, a: 1}
   visualPrefab: {fileID: 0}
   carryMaterial: {fileID: 2100000, guid: 6b822dc6f9c55514ab3e10ca8a287ed9, type: 2}
+  icon: {fileID: 0}
   stackHeight: 0.3
   basePrice: 1
   perishable: 0

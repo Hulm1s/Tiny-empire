@@ -1,5 +1,6 @@
 using System.IO;
 using Tycoon.Config;
+using Tycoon.Player;
 using Tycoon.Stations;
 using Tycoon.UI;
 using Tycoon.Upkeep;
@@ -195,6 +196,56 @@ namespace Tycoon.EditorTools
             public DepositStation Feed;
             public CollectStation Collect;
             public RepairStation Repair;
+            public AlertBeacon Beacon;
+        }
+
+        /// <summary>
+        /// A hired hand that shuttles goods between two squares for a wage.
+        /// It walks into station triggers exactly like the player, so it needs no cooperation
+        /// from the stations themselves.
+        /// </summary>
+        public static WorkerAgent BuildWorker(string name, Transform parent, Vector3 position,
+            StationBase pickup, StationBase dropoff, Color color, double feePerDelivery,
+            int capacity = 4)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = position;
+
+            var capsule = go.AddComponent<CapsuleCollider>();
+            capsule.height = 1.3f;
+            capsule.radius = 0.3f;
+            capsule.center = new Vector3(0f, 0.65f, 0f);
+
+            // Kinematic rigidbody: the worker is moved by script, but a rigidbody is what makes
+            // the station trigger volumes fire for it at all.
+            var body = go.AddComponent<Rigidbody>();
+            body.isKinematic = true;
+            body.useGravity = false;
+
+            var visual = new GameObject("Visual");
+            visual.transform.SetParent(go.transform, false);
+
+            Box("Body", visual.transform, new Vector3(0f, 0.45f, 0f),
+                new Vector3(0.5f, 0.66f, 0.38f), Mat($"Worker_{name}", color));
+            Box("Head", visual.transform, new Vector3(0f, 0.98f, 0f),
+                new Vector3(0.42f, 0.42f, 0.42f), Mat("Player_Head", new Color(0.98f, 0.82f, 0.68f)));
+
+            var anchor = new GameObject("CarryAnchor");
+            anchor.transform.SetParent(visual.transform, false);
+            anchor.transform.localPosition = new Vector3(0f, 1.3f, 0f);
+
+            var carry = go.AddComponent<CarryStack>();
+            carry.anchor = anchor.transform;
+            carry.capacity = capacity;
+
+            var agent = go.AddComponent<WorkerAgent>();
+            agent.pickup = pickup;
+            agent.dropoff = dropoff;
+            agent.visual = visual.transform;
+            agent.feePerDelivery = feePerDelivery;
+
+            return agent;
         }
 
         public static Workshop BuildWorkshop(
@@ -252,7 +303,137 @@ namespace Tycoon.EditorTools
                 new Vector2(1.8f, 2.0f), "Fix", new Color(1f, 0.72f, 0.3f));
             kit.Repair.target = kit.Durability;
 
+            kit.Beacon = root.AddComponent<AlertBeacon>();
+            kit.Beacon.businessName = name;
+            kit.Beacon.machine = kit.Machine;
+            kit.Beacon.durability = kit.Durability;
+            kit.Beacon.inputBuffer = kit.Input;
+            kit.Beacon.outputBuffer = kit.Output;
+
             return kit;
+        }
+
+        /// <summary>
+        /// The customer-facing half of a business: till, stall, queue, and the road shoppers
+        /// walk in along. Laid out relative to one position so a second shop is one more call.
+        /// </summary>
+        public class Shopfront
+        {
+            public GameObject Root;
+            public RegisterStation Register;
+            public Tycoon.Customers.CustomerQueue Queue;
+        }
+
+        public static Shopfront BuildShopfront(string name, Transform parent, Vector3 position,
+            ItemDefinition[] catalogue, int queueLength = 3, float roadHalfLength = 14f)
+        {
+            var root = new GameObject(name);
+            root.transform.SetParent(parent, false);
+            root.transform.localPosition = position;
+
+            // --- the road, running across the screen behind the counter ------------------
+            var tarmac = Mat("Road", new Color(0.36f, 0.36f, 0.39f));
+            var markings = Mat("RoadLine", new Color(0.88f, 0.88f, 0.8f));
+
+            Box("Road", root.transform, new Vector3(0f, 0.02f, -4.6f),
+                new Vector3(roadHalfLength * 2f, 0.04f, 2.8f), tarmac);
+
+            // Dashes down the middle so it reads as a road rather than a grey strip.
+            int dashes = Mathf.RoundToInt(roadHalfLength);
+            for (int i = -dashes; i <= dashes; i++)
+            {
+                Box($"Line_{i + dashes}", root.transform,
+                    new Vector3(i * 2f, 0.05f, -4.6f), new Vector3(0.9f, 0.04f, 0.14f), markings);
+            }
+
+            // --- the till the player stands at -------------------------------------------
+            var register = Station<RegisterStation>("Register", root.transform, Vector3.zero,
+                new Vector2(4f, 2.2f), "Serve", new Color(0.45f, 0.85f, 0.6f));
+
+            BuildStall(root.transform, new Vector3(0f, 0f, -1.6f));
+
+            // --- queue furniture ----------------------------------------------------------
+            var counterPoint = new GameObject("CounterPoint");
+            counterPoint.transform.SetParent(root.transform, false);
+            counterPoint.transform.localPosition = new Vector3(0f, 0f, -1.9f);
+
+            var spawnPoint = new GameObject("SpawnPoint");
+            spawnPoint.transform.SetParent(root.transform, false);
+            spawnPoint.transform.localPosition = new Vector3(-roadHalfLength, 0f, -4.6f);
+
+            var exitPoint = new GameObject("ExitPoint");
+            exitPoint.transform.SetParent(root.transform, false);
+            exitPoint.transform.localPosition = new Vector3(roadHalfLength, 0f, -4.6f);
+
+            var slots = new Transform[Mathf.Max(1, queueLength)];
+            for (int i = 0; i < slots.Length; i++)
+            {
+                var slot = new GameObject($"Slot_{i}");
+                slot.transform.SetParent(root.transform, false);
+                // Queue trails away to the left along the road.
+                slot.transform.localPosition = new Vector3(-1.5f * i, 0f, -3.4f);
+                slots[i] = slot.transform;
+            }
+
+            var template = BuildCustomerTemplate(root.transform);
+
+            var queue = root.AddComponent<Tycoon.Customers.CustomerQueue>();
+            queue.customerTemplate = template;
+            queue.spawnPoint = spawnPoint.transform;
+            queue.exitPoint = exitPoint.transform;
+            queue.counterPoint = counterPoint.transform;
+            queue.slots = slots;
+            queue.catalogue = catalogue;
+
+            register.queue = queue;
+
+            return new Shopfront { Root = root, Register = register, Queue = queue };
+        }
+
+        private static void BuildStall(Transform parent, Vector3 position)
+        {
+            var stall = new GameObject("Stall");
+            stall.transform.SetParent(parent, false);
+            stall.transform.localPosition = position;
+
+            var wood = Mat("Market_Wood", new Color(0.55f, 0.38f, 0.24f));
+            var awning = Mat("Market_Awning", new Color(0.9f, 0.35f, 0.35f));
+
+            Box("Counter", stall.transform, new Vector3(0f, 0.5f, 0f),
+                new Vector3(4f, 1f, 0.5f), wood);
+            Box("PostL", stall.transform, new Vector3(-1.8f, 1.1f, 0f),
+                new Vector3(0.16f, 2.2f, 0.16f), wood);
+            Box("PostR", stall.transform, new Vector3(1.8f, 1.1f, 0f),
+                new Vector3(0.16f, 2.2f, 0.16f), wood);
+            Box("Awning", stall.transform, new Vector3(0f, 2.2f, -0.3f),
+                new Vector3(4.2f, 0.18f, 1.4f), awning);
+        }
+
+        /// <summary>
+        /// The shopper the queue clones. Kept inactive in the scene so its materials are real
+        /// asset references - a customer built from scratch at runtime would render magenta.
+        /// </summary>
+        private static GameObject BuildCustomerTemplate(Transform parent)
+        {
+            var go = new GameObject("CustomerTemplate");
+            go.transform.SetParent(parent, false);
+
+            var visual = new GameObject("Visual");
+            visual.transform.SetParent(go.transform, false);
+
+            var bodyGo = Box("Body", visual.transform, new Vector3(0f, 0.45f, 0f),
+                new Vector3(0.48f, 0.66f, 0.36f), Mat("Customer_Body", Color.white));
+            Box("Head", visual.transform, new Vector3(0f, 0.98f, 0f),
+                new Vector3(0.4f, 0.4f, 0.4f), Mat("Player_Head", new Color(0.98f, 0.82f, 0.68f)));
+
+            var bubble = go.AddComponent<OrderBubble>();
+            var agent = go.AddComponent<Tycoon.Customers.CustomerAgent>();
+            agent.visual = visual.transform;
+            agent.tintTarget = bodyGo.GetComponent<Renderer>();
+            agent.bubble = bubble;
+
+            go.SetActive(false);
+            return go;
         }
 
         /// <summary>A crop field the player harvests by walking through it.</summary>

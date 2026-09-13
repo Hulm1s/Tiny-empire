@@ -97,7 +97,7 @@ namespace Tycoon.EditorTools
             // A workshop is about 7 units deep once its feed and collect squares are counted,
             // so the buildings are spaced accordingly. Everything stays within roughly 6 units
             // of the centre line, which is what the portrait camera can actually show.
-            LevelBuildKit.BuildField("CornField", root, new Vector3(0f, 0f, 12f),
+            var cornField = LevelBuildKit.BuildField("CornField", root, new Vector3(0f, 0f, 12f),
                 items.Corn, plots: 8, regrowSeconds: 2.2f, size: new Vector2(6.5f, 3.5f));
 
             var coopA = LevelBuildKit.BuildWorkshop(
@@ -107,11 +107,11 @@ namespace Tycoon.EditorTools
                 bodyColor: new Color(0.86f, 0.42f, 0.34f), wearPerOutput: 1.5f);
             coopA.Repair.costPerPoint = 0.25d;
 
-            var market = LevelBuildKit.Station<SellStation>("Market", root,
-                new Vector3(0f, 0f, -8f), new Vector2(4.5f, 3f),
-                "Sell", new Color(0.45f, 0.85f, 0.6f));
-            market.accepted = items.Egg;
-            BuildMarketStall(market.transform);
+            // The shopfront: till, stall, queue and the road shoppers walk in along. Eggs are
+            // only worth money when somebody at the counter is asking for them, so the farm
+            // has to keep pace with demand rather than just pile up stock.
+            var shop = LevelBuildKit.BuildShopfront("Market", root, new Vector3(0f, 0f, -8f),
+                catalogue: new[] { items.Egg }, queueLength: 3);
 
             // --- the first expansion --------------------------------------------------
             var coopB = LevelBuildKit.BuildWorkshop(
@@ -130,26 +130,44 @@ namespace Tycoon.EditorTools
             unlock.payPerTick = 4d;
             unlock.revealOnUnlock = new[] { coopB.Root };
 
+            // --- automation, and the running cost that comes with it ------------------
+            // Each hire square sits beside the leg of the chain it takes over, so it is
+            // obvious what you are buying. Wages are drawn continuously, which is what keeps
+            // a fully automated farm from being the end of the game: it still jams, still
+            // spoils, and now it costs money every minute whether you are watching or not.
+            BuildHire(root, "Harvester", new Vector3(2.9f, 0f, 8.5f), price: 250d,
+                pickup: cornField, dropoff: coopA.Feed,
+                color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopA.Beacon);
+
+            BuildHire(root, "Seller", new Vector3(2.9f, 0f, 3.5f), price: 400d,
+                pickup: coopA.Collect, dropoff: shop.Register,
+                color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopA.Beacon);
+
             // Must be inactive in the saved scene: nothing inside a locked plot should tick,
             // save or be reachable until it has actually been bought.
             coopB.Root.SetActive(false);
         }
 
-        private static void BuildMarketStall(Transform parent)
+        /// <summary>
+        /// Creates a worker plus the square that hires them. The worker is inactive until the
+        /// square is paid off, so an unhired worker draws no wages and runs no code.
+        /// </summary>
+        private static void BuildHire(Transform root, string name, Vector3 position, double price,
+            Tycoon.Stations.StationBase pickup, Tycoon.Stations.StationBase dropoff,
+            Color color, double feePerDelivery, Tycoon.Upkeep.AlertBeacon beacon)
         {
-            var wood = LevelBuildKit.Mat("Market_Wood", new Color(0.55f, 0.38f, 0.24f));
-            var awning = LevelBuildKit.Mat("Market_Awning", new Color(0.9f, 0.35f, 0.35f));
+            var worker = LevelBuildKit.BuildWorker(name, root, position, pickup, dropoff, color, feePerDelivery);
 
-            // The stall sits on the far side of its square (down-screen), so it never stands
-            // between the camera and the player walking in to sell.
-            LevelBuildKit.Box("Counter", parent, new Vector3(0f, 0.5f, -1.5f),
-                new Vector3(4f, 1f, 0.5f), wood);
-            LevelBuildKit.Box("PostL", parent, new Vector3(-1.8f, 1.1f, -1.5f),
-                new Vector3(0.16f, 2.2f, 0.16f), wood);
-            LevelBuildKit.Box("PostR", parent, new Vector3(1.8f, 1.1f, -1.5f),
-                new Vector3(0.16f, 2.2f, 0.16f), wood);
-            LevelBuildKit.Box("Awning", parent, new Vector3(0f, 2.2f, -1.8f),
-                new Vector3(4.2f, 0.18f, 1.4f), awning);
+            var hire = LevelBuildKit.Station<UnlockStation>($"Hire{name}", root, position,
+                new Vector2(1.8f, 1.8f), $"Hire {name}", new Color(0.55f, 0.8f, 1f));
+            hire.price = price;
+            hire.payPerTick = 6d;
+            hire.revealOnUnlock = new[] { worker.gameObject };
+
+            // The alert beacon should complain about an unpaid worker on this farm.
+            if (beacon != null && beacon.worker == null) beacon.worker = worker;
+
+            worker.gameObject.SetActive(false);
         }
 
         private static void BuildEnvironment()
@@ -189,8 +207,14 @@ namespace Tycoon.EditorTools
             cameraGo.AddComponent<AudioListener>();
 
             var rig = cameraGo.AddComponent<IsometricCameraRig>();
-            rig.pitchYaw = new Vector2(30f, 45f);
-            rig.orthographicSize = 8.5f;
+            // Pitch drives how readable the interaction squares are: a ground square is
+            // squashed to sin(pitch) of its true height on screen. At 30 degrees that is half,
+            // which made the squares hard to read and let buildings hide the ones behind them.
+            // 50 degrees keeps a clear view down onto every square while still showing the
+            // fronts of the buildings, so the world still reads as 3D rather than a floor plan.
+            rig.pitchYaw = new Vector2(50f, 45f);
+            // Widened to match: the steeper angle makes the level occupy more vertical screen.
+            rig.orthographicSize = 9.5f;
             rig.distance = 30f;
             rig.lookOffset = new Vector3(0f, 0f, 0.8f);
         }

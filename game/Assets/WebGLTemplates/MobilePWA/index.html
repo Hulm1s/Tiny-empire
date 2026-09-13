@@ -124,6 +124,17 @@
           unityInstanceRef = unityInstance;
           loadingScreen.classList.add("hidden");
 
+          // Unity fixes its render target to whatever the canvas measured at start-up. If the
+          // viewport settled after that - a rotation, Safari's toolbars collapsing, a resized
+          // window - the render target stays the old size and the game is drawn into a corner
+          // of the canvas. A couple of nudges after load make it re-measure.
+          [60, 400, 1200].forEach(function (delay) {
+            setTimeout(function () { window.dispatchEvent(new Event("resize")); }, delay);
+          });
+          document.addEventListener("visibilitychange", function () {
+            if (!document.hidden) window.dispatchEvent(new Event("resize"));
+          });
+
           // iOS will not start an AudioContext without a user gesture, so the game waits
           // behind an explicit tap rather than starting silently.
           var standalone = window.navigator.standalone === true ||

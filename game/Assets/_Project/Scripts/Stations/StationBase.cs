@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Tycoon.Player;
 using UnityEngine;
 
@@ -26,11 +27,23 @@ namespace Tycoon.Stations
         [Tooltip("Colour of the floor decal, so each station type reads at a glance.")]
         public Color zoneColor = new Color(0.3f, 0.8f, 1f, 0.55f);
 
+        /// <summary>
+        /// Whoever is currently being ticked. Subclasses read this inside
+        /// <see cref="TickWithPlayer"/> without caring whether it is the player or a hired
+        /// worker - which is exactly why workers need no special-case code anywhere.
+        /// </summary>
         protected CarryStack Carry { get; private set; }
-        protected bool PlayerInside { get; private set; }
 
-        private float _timer;
-        private Transform _playerTransform;
+        private class Occupant
+        {
+            public CarryStack Carry;
+            public float Timer;
+        }
+
+        private readonly List<Occupant> _occupants = new List<Occupant>();
+
+        /// <summary>True while at least one worker or the player is standing here.</summary>
+        public bool IsOccupied => _occupants.Count > 0;
 
         /// <summary>Text for the floating sign. Override to show live numbers or prices.</summary>
         public virtual string StatusText => label;
@@ -56,22 +69,21 @@ namespace Tycoon.Stations
         {
             var carry = other.GetComponentInParent<CarryStack>();
             if (carry == null) return;
+            if (_occupants.Exists(o => o.Carry == carry)) return;
 
-            Carry = carry;
-            _playerTransform = carry.transform;
-            PlayerInside = true;
-            _timer = 0f;
+            _occupants.Add(new Occupant { Carry = carry, Timer = 0f });
             OnPlayerEnter();
         }
 
         private void OnTriggerExit(Collider other)
         {
             var carry = other.GetComponentInParent<CarryStack>();
-            if (carry == null || carry != Carry) return;
+            if (carry == null) return;
 
-            PlayerInside = false;
-            Carry = null;
-            _playerTransform = null;
+            int index = _occupants.FindIndex(o => o.Carry == carry);
+            if (index < 0) return;
+
+            _occupants.RemoveAt(index);
             OnPlayerExit();
         }
 
@@ -79,20 +91,35 @@ namespace Tycoon.Stations
         {
             TickAlways(Time.deltaTime);
 
-            if (!PlayerInside || Carry == null) return;
+            if (_occupants.Count == 0) return;
 
             // Clamped for the same reason as the player's movement: after a long loading frame
             // an unclamped delta would drain a whole field into the player's arms instantly.
-            _timer += Mathf.Min(Time.deltaTime, 0.1f);
+            float delta = Mathf.Min(Time.deltaTime, 0.1f);
 
-            // A while loop rather than an if, so a very short tickInterval still keeps up
-            // with the frame rate instead of silently throttling to one unit per frame.
-            int guard = 0;
-            while (_timer >= tickInterval && guard++ < 16)
+            for (int i = _occupants.Count - 1; i >= 0; i--)
             {
-                _timer -= tickInterval;
-                if (!TickWithPlayer()) { _timer = 0f; break; }
+                var occupant = _occupants[i];
+                if (occupant.Carry == null)
+                {
+                    _occupants.RemoveAt(i);
+                    continue;
+                }
+
+                occupant.Timer += delta;
+                Carry = occupant.Carry;
+
+                // A while loop rather than an if, so a very short tickInterval still keeps up
+                // with the frame rate instead of silently throttling to one unit per frame.
+                int guard = 0;
+                while (occupant.Timer >= tickInterval && guard++ < 16)
+                {
+                    occupant.Timer -= tickInterval;
+                    if (!TickWithPlayer()) { occupant.Timer = 0f; break; }
+                }
             }
+
+            Carry = null;
         }
 
         /// <summary>
@@ -106,8 +133,5 @@ namespace Tycoon.Stations
 
         protected virtual void OnPlayerEnter() { }
         protected virtual void OnPlayerExit() { }
-
-        protected Vector3 PlayerPosition =>
-            _playerTransform != null ? _playerTransform.position : transform.position;
     }
 }

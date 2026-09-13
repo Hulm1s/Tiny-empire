@@ -30,6 +30,11 @@ namespace Tycoon.Config
                  "here is also what pulls its shader into the build.")]
         public Material carryMaterial;
 
+        [Tooltip("Shown in customer order bubbles. Drop in an egg sprite here and every " +
+                 "bubble asking for eggs updates. When empty the bubble falls back to a " +
+                 "coloured dot using the colour above.")]
+        public Sprite icon;
+
         [Tooltip("Height of one unit in the carried stack. Keeps tall and flat goods looking right.")]
         public float stackHeight = 0.28f;
 

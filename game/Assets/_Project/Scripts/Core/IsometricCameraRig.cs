@@ -20,8 +20,11 @@ namespace Tycoon.Core
         public string targetTag = "Player";
 
         [Header("Framing")]
-        [Tooltip("Pitch/yaw of the isometric view. 30/45 is the classic diorama angle.")]
-        public Vector2 pitchYaw = new Vector2(30f, 45f);
+        [Tooltip("Pitch/yaw of the view. Pitch is the important one: a square painted on the " +
+                 "ground is squashed to sin(pitch) of its height on screen, so shallow angles " +
+                 "make the interaction squares unreadable and let buildings hide them. 50 is a " +
+                 "good compromise between seeing the squares and still seeing building fronts.")]
+        public Vector2 pitchYaw = new Vector2(50f, 45f);
 
         [Tooltip("How far back along the view direction the camera sits. Only affects clipping.")]
         public float distance = 24f;

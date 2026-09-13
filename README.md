@@ -130,19 +130,51 @@ the stations, so balancing needs no code:
 
 ---
 
+## Customers
+
+Eggs are only worth money when somebody is at the counter asking for them. Shoppers walk in
+along the road, queue at the stall, hold up a bubble showing what they want (`🥚 x3`) and a
+patience bar, and leave — happy or not.
+
+- `CustomerQueue` spawns them, manages queue slots and owns **reputation**.
+- `CustomerAgent` walks the route, holds the order, runs down its patience.
+- `RegisterStation` serves the front customer one unit at a time, paying as it goes.
+- `OrderBubble` is the world-space bubble. Assign a sprite to `ItemDefinition.icon` and every
+  bubble for that item uses your art instead of the placeholder dot.
+
+This is what stops "pile up stock" being a winning strategy: production has to track demand.
+
+---
+
 ## Why the business never "finishes"
 
-Building everything out is not the end of the level. Five pressures keep a completed farm
+Building everything out is not the end of the level. Four pressures keep a completed farm
 demanding attention:
 
 1. **Wear** — machines lose condition per unit produced and jam at zero.
 2. **Spoilage** — perishable goods rot in buffers, so hoarding output loses money.
-3. **Reputation** *(planned)* — unserved customers reduce what everything sells for.
-4. **Wages** *(planned)* — hired workers automate a square but cost money every minute.
-5. **Restocking** *(planned)* — machines need consumables delivered.
+3. **Reputation** — shoppers who give up and walk out thin the queue *and* cut the price
+   everything sells for (`CustomerQueue.PriceMultiplier`). It recovers only by serving people.
+4. **Piece rates** — hired workers take a cut of every unit they deliver, so automation is a
+   running cost that scales with throughput.
 
 Progress is applied while the game is closed too: production accrues, and so does decay.
 Offline time is capped at 8 hours in `GameClock.MaxOfflineSeconds`.
+
+### Two deadlocks that are deliberately designed out
+
+Both of these were real and both would have bricked a save permanently:
+
+- **Workers are paid per delivery, never per minute.** Hourly wages drain the wallet to zero,
+  at which point workers stop — and if the stopped worker was the one carrying goods to the
+  counter, nothing can ever earn money again. A fee taken from work that already happened
+  cannot run away.
+- **Repair always works with an empty wallet.** A jammed machine plus no money would otherwise
+  be terminal: no repair, no production, no income, no repair. Money buys speed
+  (`RepairStation.freeRepairFraction` guarantees 25% of the rate for free). Never set it to zero.
+
+The general rule for anything added later: **no mechanic may require money to escape a state
+where you cannot earn money.**
 
 ---
 
