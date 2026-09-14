@@ -56,6 +56,15 @@ namespace Tycoon.Stations
         /// <summary>The ring fills as the purchase is paid off across however many visits.</summary>
         protected override float TransferProgress => Progress;
 
+        protected override void Awake()
+        {
+            base.Awake();
+            // Workers must never buy anything. Spending money and changing the layout of the
+            // farm are the player's decisions, so this is forced here rather than left to the
+            // level builder where it could be configured wrongly.
+            workerCompatible = false;
+        }
+
         private void OnEnable() => SaveSystem.Register(this);
         private void OnDisable() => SaveSystem.Unregister(this);
 

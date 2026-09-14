@@ -19,6 +19,15 @@ namespace Tycoon.EditorTools
     /// </summary>
     public static class LevelBuildKit
     {
+        /// <summary>
+        /// Extra turn applied to building shells relative to the level grid.
+        ///
+        /// Zero: the camera provides the viewing angle now (see IsometricCameraRig.pitchYaw),
+        /// so buildings sit square on their plots. Left as a knob because turning individual
+        /// buildings a little is a cheap way to stop a street of them looking identical.
+        /// </summary>
+        public const float BuildingYaw = 0f;
+
         private const string MaterialFolder = "Assets/_Project/Materials";
         private const string ConfigFolder = "Assets/_Project/Configs";
 
@@ -231,13 +240,24 @@ namespace Tycoon.EditorTools
             go.transform.SetParent(parent, false);
             go.transform.localPosition = position;
 
+            // Sliding along a wall is not navigation - a worker pressed against the side of a
+            // coop just stays there. A NavMeshAgent actually routes around buildings, and
+            // handles workers avoiding each other for free.
+            var nav = go.AddComponent<UnityEngine.AI.NavMeshAgent>();
+            nav.radius = 0.3f;
+            nav.height = 1.3f;
+            nav.baseOffset = 0f;
+            nav.acceleration = 24f;
+            nav.autoBraking = false;   // keeps the loop moving rather than easing in each time
+            nav.obstacleAvoidanceType = UnityEngine.AI.ObstacleAvoidanceType.LowQualityObstacleAvoidance;
+
             var capsule = go.AddComponent<CapsuleCollider>();
             capsule.height = 1.3f;
             capsule.radius = 0.3f;
             capsule.center = new Vector3(0f, 0.65f, 0f);
 
-            // Kinematic rigidbody: the worker is moved by script, but a rigidbody is what makes
-            // the station trigger volumes fire for it at all.
+            // The agent moves the transform; a kinematic rigidbody is what makes the station
+            // trigger volumes fire for it.
             var body = go.AddComponent<Rigidbody>();
             body.isKinematic = true;
             body.useGravity = false;
@@ -280,8 +300,25 @@ namespace Tycoon.EditorTools
             var body = Mat($"Body_{name}", bodyColor);
             var roof = Mat($"Roof_{name}", bodyColor * 0.65f);
 
-            Box("Body", root.transform, new Vector3(0f, 0.9f, 0f), new Vector3(3.0f, 1.8f, 2.2f), body);
-            Box("Roof", root.transform, new Vector3(0f, 1.95f, 0f), new Vector3(3.4f, 0.3f, 2.6f), roof);
+            // Visuals sit on their own turned pivot so the squares below stay screen-aligned.
+            var shell = new GameObject("Shell");
+            shell.transform.SetParent(root.transform, false);
+            shell.transform.localRotation = Quaternion.Euler(0f, BuildingYaw, 0f);
+
+            // Solid: the player and workers must walk around a building, not through it.
+            var bodyGo = Box("Body", shell.transform, new Vector3(0f, 0.9f, 0f),
+                new Vector3(3.0f, 1.8f, 2.2f), body, collider: true);
+
+            // Carving obstacle rather than baked geometry, so a coop that is unlocked later
+            // cuts its own hole without the navmesh needing a rebake.
+            var obstacle = bodyGo.AddComponent<UnityEngine.AI.NavMeshObstacle>();
+            obstacle.shape = UnityEngine.AI.NavMeshObstacleShape.Box;
+            obstacle.size = Vector3.one;      // local space; the box is already scaled
+            obstacle.carving = true;
+            // The roof is left non-solid - it sits above head height and a collider up there
+            // only creates invisible ledges to get caught on.
+            Box("Roof", shell.transform, new Vector3(0f, 1.95f, 0f),
+                new Vector3(3.4f, 0.3f, 2.6f), roof);
 
             // The machine and its durability both live on the root; the type suffix in the
             // save key keeps them apart.
@@ -314,15 +351,15 @@ namespace Tycoon.EditorTools
             // its input on the left and its output on the right runs off both edges at once.
             // Stacking them also gives the level a single downhill flow: harvest at the top,
             // feed, collect, sell at the bottom.
-            kit.Feed = Station<DepositStation>($"{id}.feed", "Feed", root.transform, new Vector3(0f, 0f, 2.5f),
+            kit.Feed = Station<DepositStation>($"{id}.feed", "Feed", root.transform, new Vector3(0f, 0f, 2.8f),
                 new Vector2(2.6f, 2.0f), "Feed", new Color(0.42f, 0.72f, 1f));
             kit.Feed.target = kit.Input;
 
-            kit.Collect = Station<CollectStation>($"{id}.collect", "Collect", root.transform, new Vector3(0f, 0f, -2.5f),
+            kit.Collect = Station<CollectStation>($"{id}.collect", "Collect", root.transform, new Vector3(0f, 0f, -2.8f),
                 new Vector2(2.6f, 2.0f), output.displayName, new Color(0.55f, 0.9f, 0.5f));
             kit.Collect.source = kit.Output;
 
-            kit.Repair = Station<RepairStation>($"{id}.repair", "Repair", root.transform, new Vector3(-2.8f, 0f, 0f),
+            kit.Repair = Station<RepairStation>($"{id}.repair", "Repair", root.transform, new Vector3(-3.1f, 0f, 0f),
                 new Vector2(1.8f, 2.0f), "Fix", new Color(1f, 0.72f, 0.3f));
             kit.Repair.target = kit.Durability;
 
@@ -424,8 +461,9 @@ namespace Tycoon.EditorTools
             var wood = Mat("Market_Wood", new Color(0.55f, 0.38f, 0.24f));
             var awning = Mat("Market_Awning", new Color(0.9f, 0.35f, 0.35f));
 
+            // Solid so the player serves from behind the counter rather than standing in it.
             Box("Counter", stall.transform, new Vector3(0f, 0.5f, 0f),
-                new Vector3(4f, 1f, 0.5f), wood);
+                new Vector3(4f, 1f, 0.5f), wood, collider: true);
             Box("PostL", stall.transform, new Vector3(-1.8f, 1.1f, 0f),
                 new Vector3(0.16f, 2.2f, 0.16f), wood);
             Box("PostR", stall.transform, new Vector3(1.8f, 1.1f, 0f),

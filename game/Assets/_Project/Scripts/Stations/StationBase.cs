@@ -4,6 +4,21 @@ using UnityEngine;
 
 namespace Tycoon.Stations
 {
+    /// <summary>
+    /// Implemented by an actor that is choosy about which squares it uses.
+    ///
+    /// This exists because the carry stack now holds mixed goods. Previously a worker walking
+    /// past the corn field with its arms full of eggs was refused by type, which accidentally
+    /// kept workers on their route. With a mixed stack there is nothing to refuse, so a seller
+    /// would wander into the field and fill up with corn it has nowhere to take.
+    ///
+    /// The player implements nothing and may use everything, which is the whole point of them.
+    /// </summary>
+    public interface IStationUser
+    {
+        bool WillUse(StationBase station);
+    }
+
     /// <summary>How a station turns time spent standing in it into a result.</summary>
     public enum InteractionMode
     {
@@ -131,6 +146,10 @@ namespace Tycoon.Stations
             bool isPlayer = carry.CompareTag("Player");
             if (isPlayer && !playerCompatible) return;
             if (!isPlayer && !workerCompatible) return;
+
+            // Workers only stop at the squares on their own route; see IStationUser.
+            var chooser = carry.GetComponentInParent<IStationUser>();
+            if (chooser != null && !chooser.WillUse(this)) return;
 
             _occupants.Add(new Occupant { Carry = carry, IsPlayer = isPlayer });
             OnPlayerEnter();

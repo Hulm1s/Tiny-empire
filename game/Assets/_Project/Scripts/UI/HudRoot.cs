@@ -58,6 +58,10 @@ namespace Tycoon.UI
             Instance = this;
             DontDestroyOnLoad(gameObject);
 
+            // Append ?debug=1 to the URL to bring the readout back on a real device without
+            // rebuilding. Off by default, so players never see it.
+            if (!ShowDebug && Application.absoluteURL.Contains("debug=1")) ShowDebug = true;
+
             EnsureEventSystem();
             BuildCanvas();
             BuildMoneyReadout();
@@ -170,8 +174,7 @@ namespace Tycoon.UI
                 ? $"{motor.transform.position.x:0.0},{motor.transform.position.y:0.0},{motor.transform.position.z:0.0}"
                 : "no player";
 
-            string held = carry == null ? "-" :
-                carry.IsEmpty ? "empty" : $"{carry.Item.displayName} x{carry.Count}";
+            string held = carry == null ? "-" : carry.Describe();
 
             string tracking = rig == null ? "no rig" : (rig.target != null ? "tracking" : "NO TARGET");
 

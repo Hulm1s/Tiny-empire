@@ -43,6 +43,8 @@ namespace Tycoon.UI
         private Image _fill;
         private Image _iconImage;
         private Text _label;
+        private RectTransform _labelRoot;
+        private Camera _camera;
 
         private float _scale = 1f;
 
@@ -65,24 +67,11 @@ namespace Tycoon.UI
         {
             if (_root != null) return;
 
-            // Reuse a leftover from an earlier session rather than stacking another one up.
-            var existing = transform.Find("~Square");
-            if (existing != null)
-            {
-                _root = (RectTransform)existing;
-                _border = existing.Find("Border")?.GetComponent<Image>();
-                _backdrop = existing.Find("Backdrop")?.GetComponent<Image>();
-                _fill = existing.Find("Fill")?.GetComponent<Image>();
-                _iconImage = existing.Find("Icon")?.GetComponent<Image>();
-                _label = existing.Find("Label")?.GetComponent<Text>();
-                if (_border != null && _backdrop != null && _fill != null && _label != null)
-                {
-                    Rebuild();
-                    return;
-                }
-                DestroyImmediate(existing.gameObject);
-                _root = null;
-            }
+            // Clear any leftovers rather than stacking another set on top.
+            var stale = transform.Find("~Square");
+            if (stale != null) DestroyImmediate(stale.gameObject);
+            var staleLabel = transform.Find("~SquareLabel");
+            if (staleLabel != null) DestroyImmediate(staleLabel.gameObject);
 
             var go = new GameObject("~Square");
             // Never serialised into the scene - see Configure.
@@ -118,7 +107,23 @@ namespace Tycoon.UI
             iconGo.sizeDelta = new Vector2(56f, 56f);
             _iconImage.enabled = false;
 
-            _label = UIFactory.CreateText("Label", _root, "", 46);
+            // The label lives on its own upright canvas, not flat on the ground with the rest
+            // of the square. Once the camera is turned off the level grid, ground-flat text is
+            // both tilted and foreshortened, which makes the one thing the player most needs to
+            // read the hardest thing to read.
+            var labelGo = new GameObject("~SquareLabel");
+            labelGo.hideFlags = HideFlags.DontSave;
+            labelGo.transform.SetParent(transform, false);
+
+            var labelCanvas = labelGo.AddComponent<Canvas>();
+            labelCanvas.renderMode = RenderMode.WorldSpace;
+
+            _labelRoot = (RectTransform)labelGo.transform;
+            _labelRoot.sizeDelta = new Vector2(340f, 90f);
+            _labelRoot.localScale = Vector3.one * 0.01f;
+            _labelRoot.localPosition = Vector3.up * 0.75f;
+
+            _label = UIFactory.CreateText("Label", _labelRoot, "", 52);
             _label.fontStyle = FontStyle.Bold;
             Stretch(_label.rectTransform, 0f);
 
@@ -155,6 +160,13 @@ namespace Tycoon.UI
                 // With an icon the text sits below it; without, it centres.
                 _label.alignment = icon != null ? TextAnchor.LowerCenter : TextAnchor.MiddleCenter;
             }
+        }
+
+        private void LateUpdate()
+        {
+            if (_labelRoot == null) return;
+            if (_camera == null) _camera = Camera.main;
+            if (_camera != null) _labelRoot.rotation = _camera.transform.rotation;
         }
 
         private void Update()

@@ -44,6 +44,7 @@ namespace Tycoon.EditorTools
 
             BuildFarm(root, items);
             BuildBoundary(root);
+            BuildNavigation();
             // Start between the first coop and the empty plot, so both the corn field above
             // and the locked plot below are on screen from the first frame.
             CreatePlayer(new Vector3(0f, 0.2f, 1f), root.rotation);
@@ -116,7 +117,7 @@ namespace Tycoon.EditorTools
 
             // --- the first expansion --------------------------------------------------
             var coopB = LevelBuildKit.BuildWorkshop(
-                "farm.coopB", "CoopB", root, new Vector3(0f, 0f, -1.5f),
+                "farm.coopB", "CoopB", root, new Vector3(0f, 0f, -2f),
                 input: items.Corn, output: items.Egg,
                 secondsPerOutput: 2.5f, inputCapacity: 10, outputCapacity: 12,
                 bodyColor: new Color(0.62f, 0.5f, 0.85f), wearPerOutput: 1.5f);
@@ -125,7 +126,7 @@ namespace Tycoon.EditorTools
             // The buy-square sits exactly where the coop will appear, so paying it off reads
             // as the building rising out of the plot you were standing on.
             var unlock = LevelBuildKit.Station<UnlockStation>("farm.unlock.coopB", "UnlockCoopB", root,
-                new Vector3(0f, 0f, -1.5f), new Vector2(3.4f, 2.6f),
+                new Vector3(0f, 0f, -2f), new Vector2(3.4f, 2.6f),
                 "New Coop", new Color(1f, 0.85f, 0.35f));
             unlock.price = 150d;
             unlock.payPerTick = 4d;
@@ -136,11 +137,11 @@ namespace Tycoon.EditorTools
             // obvious what you are buying. Workers take a cut of every unit they deliver, so
             // automation is a running cost that scales with throughput - and a fully automated
             // farm still jams and still spoils, so it is never the end of the game.
-            BuildHire(root, "Harvester", new Vector3(2.9f, 0f, 8.5f), price: 250d,
+            BuildHire(root, "Harvester", new Vector3(3.3f, 0f, 8.8f), price: 250d,
                 pickup: cornField, dropoff: coopA.Feed,
                 color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopA.Beacon);
 
-            BuildHire(root, "Seller", new Vector3(2.9f, 0f, 3.5f), price: 400d,
+            BuildHire(root, "Seller", new Vector3(3.3f, 0f, 3.2f), price: 400d,
                 pickup: coopA.Collect, dropoff: shop.Register,
                 color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopA.Beacon);
 
@@ -212,6 +213,25 @@ namespace Tycoon.EditorTools
             box.isTrigger = false;
         }
 
+        /// <summary>
+        /// The navigation surface workers path across. Baked at runtime by NavigationBaker.
+        ///
+        /// Built from physics colliders rather than render meshes so the ground plane and the
+        /// boundary walls define the walkable area, and the buildings punch holes in it.
+        /// </summary>
+        private static void BuildNavigation()
+        {
+            var go = new GameObject("Navigation");
+
+            var surface = go.AddComponent<Unity.AI.Navigation.NavMeshSurface>();
+            surface.collectObjects = Unity.AI.Navigation.CollectObjects.All;
+            surface.useGeometry = UnityEngine.AI.NavMeshCollectGeometry.PhysicsColliders;
+            // Roughly the worker's build, so paths keep clear of walls by a sensible margin.
+            surface.agentTypeID = 0;
+
+            go.AddComponent<Tycoon.Core.NavigationBaker>();
+        }
+
         private static void BuildEnvironment()
         {
             // --- ground ---------------------------------------------------------------
@@ -254,7 +274,10 @@ namespace Tycoon.EditorTools
             // which made the squares hard to read and let buildings hide the ones behind them.
             // 50 degrees keeps a clear view down onto every square while still showing the
             // fronts of the buildings, so the world still reads as 3D rather than a floor plan.
-            rig.pitchYaw = new Vector2(50f, 45f);
+            // Yaw is 30 degrees off the level grid (which sits at 45). That offset is what
+            // makes buildings show two faces instead of presenting flat-on, and it is the
+            // single value to change if the viewing angle needs tuning.
+            rig.pitchYaw = new Vector2(50f, 75f);
             // Widened to match: the steeper angle makes the level occupy more vertical screen.
             rig.orthographicSize = 9.5f;
             rig.distance = 30f;

@@ -13,12 +13,12 @@ namespace Tycoon.Upkeep
     /// player does, so every station type works with workers without a line of special-case
     /// code - including station types added later.
     ///
-    /// Crucially, a worker is not free. Wages are drawn continuously, so automating the whole
-    /// farm turns a pile of savings into a running cost. That is what stops a finished business
-    /// running itself forever, and it is the reason the player still has to come back.
+    /// Crucially, a worker is not free: they take a cut of every unit they deliver, so
+    /// automating the farm is a running cost that scales with throughput. That is what stops a
+    /// finished business running itself forever, and it is why the player still has to come back.
     /// </summary>
     [RequireComponent(typeof(CarryStack))]
-    public class WorkerAgent : MonoBehaviour
+    public class WorkerAgent : MonoBehaviour, IStationUser
     {
         [Header("Route")]
         [Tooltip("Square where the worker fills up - a field, or a machine's output.")]
@@ -47,6 +47,8 @@ namespace Tycoon.Upkeep
         public Transform visual;
 
         private CarryStack _carry;
+        private UnityEngine.AI.NavMeshAgent _agent;
+        private StationBase _routedTo;
         private bool _headingToDropoff;
         private int _lastCarryCount;
         private float _underpaidTimer;
@@ -57,13 +59,42 @@ namespace Tycoon.Upkeep
         /// </summary>
         public bool UnderpaidRecently => _underpaidTimer > 0f;
 
+        /// <summary>One-line state for the debug readout: where it is going and whether it can.</summary>
+        public string DebugState
+        {
+            get
+            {
+                string leg = _headingToDropoff ? "->drop" : "->pick";
+                if (_agent == null) return $"{name} {leg} (no agent)";
+                if (!_agent.isOnNavMesh) return $"{name} {leg} OFF-NAVMESH";
+
+                string path = _agent.pathPending ? "pending"
+                    : _agent.pathStatus == UnityEngine.AI.NavMeshPathStatus.PathComplete ? "ok"
+                    : _agent.pathStatus.ToString();
+
+                return $"{name} {leg} {path} d={_agent.remainingDistance:0.0} v={_agent.velocity.magnitude:0.0}";
+            }
+        }
+
         public string RouteName =>
             pickup != null && dropoff != null ? $"{pickup.label} to {dropoff.label}" : name;
+
+        /// <summary>Only the two squares on this worker's route; see IStationUser.</summary>
+        public bool WillUse(StationBase station) => station == pickup || station == dropoff;
 
         private void Awake()
         {
             _carry = GetComponent<CarryStack>();
+            _agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
             if (_carry != null) _lastCarryCount = _carry.Count;
+
+            if (_agent != null)
+            {
+                _agent.speed = moveSpeed;
+                _agent.angularSpeed = turnSpeed;
+                // Stop just inside the square rather than dead on its centre.
+                _agent.stoppingDistance = arriveRadius;
+            }
         }
 
         private void Update()
@@ -122,21 +153,35 @@ namespace Tycoon.Upkeep
 
             Vector3 here = transform.position;
             Vector3 there = target.transform.position;
-            Vector3 flat = new Vector3(there.x - here.x, 0f, there.z - here.z);
 
+            if (_agent != null && _agent.isOnNavMesh)
+            {
+                // Only re-path when the destination actually changes; SetDestination every
+                // frame throws away the path it just computed.
+                if (_routedTo != target)
+                {
+                    _routedTo = target;
+                    _agent.SetDestination(there);
+                }
+
+                bool arrived = !_agent.pathPending &&
+                               _agent.remainingDistance <= Mathf.Max(0.05f, _agent.stoppingDistance);
+                Bob(delta, !arrived);
+                return;
+            }
+
+            // Fallback for a worker that somehow ended up off the navmesh: walk straight at
+            // the target so it can never be stranded forever.
+            Vector3 flat = new Vector3(there.x - here.x, 0f, there.z - here.z);
             if (flat.sqrMagnitude <= arriveRadius * arriveRadius)
             {
-                // Standing in the square: the station's own trigger does the rest.
                 Bob(delta, false);
                 return;
             }
 
-            Vector3 step = flat.normalized * moveSpeed * delta;
-            transform.position = here + step;
-
-            Quaternion look = Quaternion.LookRotation(flat.normalized);
-            transform.rotation = Quaternion.RotateTowards(transform.rotation, look, turnSpeed * delta);
-
+            transform.position = here + flat.normalized * moveSpeed * delta;
+            transform.rotation = Quaternion.RotateTowards(
+                transform.rotation, Quaternion.LookRotation(flat.normalized), turnSpeed * delta);
             Bob(delta, true);
         }
 
