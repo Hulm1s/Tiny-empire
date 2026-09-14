@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c8154ee2a02895448ef908b10a18e2c, type: 3}
+  m_Name: Item_hay
+  m_EditorClassIdentifier: 
+  id: hay
+  displayName: Hay
+  color: {r: 0.85, g: 0.72, b: 0.33, a: 1}
+  visualPrefab: {fileID: 0}
+  carryMaterial: {fileID: 2100000, guid: 8b6d1d2a5d55f574d81a4dd12f37dbca, type: 2}
+  icon: {fileID: 0}
+  stackHeight: 0.32
+  basePrice: 1
+  perishable: 0
+  spoilSeconds: 180

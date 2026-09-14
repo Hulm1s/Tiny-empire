@@ -28,16 +28,29 @@ namespace Tycoon.Core
     public static class SaveKeys
     {
         /// <summary>
-        /// Hierarchy path plus component type, e.g. "Farm/Coop/Machine#ProducerMachine".
-        /// Deterministic, readable in the save file, and needs no editor-assigned GUIDs.
-        /// Renaming or reparenting an object resets that object's saved state - acceptable
-        /// for a prototype and far less machinery than GUID stamping.
+        /// Stable id plus component type, e.g. "farm.coopA.machine#ProducerMachine".
+        ///
+        /// Prefers a <see cref="SaveIdentity"/> assigned by the level builder, which survives
+        /// renaming, reparenting and scene regeneration. Falls back to the hierarchy path when
+        /// no identity is present, so an object that has not been given one still saves - it
+        /// just carries the old fragility, and says so once in the log.
         /// </summary>
         public static string For(Component component)
         {
+            // Same GameObject only, deliberately. Searching parents would give a coop's input
+            // and output buffers the same key, silently merging two different piles of goods.
+            var identity = component.GetComponent<SaveIdentity>();
+            if (identity != null && identity.HasId)
+                return identity.Id + "#" + component.GetType().Name;
+
             var sb = new System.Text.StringBuilder();
             BuildPath(component.transform, sb);
             sb.Append('#').Append(component.GetType().Name);
+
+            Debug.LogWarning(
+                $"[SaveKeys] '{sb}' has no SaveIdentity and is keyed by hierarchy path. " +
+                "Renaming or moving it will lose its saved state.");
+
             return sb.ToString();
         }
 

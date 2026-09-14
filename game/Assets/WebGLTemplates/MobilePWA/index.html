@@ -84,16 +84,24 @@
       document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
       var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}";
+
+      // The four build files keep the same names forever, so a browser is free to serve a
+      // cached copy of one alongside a freshly downloaded copy of another. That combination
+      // does not merely look stale - it fails outright, with the wasm demanding an import the
+      // older framework never defined. Stamping the build version into the URL makes every
+      // build a distinct resource, which removes the whole class of problem on any host.
+      var cacheBust = "?v=" + encodeURIComponent({{{ JSON.stringify(PRODUCT_VERSION) }}});
+
+      var loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}" + cacheBust;
       var config = {
         arguments: [],
-        dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
-        frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+        dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}" + cacheBust,
+        frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}" + cacheBust,
 #if USE_THREADS
         workerUrl: buildUrl + "/{{{ WORKER_FILENAME }}}",
 #endif
 #if USE_WASM
-        codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+        codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}" + cacheBust,
 #endif
 #if SYMBOLS_FILENAME
         symbolsUrl: buildUrl + "/{{{ SYMBOLS_FILENAME }}}",

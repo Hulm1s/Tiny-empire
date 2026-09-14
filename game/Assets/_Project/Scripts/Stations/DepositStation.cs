@@ -16,6 +16,9 @@ namespace Tycoon.Stations
         public override string StatusText =>
             target == null ? label : $"{label} {target.Count}/{target.capacity}";
 
+        /// <summary>The ring shows how full the hopper is getting.</summary>
+        protected override float TransferProgress => target != null ? target.Fill : 0f;
+
         protected override bool TickWithPlayer()
         {
             if (target == null || target.item == null || target.IsFull) return false;

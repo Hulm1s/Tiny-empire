@@ -34,6 +34,9 @@ namespace Tycoon.Stations
         private double _paid;
         private bool _unlocked;
 
+        /// <summary>False while restoring a save, so old purchases do not re-celebrate.</summary>
+        private bool _announceUnlock = true;
+
         public event Action Completed;
 
         public bool IsUnlocked => _unlocked;
@@ -42,11 +45,25 @@ namespace Tycoon.Stations
 
         public string SaveKey => SaveKeys.For(this);
 
-        public override bool IsOperational =>
-            !_unlocked && GameRoot.Money != null && GameRoot.Money.Balance > 0d;
+        // Deliberately not conditioned on the player's balance. Greying out everything the
+        // player cannot yet afford made the whole farm look broken on a fresh save; the price
+        // on the square already communicates that they need more money.
+        public override bool IsOperational => !_unlocked;
 
         public override string StatusText =>
             _unlocked ? "" : $"{label} {MoneyFormat.Short(Remaining)}";
+
+        /// <summary>The ring fills as the purchase is paid off across however many visits.</summary>
+        protected override float TransferProgress => Progress;
+
+        protected override void Awake()
+        {
+            base.Awake();
+            // Workers must never buy anything. Spending money and changing the layout of the
+            // farm are the player's decisions, so this is forced here rather than left to the
+            // level builder where it could be configured wrongly.
+            workerCompatible = false;
+        }
 
         private void OnEnable() => SaveSystem.Register(this);
         private void OnDisable() => SaveSystem.Unregister(this);
@@ -86,6 +103,13 @@ namespace Tycoon.Stations
 
             Completed?.Invoke();
 
+            // Only celebrate a purchase happening now, not one being restored from a save.
+            if (Application.isPlaying && _announceUnlock)
+            {
+                Tycoon.UI.WorldFeedback.Show(transform.position + Vector3.up * 2f,
+                    "UNLOCKED!", new Color(1f, 0.85f, 0.35f));
+            }
+
             if (hideSelfOnUnlock)
             {
                 var box = GetComponent<BoxCollider>();
@@ -107,7 +131,11 @@ namespace Tycoon.Stations
         {
             var s = JsonUtility.FromJson<State>(json);
             _paid = s.paid;
-            if (s.unlocked) Apply(true);
+            if (!s.unlocked) return;
+
+            _announceUnlock = false;
+            Apply(true);
+            _announceUnlock = true;
         }
     }
 }

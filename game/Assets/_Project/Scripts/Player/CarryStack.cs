@@ -6,17 +6,21 @@ using UnityEngine;
 namespace Tycoon.Player
 {
     /// <summary>
-    /// The signature mechanic of this genre: the player physically carries goods in a wobbling
-    /// stack above their head, and every transfer is one unit at a time.
+    /// The signature mechanic of this genre: goods are carried in a wobbling stack above the
+    /// head, and every transfer moves one unit at a time.
     ///
-    /// Only one kind of goods can be carried at once, which is what forces the player to
-    /// actually run the production chain in order instead of hoovering up everything at once.
+    /// The stack holds a MIXTURE of goods rather than one kind at a time. Restricting it to a
+    /// single type created dead ends: carrying corn with a full feed hopper left the player
+    /// unable to deposit it, unable to pick up eggs, and unable to sell it - stuck with no way
+    /// to empty their hands. A mixed stack removes that whole class of problem, and it means
+    /// the player can run a delivery and a collection on the same trip.
     /// </summary>
     public class CarryStack : MonoBehaviour
     {
         [Tooltip("Where the stack grows from. Usually an empty just above the character's head.")]
         public Transform anchor;
 
+        [Tooltip("Total units carried, across all kinds of goods.")]
         [Min(1)] public int capacity = 8;
 
         [Tooltip("How fast stacked items settle into place. Purely cosmetic.")]
@@ -25,52 +29,118 @@ namespace Tycoon.Player
         [Tooltip("Sideways wobble of the stack while running. Purely cosmetic.")]
         public float swayAmount = 6f;
 
-        private readonly List<Transform> _visuals = new List<Transform>();
-        private ItemDefinition _item;
+        private class Entry
+        {
+            public ItemDefinition Item;
+            public Transform Visual;
+        }
+
+        private readonly List<Entry> _entries = new List<Entry>();
 
         public event Action Changed;
 
-        public ItemDefinition Item => _item;
-        public int Count => _visuals.Count;
-        public bool IsEmpty => _visuals.Count == 0;
-        public bool IsFull => _visuals.Count >= capacity;
+        public int Count => _entries.Count;
+        public bool IsEmpty => _entries.Count == 0;
+        public bool IsFull => _entries.Count >= capacity;
 
-        /// <summary>True if one more unit of this item would be accepted right now.</summary>
-        public bool CanAccept(ItemDefinition candidate)
+        /// <summary>Topmost item, or null when empty. Handy for "sell whatever you are holding".</summary>
+        public ItemDefinition Item => _entries.Count > 0 ? _entries[_entries.Count - 1].Item : null;
+
+        /// <summary>
+        /// True if one more unit would fit. Deliberately independent of what is already held -
+        /// only total capacity matters now.
+        /// </summary>
+        public bool CanAccept(ItemDefinition candidate) => candidate != null && !IsFull;
+
+        public bool Has(ItemDefinition candidate) => TopIndexOf(candidate) >= 0;
+
+        public int CountOf(ItemDefinition candidate)
         {
-            if (candidate == null || IsFull) return false;
-            return _item == null || _item == candidate;
+            if (candidate == null) return 0;
+
+            int total = 0;
+            for (int i = 0; i < _entries.Count; i++)
+                if (_entries[i].Item == candidate) total++;
+            return total;
         }
 
-        public bool Has(ItemDefinition candidate) => _item == candidate && _visuals.Count > 0;
+        /// <summary>Whatever is on top, regardless of type.</summary>
+        public ItemDefinition Peek() => Item;
 
         public bool TryAdd(ItemDefinition candidate)
         {
             if (!CanAccept(candidate)) return false;
 
-            _item = candidate;
-            _visuals.Add(CreateVisual(candidate, _visuals.Count));
+            _entries.Add(new Entry
+            {
+                Item = candidate,
+                Visual = CreateVisual(candidate, _entries.Count)
+            });
+
             Changed?.Invoke();
             return true;
         }
 
-        /// <summary>Removes the top unit. Returns false if the stack is empty or holds something else.</summary>
+        /// <summary>
+        /// Removes the topmost unit of <paramref name="expected"/>, or the topmost unit of
+        /// anything when it is null. Returns false if there is none to remove.
+        /// </summary>
         public bool TryRemove(ItemDefinition expected)
         {
-            if (expected != null && _item != expected) return false;
-            if (_visuals.Count == 0) return false;
+            int index = expected == null ? _entries.Count - 1 : TopIndexOf(expected);
+            if (index < 0) return false;
 
-            int last = _visuals.Count - 1;
-            if (_visuals[last] != null) Destroy(_visuals[last].gameObject);
-            _visuals.RemoveAt(last);
+            var entry = _entries[index];
+            if (entry.Visual != null) Destroy(entry.Visual.gameObject);
+            _entries.RemoveAt(index);
 
-            if (_visuals.Count == 0) _item = null;
             Changed?.Invoke();
             return true;
         }
 
-        /// <summary>Whatever is on top, regardless of type. Used by sell counters that take anything.</summary>
-        public ItemDefinition Peek() => _visuals.Count > 0 ? _item : null;
+        /// <summary>Index of the highest unit of this kind, or -1. Taking from the top reads best.</summary>
+        private int TopIndexOf(ItemDefinition candidate)
+        {
+            if (candidate == null) return -1;
+
+            for (int i = _entries.Count - 1; i >= 0; i--)
+                if (_entries[i].Item == candidate) return i;
+            return -1;
+        }
+
+        /// <summary>A short "2 Corn, 3 Egg" summary, for debug readouts and later UI.</summary>
+        public string Describe()
+        {
+            if (_entries.Count == 0) return "empty";
+
+            var counts = new List<KeyValuePair<ItemDefinition, int>>();
+            for (int i = 0; i < _entries.Count; i++)
+            {
+                var item = _entries[i].Item;
+                int at = counts.FindIndex(p => p.Key == item);
+                if (at >= 0) counts[at] = new KeyValuePair<ItemDefinition, int>(item, counts[at].Value + 1);
+                else counts.Add(new KeyValuePair<ItemDefinition, int>(item, 1));
+            }
+
+            var parts = new string[counts.Count];
+            for (int i = 0; i < counts.Count; i++)
+                parts[i] = $"{counts[i].Value} {counts[i].Key.displayName}";
+            return string.Join(", ", parts);
+        }
+
+        private static float HeightOf(ItemDefinition item) =>
+            item != null ? Mathf.Max(0.05f, item.stackHeight) : 0.25f;
+
+        /// <summary>
+        /// Where the unit at <paramref name="index"/> sits. Heights accumulate per item, so a
+        /// mixed stack of tall and flat goods still stacks without gaps or overlaps.
+        /// </summary>
+        private Vector3 LocalSlot(int index)
+        {
+            float y = 0f;
+            for (int i = 0; i < index && i < _entries.Count; i++) y += HeightOf(_entries[i].Item);
+            return new Vector3(0f, y, 0f);
+        }
 
         private Transform CreateVisual(ItemDefinition definition, int index)
         {
@@ -111,39 +181,38 @@ namespace Tycoon.Player
             go.name = $"Carried_{definition.id}_{index}";
             var t = go.transform;
             t.SetParent(anchor != null ? anchor : transform, false);
-            t.localPosition = LocalSlot(definition, index);
+            t.localPosition = LocalSlot(index);
             t.localRotation = Quaternion.identity;
             t.localScale *= 0.01f; // pops up to full size in Update
             return t;
         }
 
-        private static Vector3 LocalSlot(ItemDefinition definition, int index)
-        {
-            return new Vector3(0f, index * definition.stackHeight, 0f);
-        }
-
         private void Update()
         {
-            if (_item == null || _visuals.Count == 0) return;
+            if (_entries.Count == 0) return;
 
             float sway = Mathf.Sin(Time.time * 8f) * swayAmount;
 
-            for (int i = 0; i < _visuals.Count; i++)
+            for (int i = 0; i < _entries.Count; i++)
             {
-                var t = _visuals[i];
-                if (t == null) continue;
+                var entry = _entries[i];
+                if (entry.Visual == null) continue;
 
-                Vector3 target = LocalSlot(_item, i);
-                t.localPosition = Vector3.Lerp(t.localPosition, target, Time.deltaTime * settleSpeed);
+                // Recomputed every frame so the stack closes up smoothly when a unit is taken
+                // from the middle rather than the top.
+                Vector3 target = LocalSlot(i);
+                entry.Visual.localPosition = Vector3.Lerp(
+                    entry.Visual.localPosition, target, Time.deltaTime * settleSpeed);
 
-                Vector3 fullScale = _item.visualPrefab != null
+                Vector3 fullScale = entry.Item.visualPrefab != null
                     ? Vector3.one
-                    : new Vector3(0.34f, _item.stackHeight, 0.34f);
-                t.localScale = Vector3.Lerp(t.localScale, fullScale, Time.deltaTime * settleSpeed);
+                    : new Vector3(0.34f, entry.Item.stackHeight, 0.34f);
+                entry.Visual.localScale = Vector3.Lerp(
+                    entry.Visual.localScale, fullScale, Time.deltaTime * settleSpeed);
 
                 // Higher items in the stack lean further, which reads as weight and momentum.
-                float lean = sway * (i + 1) / _visuals.Count;
-                t.localRotation = Quaternion.Euler(0f, 0f, lean);
+                float lean = sway * (i + 1) / _entries.Count;
+                entry.Visual.localRotation = Quaternion.Euler(0f, 0f, lean);
             }
         }
     }

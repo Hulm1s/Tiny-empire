@@ -26,6 +26,17 @@ namespace Tycoon.Stations
 
         public override bool IsOperational => queue != null && queue.Front != null;
 
+        /// <summary>The ring fills as the front customer's order is completed.</summary>
+        protected override float TransferProgress
+        {
+            get
+            {
+                var customer = queue != null ? queue.Front : null;
+                if (customer == null || customer.Requested <= 0) return 0f;
+                return 1f - (float)customer.Remaining / customer.Requested;
+            }
+        }
+
         public override string StatusText
         {
             get
@@ -64,6 +75,10 @@ namespace Tycoon.Stations
             double price = wanted.basePrice * priceMultiplier * queue.PriceMultiplier;
             GameRoot.Money?.Add(price);
             Sold?.Invoke(price);
+
+            Tycoon.UI.WorldFeedback.AddMoney($"sale{GetInstanceID()}",
+                transform.position + Vector3.up * 1.8f, Mathf.RoundToInt((float)price));
+
             return true;
         }
     }

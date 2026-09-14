@@ -81,6 +81,18 @@ namespace Tycoon.UI
             SetVisible(false);
         }
 
+        private void Update()
+        {
+            // A touch that ends outside the canvas, or is cancelled by the browser, never
+            // delivers OnPointerUp - leaving the ring painted on screen with nothing driving
+            // it. Reassert the hidden state whenever no finger is actually being tracked.
+            if (_activePointerId == int.MinValue && ring != null && ring.gameObject.activeSelf)
+            {
+                PlayerInputSource.Joystick = Vector2.zero;
+                SetVisible(false);
+            }
+        }
+
         private void SetVisible(bool visible)
         {
             if (ring != null) ring.gameObject.SetActive(visible);

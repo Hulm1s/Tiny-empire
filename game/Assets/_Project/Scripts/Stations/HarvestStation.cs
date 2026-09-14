@@ -37,6 +37,9 @@ namespace Tycoon.Stations
         public override string StatusText =>
             crop == null ? label : $"{label} {_ready}/{plots}";
 
+        /// <summary>The square's ring shows how much of the field is still standing.</summary>
+        protected override float TransferProgress => plots <= 0 ? 0f : (float)_ready / plots;
+
         protected override void Awake()
         {
             base.Awake();
@@ -79,6 +82,10 @@ namespace Tycoon.Stations
 
             _ready--;
             RefreshVisuals();
+
+            Tycoon.UI.WorldFeedback.Add($"harvest{GetInstanceID()}",
+                Carry.transform.position + Vector3.up * 2.2f, 1, crop.displayName, crop.color);
+
             return true;
         }
 

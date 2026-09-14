@@ -30,9 +30,10 @@ namespace Tycoon.UI
 
         /// <summary>
         /// Corner readout of frame time and player state. Invaluable when the only way to
-        /// inspect a Web build is to look at a screenshot of it. Turn off before release.
+        /// inspect a Web build is to look at a screenshot of it, so it stays in the code -
+        /// flip this to true whenever something needs diagnosing on a real device.
         /// </summary>
-        public static bool ShowDebug = true;
+        public static bool ShowDebug = false;
 
         private Text _debugLabel;
         private float _fpsSmoothed;
@@ -57,12 +58,19 @@ namespace Tycoon.UI
             Instance = this;
             DontDestroyOnLoad(gameObject);
 
+            // Append ?debug=1 to the URL to bring the readout back on a real device without
+            // rebuilding. Off by default, so players never see it.
+            if (!ShowDebug && Application.absoluteURL.Contains("debug=1")) ShowDebug = true;
+
             EnsureEventSystem();
             BuildCanvas();
             BuildMoneyReadout();
             BuildAlertReadout();
-            VirtualJoystick.Create(_safeArea, UIFactory.Circle);
+            var joystick = VirtualJoystick.Create(_safeArea, UIFactory.Circle);
             if (ShowDebug) BuildDebugReadout();
+
+            // Built last so the panel sits above the joystick area and swallows its taps.
+            PauseMenu.Create(_safeArea, joystick.gameObject);
 
             var wallet = GameRoot.Money;
             if (wallet != null)
@@ -169,8 +177,7 @@ namespace Tycoon.UI
                 ? $"{motor.transform.position.x:0.0},{motor.transform.position.y:0.0},{motor.transform.position.z:0.0}"
                 : "no player";
 
-            string held = carry == null ? "-" :
-                carry.IsEmpty ? "empty" : $"{carry.Item.displayName} x{carry.Count}";
+            string held = carry == null ? "-" : carry.Describe();
 
             string tracking = rig == null ? "no rig" : (rig.target != null ? "tracking" : "NO TARGET");
 

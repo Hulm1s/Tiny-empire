@@ -119,6 +119,34 @@ namespace Tycoon.UI
             return image;
         }
 
+        /// <summary>
+        /// A tappable pill with a label. Returns the Button so the caller can wire onClick and
+        /// the Text so it can relabel it (a confirm step, a toggle state).
+        /// </summary>
+        public static Button CreateButton(string name, RectTransform parent, string content,
+            Color color, int fontSize, out Text label)
+        {
+            var rect = CreateRect(name, parent);
+
+            var image = rect.gameObject.AddComponent<Image>();
+            image.sprite = RoundedBox;
+            image.type = Image.Type.Sliced;
+            image.color = color;
+            image.raycastTarget = true;
+
+            var button = rect.gameObject.AddComponent<Button>();
+            button.targetGraphic = image;
+
+            label = CreateText("Label", rect, content, fontSize);
+            label.rectTransform.anchorMin = Vector2.zero;
+            label.rectTransform.anchorMax = Vector2.one;
+            label.rectTransform.offsetMin = Vector2.zero;
+            label.rectTransform.offsetMax = Vector2.zero;
+            label.fontStyle = FontStyle.Bold;
+
+            return button;
+        }
+
         public static Text CreateText(string name, RectTransform parent, string content, int fontSize,
             TextAnchor anchor = TextAnchor.MiddleCenter)
         {

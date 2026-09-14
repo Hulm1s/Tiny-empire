@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c8154ee2a02895448ef908b10a18e2c, type: 3}
+  m_Name: Item_milk
+  m_EditorClassIdentifier: 
+  id: milk
+  displayName: Milk
+  color: {r: 0.95, g: 0.96, b: 0.98, a: 1}
+  visualPrefab: {fileID: 0}
+  carryMaterial: {fileID: 2100000, guid: e2af8be022ebbb045bc666ec2ad71a37, type: 2}
+  icon: {fileID: 0}
+  stackHeight: 0.3
+  basePrice: 12
+  perishable: 1
+  spoilSeconds: 120

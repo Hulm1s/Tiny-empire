@@ -40,7 +40,7 @@ namespace Tycoon.Customers
         [Min(1)] public int maxOrder = 4;
 
         [Tooltip("Seconds between arrivals at full reputation. A poor shop gets fewer.")]
-        public float spawnIntervalSeconds = 8f;
+        public float spawnIntervalSeconds = 5f;
 
         [Header("Reputation")]
         [Range(0f, 1f)] public float startingReputation = 1f;
@@ -122,11 +122,40 @@ namespace Tycoon.Customers
                 return;
             }
 
-            var item = catalogue[UnityEngine.Random.Range(0, catalogue.Length)];
+            var item = PickOrderableItem();
+            if (item == null)
+            {
+                // Nothing on the menu can actually be made yet; do not send a shopper in to
+                // wait for something that can never arrive.
+                Destroy(go);
+                return;
+            }
+
             int count = UnityEngine.Random.Range(minOrder, maxOrder + 1);
 
             _waiting.Add(agent);
             agent.Begin(this, item, count, SlotPosition(_waiting.Count - 1), RandomTint());
+        }
+
+        /// <summary>
+        /// A random item from the menu that the farm can currently produce, or null if none.
+        /// </summary>
+        private ItemDefinition PickOrderableItem()
+        {
+            int available = 0;
+            for (int i = 0; i < catalogue.Length; i++)
+                if (ProductRegistry.CanProduce(catalogue[i])) available++;
+
+            if (available == 0) return null;
+
+            int pick = UnityEngine.Random.Range(0, available);
+            for (int i = 0; i < catalogue.Length; i++)
+            {
+                if (!ProductRegistry.CanProduce(catalogue[i])) continue;
+                if (pick-- == 0) return catalogue[i];
+            }
+
+            return null;
         }
 
         private static Color RandomTint()
