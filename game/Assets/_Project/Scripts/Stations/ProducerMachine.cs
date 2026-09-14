@@ -65,8 +65,19 @@ namespace Tycoon.Stations
 
         public string SaveKey => SaveKeys.For(this);
 
-        private void OnEnable() => SaveSystem.Register(this);
-        private void OnDisable() => SaveSystem.Unregister(this);
+        private void OnEnable()
+        {
+            SaveSystem.Register(this);
+            // Announce what this building can make, so shops only take orders for it while the
+            // building actually exists. Locked buildings are inactive and announce nothing.
+            if (output != null) ProductRegistry.Register(output.item);
+        }
+
+        private void OnDisable()
+        {
+            SaveSystem.Unregister(this);
+            if (output != null) ProductRegistry.Unregister(output.item);
+        }
 
         /// <summary>Adds one chicken. Returns false when the building is already full.</summary>
         public bool TryAddUnit()

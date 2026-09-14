@@ -45,9 +45,9 @@ namespace Tycoon.EditorTools
             BuildFarm(root, items);
             BuildBoundary(root);
             BuildNavigation();
-            // Start between the first coop and the empty plot, so both the corn field above
-            // and the locked plot below are on screen from the first frame.
-            CreatePlayer(new Vector3(0f, 0.2f, 1f), root.rotation);
+            // Start in the corridor between the wings, within sight of both the first coop
+            // and the market.
+            CreatePlayer(new Vector3(0f, 0.2f, -7f), root.rotation);
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath) ?? "Assets");
             EditorSceneManager.MarkSceneDirty(scene);
@@ -68,6 +68,8 @@ namespace Tycoon.EditorTools
         {
             public ItemDefinition Corn;
             public ItemDefinition Egg;
+            public ItemDefinition Hay;
+            public ItemDefinition Milk;
         }
 
         private static Items CreateItems()
@@ -78,11 +80,21 @@ namespace Tycoon.EditorTools
                     "corn", "Corn", new Color(0.96f, 0.78f, 0.22f),
                     price: 1d, perishable: false, stackHeight: 0.3f),
 
-                // Eggs rot: leaving a full basket sitting in the coop costs real money, which
-                // is the gentlest of the upkeep pressures and the first one players notice.
+                // Perishables rot, so hoarding output loses money. It is the gentlest of the
+                // upkeep pressures and the first one players notice.
                 Egg = LevelBuildKit.Item(
                     "egg", "Egg", new Color(0.96f, 0.94f, 0.86f),
-                    price: 5d, perishable: true, spoilSeconds: 90f, stackHeight: 0.26f)
+                    price: 5d, perishable: true, spoilSeconds: 90f, stackHeight: 0.26f),
+
+                Hay = LevelBuildKit.Item(
+                    "hay", "Hay", new Color(0.85f, 0.72f, 0.33f),
+                    price: 1d, perishable: false, stackHeight: 0.32f),
+
+                // Slower to make and worth far more than an egg, so the dairy wing is a
+                // genuine step up rather than a reskin of the chickens.
+                Milk = LevelBuildKit.Item(
+                    "milk", "Milk", new Color(0.95f, 0.96f, 0.98f),
+                    price: 12d, perishable: true, spoilSeconds: 120f, stackHeight: 0.3f)
             };
         }
 
@@ -93,90 +105,200 @@ namespace Tycoon.EditorTools
             return go.transform;
         }
 
+        // The farm is two production wings either side of a central walking corridor, with
+        // the market across the south end. Two wings rather than one long column keeps the
+        // walk from the fields to the counter reasonable; the camera follows the player, so
+        // only one wing is on screen at a time and that is fine.
+        private const float LeftWing = -5f;    // corn -> chickens -> eggs
+        private const float RightWing = 5f;    // hay  -> cows     -> milk
+
         private static void BuildFarm(Transform root, Items items)
         {
-            // --- the production chain, running straight down the screen ---------------
-            // A workshop is about 7 units deep once its feed and collect squares are counted,
-            // so the buildings are spaced accordingly. Everything stays within roughly 6 units
-            // of the centre line, which is what the portrait camera can actually show.
-            var cornField = LevelBuildKit.BuildField("farm.cornfield", "CornField", root, new Vector3(0f, 0f, 12f),
-                items.Corn, plots: 8, regrowSeconds: 2.2f, size: new Vector2(6.5f, 3.5f));
+            // ---- the market ----------------------------------------------------------
+            var street = LevelBuildKit.BuildShopfront("farm.market", "Market", root,
+                new Vector3(0f, 0f, -13f));
+
+            // Both tills take either product. Shoppers only ever ask for something the farm
+            // can actually make (see ProductRegistry), so milk simply starts appearing in
+            // orders the moment the first cow shed opens.
+            var menu = new[] { items.Egg, items.Milk };
+
+            var counterA = LevelBuildKit.AddCounter(street, "farm.counterA", "CounterA", -3f,
+                menu, queueLength: 3, enterFromWest: true);
+
+            var counterB = LevelBuildKit.AddCounter(street, "farm.counterB", "CounterB", 3f,
+                menu, queueLength: 3, enterFromWest: false);
+
+            // ---- left wing: corn, chickens, eggs --------------------------------------
+            var cornA = LevelBuildKit.BuildField("farm.cornA", "CornFieldA", root,
+                new Vector3(LeftWing, 0f, 17f), items.Corn,
+                plots: 8, regrowSeconds: 2.2f, size: new Vector2(5.5f, 3.5f));
+
+            var cornB = LevelBuildKit.BuildField("farm.cornB", "CornFieldB", root,
+                new Vector3(LeftWing, 0f, 10f), items.Corn,
+                plots: 8, regrowSeconds: 2.2f, size: new Vector2(5.5f, 3.5f));
 
             var coopA = LevelBuildKit.BuildWorkshop(
-                "farm.coopA", "CoopA", root, new Vector3(0f, 0f, 6f),
+                "farm.coopA", "CoopA", root, new Vector3(LeftWing, 0f, 2f),
                 input: items.Corn, output: items.Egg,
-                // Paced against demand: a shopper arrives every 8s wanting 1-4 eggs, so the
-                // counter absorbs roughly 19 eggs a minute. One chicken at 6s an egg makes 10
-                // a minute, which is visibly short - that is what makes the second chicken feel
-                // worth buying. Two roughly match demand; a third builds a buffer against the
-                // coop jamming, and any more needs somewhere else to sell.
+                // Paced against demand: a till takes a shopper every 5s wanting 1-4 items, so
+                // one counter absorbs roughly 30 items a minute. One chicken at 6s an egg makes
+                // 10 - visibly short, which is what makes the second chicken worth buying.
                 secondsPerOutput: 6f, inputCapacity: 10, outputCapacity: 12,
                 bodyColor: new Color(0.86f, 0.42f, 0.34f), wearPerOutput: 1.5f,
-                startUnits: 1, maxUnits: 3, unitPrice: 120d);
+                startUnits: 1, maxUnits: 3, unitPrice: 120d,
+                unitName: "Chicken", livestock: LevelBuildKit.Livestock.Chicken);
             coopA.Repair.costPerPoint = 0.25d;
 
-            // The shopfront: till, stall, queue and the road shoppers walk in along. Eggs are
-            // only worth money when somebody at the counter is asking for them, so the farm
-            // has to keep pace with demand rather than just pile up stock.
-            var shop = LevelBuildKit.BuildShopfront("farm.market", "Market", root, new Vector3(0f, 0f, -8f),
-                catalogue: new[] { items.Egg }, queueLength: 3);
-
-            // --- the first expansion --------------------------------------------------
             var coopB = LevelBuildKit.BuildWorkshop(
-                "farm.coopB", "CoopB", root, new Vector3(0f, 0f, -2f),
+                "farm.coopB", "CoopB", root, new Vector3(LeftWing, 0f, -6f),
                 input: items.Corn, output: items.Egg,
                 secondsPerOutput: 6f, inputCapacity: 10, outputCapacity: 12,
                 bodyColor: new Color(0.62f, 0.5f, 0.85f), wearPerOutput: 1.5f,
-                startUnits: 1, maxUnits: 3, unitPrice: 180d);
+                startUnits: 1, maxUnits: 3, unitPrice: 150d,
+                unitName: "Chicken", livestock: LevelBuildKit.Livestock.Chicken);
             coopB.Repair.costPerPoint = 0.25d;
 
-            // The buy-square sits exactly where the coop will appear, so paying it off reads
-            // as the building rising out of the plot you were standing on.
-            var unlock = LevelBuildKit.Station<UnlockStation>("farm.unlock.coopB", "UnlockCoopB", root,
-                new Vector3(0f, 0f, -2f), new Vector2(3.4f, 2.6f),
-                "New Coop", new Color(1f, 0.85f, 0.35f));
-            unlock.price = 150d;
-            unlock.payPerTick = 4d;
-            unlock.revealOnUnlock = new[] { coopB.Root };
+            // ---- right wing: hay, cows, milk ------------------------------------------
+            var hayField = LevelBuildKit.BuildField("farm.hayfield", "HayField", root,
+                new Vector3(RightWing, 0f, 17f), items.Hay,
+                plots: 8, regrowSeconds: 2.6f, size: new Vector2(5.5f, 3.5f));
 
-            // --- automation, and the running cost that comes with it ------------------
-            // Each hire square sits beside the leg of the chain it takes over, so it is
-            // obvious what you are buying. Workers take a cut of every unit they deliver, so
-            // automation is a running cost that scales with throughput - and a fully automated
-            // farm still jams and still spoils, so it is never the end of the game.
-            BuildHire(root, "Harvester", new Vector3(3.3f, 0f, 8.8f), price: 250d,
-                pickup: cornField, dropoff: coopA.Feed,
+            var cowA = LevelBuildKit.BuildWorkshop(
+                "farm.cowA", "CowShedA", root, new Vector3(RightWing, 0f, 8f),
+                input: items.Hay, output: items.Milk,
+                // Much slower than a chicken, and worth more than twice as much per unit.
+                secondsPerOutput: 10f, inputCapacity: 10, outputCapacity: 10,
+                bodyColor: new Color(0.75f, 0.72f, 0.66f), wearPerOutput: 2f,
+                startUnits: 1, maxUnits: 3, unitPrice: 400d,
+                unitName: "Cow", livestock: LevelBuildKit.Livestock.Cow);
+            cowA.Repair.costPerPoint = 0.35d;
+
+            var cowB = LevelBuildKit.BuildWorkshop(
+                "farm.cowB", "CowShedB", root, new Vector3(RightWing, 0f, 0f),
+                input: items.Hay, output: items.Milk,
+                secondsPerOutput: 10f, inputCapacity: 10, outputCapacity: 10,
+                bodyColor: new Color(0.6f, 0.66f, 0.72f), wearPerOutput: 2f,
+                startUnits: 1, maxUnits: 3, unitPrice: 450d,
+                unitName: "Cow", livestock: LevelBuildKit.Livestock.Cow);
+            cowB.Repair.costPerPoint = 0.35d;
+
+            // ---- hired hands ----------------------------------------------------------
+            // Hire squares sit in the central corridor beside the leg they take over, so it is
+            // obvious what each one buys. Workers take a cut of every unit they deliver, so
+            // automation is a running cost that scales with throughput.
+            var hireHarvestA = BuildHire(root, "Harvester", "HarvesterA", HireSpot(cornA, true),
+                price: 250d, pickup: cornA, dropoff: coopA.Feed,
                 color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopA.Beacon);
 
-            BuildHire(root, "Seller", new Vector3(3.3f, 0f, 3.2f), price: 400d,
-                pickup: coopA.Collect, dropoff: shop.Register,
+            var hireSellA = BuildHire(root, "Seller", "SellerA", HireSpot(coopA.Collect, true),
+                price: 400d, pickup: coopA.Collect, dropoff: counterA.Register,
                 color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopA.Beacon);
 
-            // Must be inactive in the saved scene: nothing inside a locked plot should tick,
-            // save or be reachable until it has actually been bought.
-            coopB.Root.SetActive(false);
+            var hireHarvestB = BuildHire(root, "Harvester", "HarvesterB", HireSpot(cornB, true),
+                price: 700d, pickup: cornB, dropoff: coopB.Feed,
+                color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopB.Beacon);
+
+            var hireSellB = BuildHire(root, "Seller", "SellerB", HireSpot(coopB.Collect, true),
+                price: 800d, pickup: coopB.Collect, dropoff: counterA.Register,
+                color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopB.Beacon);
+
+            var hireHayA = BuildHire(root, "Hay Hand", "HayHandA", HireSpot(hayField, false),
+                price: 1500d, pickup: hayField, dropoff: cowA.Feed,
+                color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0.6d, beacon: cowA.Beacon);
+
+            var hireMilkA = BuildHire(root, "Milk Run", "MilkRunA", HireSpot(cowA.Collect, false),
+                price: 1700d, pickup: cowA.Collect, dropoff: counterB.Register,
+                color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowA.Beacon);
+
+            var hireHayB = BuildHire(root, "Hay Hand", "HayHandB", HireSpot(cowB.Feed, false),
+                price: 2200d, pickup: hayField, dropoff: cowB.Feed,
+                color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0.6d, beacon: cowB.Beacon);
+
+            var hireMilkB = BuildHire(root, "Milk Run", "MilkRunB", HireSpot(cowB.Collect, false),
+                price: 2400d, pickup: cowB.Collect, dropoff: counterB.Register,
+                color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowB.Beacon);
+
+            // ---- what has to be bought ------------------------------------------------
+            // Each gate reveals its building AND the hire squares that go with it, so a worker
+            // can never be hired for a building that does not exist yet.
+            Gate(root, "farm.unlock.cornB", "UnlockCornB", new Vector3(LeftWing, 0f, 10f),
+                new Vector2(5.5f, 3.5f), "New Field", 600d,
+                cornB.gameObject, hireHarvestB.gameObject);
+
+            Gate(root, "farm.unlock.coopB", "UnlockCoopB", new Vector3(LeftWing, 0f, -6f),
+                new Vector2(3.4f, 2.6f), "New Coop", 900d,
+                coopB.Root, hireSellB.gameObject);
+
+            Gate(root, "farm.unlock.counterB", "UnlockCounterB", new Vector3(3f, 0f, -13f),
+                new Vector2(3.4f, 2.2f), "New Till", 1400d,
+                counterB.Root);
+
+            Gate(root, "farm.unlock.hay", "UnlockHay", new Vector3(RightWing, 0f, 17f),
+                new Vector2(5.5f, 3.5f), "Hay Field", 1800d,
+                hayField.gameObject);
+
+            Gate(root, "farm.unlock.cowA", "UnlockCowA", new Vector3(RightWing, 0f, 8f),
+                new Vector2(3.4f, 2.6f), "Cow Shed", 2600d,
+                cowA.Root, hireHayA.gameObject, hireMilkA.gameObject);
+
+            Gate(root, "farm.unlock.cowB", "UnlockCowB", new Vector3(RightWing, 0f, 0f),
+                new Vector2(3.4f, 2.6f), "Cow Shed", 6000d,
+                cowB.Root, hireHayB.gameObject, hireMilkB.gameObject);
+        }
+
+        /// <summary>
+        /// Where a hire square goes: in the central corridor, level with the square it
+        /// automates, on the side of the wing that faces the middle of the farm.
+        /// </summary>
+        private static Vector3 HireSpot(Component nextTo, bool leftWing)
+        {
+            Vector3 local = nextTo.transform.parent != null
+                ? nextTo.transform.parent.InverseTransformPoint(nextTo.transform.position)
+                : nextTo.transform.position;
+
+            return new Vector3(leftWing ? local.x + 3.6f : local.x - 3.6f, 0f, local.z);
+        }
+
+        /// <summary>
+        /// Puts content behind a purchase. The revealed objects must be inactive in the saved
+        /// scene, so nothing inside a locked plot ticks, saves or can be walked into before it
+        /// has actually been bought.
+        /// </summary>
+        private static void Gate(Transform root, string id, string name, Vector3 position,
+            Vector2 size, string label, double price, params GameObject[] reveal)
+        {
+            var gate = LevelBuildKit.Station<UnlockStation>(id, name, root, position, size,
+                label, new Color(1f, 0.85f, 0.35f));
+            gate.price = price;
+            gate.payPerTick = Mathf.Max(4f, (float)(price / 40d));
+            gate.revealOnUnlock = reveal;
+
+            foreach (var go in reveal)
+                if (go != null) go.SetActive(false);
         }
 
         /// <summary>
         /// Creates a worker plus the square that hires them. The worker is inactive until the
         /// square is paid off, so an unhired worker draws no wages and runs no code.
         /// </summary>
-        private static void BuildHire(Transform root, string name, Vector3 position, double price,
-            Tycoon.Stations.StationBase pickup, Tycoon.Stations.StationBase dropoff,
+        private static UnlockStation BuildHire(Transform root, string role, string id, Vector3 position,
+            double price, Tycoon.Stations.StationBase pickup, Tycoon.Stations.StationBase dropoff,
             Color color, double feePerDelivery, Tycoon.Upkeep.AlertBeacon beacon)
         {
-            var worker = LevelBuildKit.BuildWorker(name, root, position, pickup, dropoff, color, feePerDelivery);
+            var worker = LevelBuildKit.BuildWorker(id, root, position, pickup, dropoff, color, feePerDelivery);
 
-            var hire = LevelBuildKit.Station<UnlockStation>($"farm.hire.{name}", $"Hire{name}", root, position,
-                new Vector2(1.8f, 1.8f), $"Hire {name}", new Color(0.55f, 0.8f, 1f));
+            var hire = LevelBuildKit.Station<UnlockStation>($"farm.hire.{id}", $"Hire{id}", root, position,
+                new Vector2(1.8f, 1.8f), $"Hire {role}", new Color(0.55f, 0.8f, 1f));
             hire.price = price;
-            hire.payPerTick = 6d;
+            hire.payPerTick = Mathf.Max(6f, (float)(price / 40d));
             hire.revealOnUnlock = new[] { worker.gameObject };
 
-            // The alert beacon should complain about an unpaid worker on this farm.
+            // The alert beacon should complain about an unpaid worker at this building.
             if (beacon != null && beacon.worker == null) beacon.worker = worker;
 
             worker.gameObject.SetActive(false);
+            return hire;
         }
 
         /// <summary>
@@ -190,8 +312,8 @@ namespace Tycoon.EditorTools
         /// </summary>
         private static void BuildBoundary(Transform root)
         {
-            const float halfWidth = 20f;
-            const float halfDepth = 22f;
+            const float halfWidth = 23f;
+            const float halfDepth = 26f;
             const float thickness = 2f;
             const float height = 6f;
 

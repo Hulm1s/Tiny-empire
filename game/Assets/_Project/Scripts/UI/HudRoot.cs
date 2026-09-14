@@ -66,8 +66,11 @@ namespace Tycoon.UI
             BuildCanvas();
             BuildMoneyReadout();
             BuildAlertReadout();
-            VirtualJoystick.Create(_safeArea, UIFactory.Circle);
+            var joystick = VirtualJoystick.Create(_safeArea, UIFactory.Circle);
             if (ShowDebug) BuildDebugReadout();
+
+            // Built last so the panel sits above the joystick area and swallows its taps.
+            PauseMenu.Create(_safeArea, joystick.gameObject);
 
             var wallet = GameRoot.Money;
             if (wallet != null)

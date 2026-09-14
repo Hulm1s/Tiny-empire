@@ -228,45 +228,112 @@ namespace Tycoon.EditorTools
             public AlertBeacon Beacon;
         }
 
-        /// <summary>
-        /// The chickens themselves, one object per possible bird. The machine shows the first
-        /// N, so buying one makes a chicken visibly appear in the yard rather than just
-        /// changing a number.
-        /// </summary>
-        private static Transform BuildFlock(Transform parent, int maxUnits)
-        {
-            var holder = new GameObject("Flock");
-            holder.transform.SetParent(parent, false);
+        /// <summary>What lives in a building's pen. Drives the animal shape and the pen size.</summary>
+        public enum Livestock { None, Chicken, Cow }
 
-            var feather = Mat("Chicken_Body", new Color(0.97f, 0.96f, 0.92f));
-            var comb = Mat("Chicken_Comb", new Color(0.9f, 0.32f, 0.28f));
+        /// <summary>
+        /// A fenced pen attached to the side of a building, with the animals inside and nest
+        /// boxes against the wall.
+        ///
+        /// The animals used to stand loose in front of the building, which read as strays
+        /// wandering the farm rather than stock the player owns. A fence makes the pen look
+        /// like part of the property, and it keeps the ground in front of the doors clear for
+        /// the interaction squares.
+        /// </summary>
+        private static Transform BuildPen(Transform parent, int maxUnits, Livestock kind)
+        {
+            if (kind == Livestock.None) return null;
+
+            bool cows = kind == Livestock.Cow;
+            Vector2 size = cows ? new Vector2(3.4f, 4.6f) : new Vector2(2.6f, 3.8f);
+
+            var pen = new GameObject(cows ? "Pasture" : "Pen");
+            pen.transform.SetParent(parent, false);
+            pen.transform.localPosition = new Vector3(cows ? 3.2f : 2.8f, 0f, 0f);
+
+            var dirt = Mat(cows ? "Pen_Pasture" : "Pen_Dirt",
+                cows ? new Color(0.46f, 0.62f, 0.32f) : new Color(0.62f, 0.53f, 0.38f));
+            var post = Mat("Pen_Post", new Color(0.72f, 0.58f, 0.4f));
+            var rail = Mat("Pen_Rail", new Color(0.85f, 0.73f, 0.55f));
+
+            Box("Ground", pen.transform, new Vector3(0f, 0.02f, 0f),
+                new Vector3(size.x, 0.04f, size.y), dirt);
+
+            float hx = size.x * 0.5f, hz = size.y * 0.5f;
+            for (int sx = -1; sx <= 1; sx += 2)
+                for (int sz = -1; sz <= 1; sz += 2)
+                    Box($"Post_{sx}_{sz}", pen.transform, new Vector3(hx * sx, 0.35f, hz * sz),
+                        new Vector3(0.12f, 0.7f, 0.12f), post);
+
+            Box("RailN", pen.transform, new Vector3(0f, 0.45f, hz), new Vector3(size.x, 0.08f, 0.07f), rail);
+            Box("RailS", pen.transform, new Vector3(0f, 0.45f, -hz), new Vector3(size.x, 0.08f, 0.07f), rail);
+            Box("RailE", pen.transform, new Vector3(hx, 0.45f, 0f), new Vector3(0.07f, 0.08f, size.y), rail);
+
+            if (!cows)
+            {
+                // Nest boxes against the building wall - where the eggs actually come from.
+                var nest = Mat("Pen_Nest", new Color(0.75f, 0.62f, 0.42f));
+                var straw = Mat("Pen_Straw", new Color(0.93f, 0.85f, 0.5f));
+                for (int i = 0; i < 3; i++)
+                {
+                    float z = Mathf.Lerp(-hz * 0.6f, hz * 0.6f, i / 2f);
+                    Box($"Nest_{i}", pen.transform, new Vector3(-hx + 0.3f, 0.17f, z),
+                        new Vector3(0.5f, 0.34f, 0.6f), nest);
+                    Box($"Straw_{i}", pen.transform, new Vector3(-hx + 0.3f, 0.36f, z),
+                        new Vector3(0.42f, 0.06f, 0.5f), straw);
+                }
+            }
+
+            var holder = new GameObject("Animals");
+            holder.transform.SetParent(pen.transform, false);
 
             for (int i = 0; i < maxUnits; i++)
             {
-                var bird = new GameObject($"Chicken_{i}");
-                bird.transform.SetParent(holder.transform, false);
+                var animal = new GameObject($"{kind}_{i}");
+                animal.transform.SetParent(holder.transform, false);
 
-                float x = maxUnits <= 1 ? 0f : Mathf.Lerp(-1.05f, 1.05f, i / (float)(maxUnits - 1));
-                bird.transform.localPosition = new Vector3(x, 0f, -1.45f);
-                // A little scatter so a row of birds does not look stamped out.
-                bird.transform.localRotation = Quaternion.Euler(0f, (i * 47) % 360, 0f);
+                float z = maxUnits <= 1 ? 0f : Mathf.Lerp(-hz * 0.55f, hz * 0.55f, i / (float)(maxUnits - 1));
+                animal.transform.localPosition = new Vector3(0.5f, 0f, z);
+                // A little scatter so a row of animals does not look stamped out.
+                animal.transform.localRotation = Quaternion.Euler(0f, (i * 53) % 360, 0f);
 
-                Box("Body", bird.transform, new Vector3(0f, 0.22f, 0f),
-                    new Vector3(0.3f, 0.3f, 0.4f), feather);
-                Box("Head", bird.transform, new Vector3(0f, 0.45f, 0.12f),
-                    new Vector3(0.18f, 0.2f, 0.18f), feather);
-                Box("Comb", bird.transform, new Vector3(0f, 0.58f, 0.12f),
-                    new Vector3(0.07f, 0.1f, 0.13f), comb);
+                if (cows) BuildCow(animal.transform);
+                else BuildChicken(animal.transform);
             }
 
             return holder.transform;
         }
 
-        /// <summary>
-        /// A hired hand that shuttles goods between two squares for a wage.
-        /// It walks into station triggers exactly like the player, so it needs no cooperation
-        /// from the stations themselves.
-        /// </summary>
+        private static void BuildChicken(Transform parent)
+        {
+            var feather = Mat("Chicken_Body", new Color(0.97f, 0.96f, 0.92f));
+            var comb = Mat("Chicken_Comb", new Color(0.9f, 0.32f, 0.28f));
+
+            Box("Body", parent, new Vector3(0f, 0.22f, 0f), new Vector3(0.3f, 0.3f, 0.4f), feather);
+            Box("Head", parent, new Vector3(0f, 0.45f, 0.12f), new Vector3(0.18f, 0.2f, 0.18f), feather);
+            Box("Comb", parent, new Vector3(0f, 0.58f, 0.12f), new Vector3(0.07f, 0.1f, 0.13f), comb);
+        }
+
+        private static void BuildCow(Transform parent)
+        {
+            var hide = Mat("Cow_Hide", new Color(0.96f, 0.95f, 0.93f));
+            var patch = Mat("Cow_Patch", new Color(0.24f, 0.22f, 0.22f));
+            var udder = Mat("Cow_Udder", new Color(0.94f, 0.7f, 0.72f));
+
+            Box("Body", parent, new Vector3(0f, 0.62f, 0f), new Vector3(0.55f, 0.5f, 1f), hide);
+            Box("Patch", parent, new Vector3(0.01f, 0.72f, 0.15f), new Vector3(0.57f, 0.22f, 0.34f), patch);
+            Box("Head", parent, new Vector3(0f, 0.72f, 0.66f), new Vector3(0.34f, 0.34f, 0.36f), hide);
+            Box("Snout", parent, new Vector3(0f, 0.63f, 0.86f), new Vector3(0.24f, 0.18f, 0.12f), udder);
+            Box("Udder", parent, new Vector3(0f, 0.34f, -0.22f), new Vector3(0.26f, 0.2f, 0.26f), udder);
+
+            for (int i = 0; i < 4; i++)
+            {
+                float x = (i % 2 == 0) ? -0.2f : 0.2f;
+                float z = (i < 2) ? 0.32f : -0.32f;
+                Box($"Leg_{i}", parent, new Vector3(x, 0.18f, z), new Vector3(0.13f, 0.37f, 0.13f), patch);
+            }
+        }
+
         public static WorkerAgent BuildWorker(string name, Transform parent, Vector3 position,
             StationBase pickup, StationBase dropoff, Color color, double feePerDelivery,
             int capacity = 4)
@@ -328,7 +395,7 @@ namespace Tycoon.EditorTools
             float secondsPerOutput, int inputCapacity, int outputCapacity,
             Color bodyColor, float wearPerOutput = 2f, int inputPerOutput = 1,
             int startUnits = 1, int maxUnits = 3, double unitPrice = 120d,
-            string unitName = "Chicken")
+            string unitName = "Chicken", Livestock livestock = Livestock.Chicken)
         {
             var root = new GameObject(name);
             root.transform.SetParent(parent, false);
@@ -379,7 +446,7 @@ namespace Tycoon.EditorTools
             kit.Machine.durability = kit.Durability;
             kit.Machine.maxUnits = Mathf.Max(1, maxUnits);
             kit.Machine.units = Mathf.Clamp(startUnits, 1, kit.Machine.maxUnits);
-            kit.Machine.unitVisuals = BuildFlock(root.transform, kit.Machine.maxUnits);
+            kit.Machine.unitVisuals = BuildPen(root.transform, kit.Machine.maxUnits, livestock);
 
             var machineSign = root.AddComponent<InfoSign>();
             machineSign.machine = kit.Machine;
@@ -399,14 +466,14 @@ namespace Tycoon.EditorTools
                 new Vector2(2.6f, 2.0f), output.displayName, new Color(0.55f, 0.9f, 0.5f));
             kit.Collect.source = kit.Output;
 
-            kit.Repair = Station<RepairStation>($"{id}.repair", "Repair", root.transform, new Vector3(-3.1f, 0f, 0f),
-                new Vector2(1.8f, 2.0f), "Fix", new Color(1f, 0.72f, 0.3f));
+            // Repair and buy sit together on the west side; the east belongs to the pen.
+            kit.Repair = Station<RepairStation>($"{id}.repair", "Repair", root.transform,
+                new Vector3(-2.9f, 0f, -1.6f),
+                new Vector2(1.8f, 1.8f), "Fix", new Color(1f, 0.72f, 0.3f));
             kit.Repair.target = kit.Durability;
 
-            // Buying capacity sits opposite the repair square, so the two things you spend
-            // money on at a building are on either side of it.
             kit.Upgrade = Station<UpgradeStation>($"{id}.upgrade", "BuyUnit", root.transform,
-                new Vector3(3.1f, 0f, 0f), new Vector2(1.8f, 2.0f),
+                new Vector3(-2.9f, 0f, 1.6f), new Vector2(1.8f, 1.8f),
                 $"+1 {unitName}", new Color(0.55f, 0.85f, 0.45f));
             kit.Upgrade.target = kit.Machine;
             kit.Upgrade.basePrice = unitPrice;
@@ -422,25 +489,32 @@ namespace Tycoon.EditorTools
             return kit;
         }
 
-        /// <summary>
-        /// The customer-facing half of a business: till, stall, queue, and the road shoppers
-        /// walk in along. Laid out relative to one position so a second shop is one more call.
-        /// </summary>
+        /// <summary>The shared street a market's counters face onto.</summary>
         public class Shopfront
+        {
+            public GameObject Root;
+            public float RoadHalfLength;
+        }
+
+        /// <summary>One till, with its own queue of shoppers.</summary>
+        public class Counter
         {
             public GameObject Root;
             public RegisterStation Register;
             public Tycoon.Customers.CustomerQueue Queue;
         }
 
-        public static Shopfront BuildShopfront(string id, string name, Transform parent, Vector3 position,
-            ItemDefinition[] catalogue, int queueLength = 3, float roadHalfLength = 14f)
+        /// <summary>
+        /// The street: tarmac, markings, and nothing else. Counters are added onto it
+        /// separately, so a market can grow a second till without a second road appearing.
+        /// </summary>
+        public static Shopfront BuildShopfront(string id, string name, Transform parent,
+            Vector3 position, float roadHalfLength = 17f)
         {
             var root = new GameObject(name);
             root.transform.SetParent(parent, false);
             root.transform.localPosition = position;
 
-            // --- the road, running across the screen behind the counter ------------------
             var tarmac = Mat("Road", new Color(0.36f, 0.36f, 0.39f));
             var markings = Mat("RoadLine", new Color(0.88f, 0.88f, 0.8f));
 
@@ -455,34 +529,56 @@ namespace Tycoon.EditorTools
                     new Vector3(i * 2f, 0.05f, -4.6f), new Vector3(0.9f, 0.04f, 0.14f), markings);
             }
 
-            // --- the till the player stands at -------------------------------------------
+            return new Shopfront { Root = root, RoadHalfLength = roadHalfLength };
+        }
+
+        /// <summary>
+        /// Adds a till to a street: stall, serving square, queue positions and its own stream
+        /// of shoppers.
+        ///
+        /// Each counter gets its own queue rather than sharing one, so a second till genuinely
+        /// doubles how many people the market can serve instead of just giving the existing
+        /// queue somewhere else to stand.
+        /// </summary>
+        public static Counter AddCounter(Shopfront shop, string id, string name, float localX,
+            ItemDefinition[] catalogue, int queueLength = 3, bool enterFromWest = true)
+        {
+            var root = new GameObject(name);
+            root.transform.SetParent(shop.Root.transform, false);
+            root.transform.localPosition = new Vector3(localX, 0f, 0f);
+
             Identify(root, id);
 
-            var register = Station<RegisterStation>($"{id}.register", "Register", root.transform, Vector3.zero,
-                new Vector2(4f, 2.2f), "Serve", new Color(0.45f, 0.85f, 0.6f));
+            var register = Station<RegisterStation>($"{id}.register", "Register", root.transform,
+                Vector3.zero, new Vector2(3.6f, 2.2f), "Serve", new Color(0.45f, 0.85f, 0.6f));
 
             BuildStall(root.transform, new Vector3(0f, 0f, -1.6f));
 
-            // --- queue furniture ----------------------------------------------------------
             var counterPoint = new GameObject("CounterPoint");
             counterPoint.transform.SetParent(root.transform, false);
             counterPoint.transform.localPosition = new Vector3(0f, 0f, -1.9f);
 
+            // Shoppers for each till arrive from opposite ends of the street, so two queues do
+            // not tangle up walking through one another.
+            float inX = (enterFromWest ? -shop.RoadHalfLength : shop.RoadHalfLength) - localX;
+            float outX = (enterFromWest ? shop.RoadHalfLength : -shop.RoadHalfLength) - localX;
+
             var spawnPoint = new GameObject("SpawnPoint");
             spawnPoint.transform.SetParent(root.transform, false);
-            spawnPoint.transform.localPosition = new Vector3(-roadHalfLength, 0f, -4.6f);
+            spawnPoint.transform.localPosition = new Vector3(inX, 0f, -4.6f);
 
             var exitPoint = new GameObject("ExitPoint");
             exitPoint.transform.SetParent(root.transform, false);
-            exitPoint.transform.localPosition = new Vector3(roadHalfLength, 0f, -4.6f);
+            exitPoint.transform.localPosition = new Vector3(outX, 0f, -4.6f);
 
             var slots = new Transform[Mathf.Max(1, queueLength)];
             for (int i = 0; i < slots.Length; i++)
             {
                 var slot = new GameObject($"Slot_{i}");
                 slot.transform.SetParent(root.transform, false);
-                // Queue trails away to the left along the road.
-                slot.transform.localPosition = new Vector3(-1.5f * i, 0f, -3.4f);
+                // The queue trails back the way its shoppers came in.
+                slot.transform.localPosition =
+                    new Vector3((enterFromWest ? -1.5f : 1.5f) * i, 0f, -3.4f);
                 slots[i] = slot.transform;
             }
 
@@ -498,7 +594,7 @@ namespace Tycoon.EditorTools
 
             register.queue = queue;
 
-            return new Shopfront { Root = root, Register = register, Queue = queue };
+            return new Counter { Root = root, Register = register, Queue = queue };
         }
 
         private static void BuildStall(Transform parent, Vector3 position)
@@ -512,13 +608,13 @@ namespace Tycoon.EditorTools
 
             // Solid so the player serves from behind the counter rather than standing in it.
             Box("Counter", stall.transform, new Vector3(0f, 0.5f, 0f),
-                new Vector3(4f, 1f, 0.5f), wood, collider: true);
-            Box("PostL", stall.transform, new Vector3(-1.8f, 1.1f, 0f),
+                new Vector3(3.4f, 1f, 0.5f), wood, collider: true);
+            Box("PostL", stall.transform, new Vector3(-1.5f, 1.1f, 0f),
                 new Vector3(0.16f, 2.2f, 0.16f), wood);
-            Box("PostR", stall.transform, new Vector3(1.8f, 1.1f, 0f),
+            Box("PostR", stall.transform, new Vector3(1.5f, 1.1f, 0f),
                 new Vector3(0.16f, 2.2f, 0.16f), wood);
             Box("Awning", stall.transform, new Vector3(0f, 2.2f, -0.3f),
-                new Vector3(4.2f, 0.18f, 1.4f), awning);
+                new Vector3(3.6f, 0.18f, 1.4f), awning);
         }
 
         /// <summary>

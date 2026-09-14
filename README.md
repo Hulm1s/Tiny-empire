@@ -17,7 +17,9 @@ Home Screen. No App Store, no developer account, no expiry.
 "D:\unity\unity engine\6000.1.6f1\Editor\Unity.exe" -quit -batchmode -nographics -projectPath D:\iosGame\game -executeMethod Tycoon.EditorTools.TycoonBuild.BuildWeb -logFile D:\iosGame\build-web.log
 ```
 
-Output goes to `docs/`, which is also what GitHub Pages serves. In the editor the same thing
+Output goes to `docs/`, which is also what GitHub Pages serves. **Stop the local test server
+first** — while it is running it holds `docs/Build/docs.loader.js` open, and the build fails
+with "the requested operation cannot be performed on a file with a user-mapped section open". In the editor the same thing
 is on the menu: **Tycoon → Build Web** (`Ctrl+Shift+B`).
 
 ### Play it locally
@@ -112,6 +114,28 @@ so chain your businesses up and down the level's local Z rather than spreading t
 
 ---
 
+## What the farm contains
+
+Two production wings either side of a central walking corridor, with the market across the
+south end. Two wings rather than one long column keeps the walk from the fields to the counter
+reasonable; the camera follows the player, so only one wing is on screen at a time.
+
+| Wing | Chain | Unlocks in order |
+|---|---|---|
+| Left | Corn field → coop → eggs | chickens, harvester, seller, 2nd field ($600), 2nd coop ($900) |
+| Right | Hay field → cow shed → milk | hay field ($1,800), cow shed ($2,600), hay hand, milk run, 2nd shed ($6,000) |
+| South | Two tills | 2nd till ($1,400) |
+
+Coops and cow sheds are the same `BuildWorkshop` call with different items and livestock. Each
+has a fenced pen on its east side — nest boxes for chickens, open pasture for cows — and buying
+an animal makes one visibly appear in it.
+
+Both tills take either product, but shoppers only ever ask for something the farm can actually
+make (`ProductRegistry`), so milk starts appearing in orders by itself the moment the first cow
+shed opens — and never before.
+
+---
+
 ## Tuning the economy
 
 Numbers live in ScriptableObjects under `Assets/_Project/Configs/`, or as inspector fields on
@@ -119,14 +143,21 @@ the stations, so balancing needs no code:
 
 | Knob | Where | Current |
 |---|---|---|
-| Item sale price | `Item_egg.asset` → `basePrice` | 5 |
-| Spoil rate | `Item_egg.asset` → `spoilSeconds` | 90s per unit lost |
-| Production speed | `CoopA` → `ProducerMachine.secondsPerOutput` | 2.5s |
-| Wear per egg | `CoopA` → `Durability.wearPerOutput` | 1.5 (≈66 eggs per jam) |
-| Repair cost | `CoopA/Repair` → `costPerPoint` | 0.25 |
-| Carry capacity | `Player` → `CarryStack.capacity` | 8 |
-| Unlock price | `UnlockCoopB` → `price` | 150 |
-| Transfer speed | any station → `tickInterval` | 0.18s per unit |
+| Egg / milk price | `Item_egg.asset`, `Item_milk.asset` → `basePrice` | 5 / 12 |
+| Spoil rate | `Item_*.asset` → `spoilSeconds` | 90s egg, 120s milk |
+| Production speed | workshop → `ProducerMachine.secondsPerOutput` | 6s chicken, 10s cow |
+| Animals per building | workshop → `ProducerMachine.maxUnits` | 3 |
+| Next animal price | workshop → `UpgradeStation.basePrice` × `priceGrowth` | 120 × 2.2 |
+| Wear per unit | workshop → `Durability.wearPerOutput` | 1.5 |
+| Repair cost | workshop → `RepairStation.costPerPoint` | 0.25 |
+| Shopper arrivals | counter → `CustomerQueue.spawnIntervalSeconds` | 5s |
+| Shopper patience | `CustomerAgent.patienceSeconds` | 75s |
+| Carry capacity | `Player` → `CarryStack.capacity` | 8, mixed goods |
+| Worker pay | hire → `WorkerAgent.feePerDelivery` | 0.5–1.4 per unit delivered |
+
+Production is paced against demand rather than picked arbitrarily: a till takes a shopper every
+5s wanting 1–4 items, so one counter absorbs roughly 30 items a minute. One chicken at 6s an egg
+makes 10 — visibly short, which is what makes the second chicken worth buying.
 
 ---
 

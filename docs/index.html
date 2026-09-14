@@ -80,16 +80,24 @@
       document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
       var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/docs.loader.js";
+
+      // The four build files keep the same names forever, so a browser is free to serve a
+      // cached copy of one alongside a freshly downloaded copy of another. That combination
+      // does not merely look stale - it fails outright, with the wasm demanding an import the
+      // older framework never defined. Stamping the build version into the URL makes every
+      // build a distinct resource, which removes the whole class of problem on any host.
+      var cacheBust = "?v=" + encodeURIComponent("2026.09.14.1140");
+
+      var loaderUrl = buildUrl + "/docs.loader.js" + cacheBust;
       var config = {
         arguments: [],
-        dataUrl: buildUrl + "/docs.data.unityweb",
-        frameworkUrl: buildUrl + "/docs.framework.js.unityweb",
-        codeUrl: buildUrl + "/docs.wasm.unityweb",
+        dataUrl: buildUrl + "/docs.data.unityweb" + cacheBust,
+        frameworkUrl: buildUrl + "/docs.framework.js.unityweb" + cacheBust,
+        codeUrl: buildUrl + "/docs.wasm.unityweb" + cacheBust,
         streamingAssetsUrl: "StreamingAssets",
         companyName: "Home Made",
         productName: "Tiny Empire",
-        productVersion: "2026.09.14.1032",
+        productVersion: "2026.09.14.1140",
         showBanner: unityShowBanner,
         // An iPhone reports a device pixel ratio of 3. Rendering a 3D scene at native 3x on a
         // phone GPU is the single easiest way to drop to 20fps, and on a screen this small the

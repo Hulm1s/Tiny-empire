@@ -22,8 +22,10 @@ namespace Tycoon.Customers
         public float arriveRadius = 0.22f;
 
         [Header("Patience")]
-        [Tooltip("Seconds they will stand at the counter before giving up.")]
-        public float patienceSeconds = 45f;
+        [Tooltip("Seconds they will stand at the counter before giving up. Generous on " +
+                 "purpose: a queue that times out faster than the player can walk the length " +
+                 "of the farm punishes them for playing it as designed.")]
+        public float patienceSeconds = 75f;
 
         [Header("Parts")]
         public Transform visual;
