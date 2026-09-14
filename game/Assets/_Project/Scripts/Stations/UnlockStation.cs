@@ -50,8 +50,20 @@ namespace Tycoon.Stations
         // on the square already communicates that they need more money.
         public override bool IsOperational => !_unlocked;
 
-        public override string StatusText =>
-            _unlocked ? "" : $"{label} {MoneyFormat.Short(Remaining)}";
+        /// <summary>
+        /// Padlock for a plot of land, a person for a pair of hands. Same station type, two
+        /// very different purchases, and the icon is what tells them apart at a glance.
+        /// </summary>
+        [Header("Presentation")]
+        public Tycoon.UI.SquareIcon icon = Tycoon.UI.SquareIcon.Unlock;
+
+        public override string ActionLabel => _unlocked ? string.Empty : label;
+
+        public override string StatusValue =>
+            _unlocked ? string.Empty : MoneyFormat.Short(Remaining);
+
+        public override Tycoon.UI.SquareIcon Icon =>
+            _unlocked ? Tycoon.UI.SquareIcon.None : icon;
 
         /// <summary>The ring fills as the purchase is paid off across however many visits.</summary>
         protected override float TransferProgress => Progress;

@@ -42,15 +42,17 @@ namespace Tycoon.Stations
 
         public override bool IsOperational => target != null && target.Fraction < 1f;
 
-        public override string StatusText
+        public override string StatusValue
         {
             get
             {
-                if (target == null) return label;
-                if (target.Fraction >= 1f) return $"{label} OK";
-                return $"{label} {Mathf.RoundToInt(target.Fraction * 100f)}%";
+                if (target == null) return string.Empty;
+                if (target.Fraction >= 1f) return "OK";
+                return $"{Mathf.RoundToInt(target.Fraction * 100f)}%";
             }
         }
+
+        public override Tycoon.UI.SquareIcon Icon => Tycoon.UI.SquareIcon.Fix;
 
         protected override bool CanPerformTask() => target != null && target.Fraction < 1f;
 

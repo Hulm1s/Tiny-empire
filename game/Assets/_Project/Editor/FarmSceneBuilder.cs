@@ -152,16 +152,22 @@ namespace Tycoon.EditorTools
             var street = LevelBuildKit.BuildShopfront("farm.market", "Market", root,
                 new Vector3(0f, 0f, -13f));
 
-            // Both tills take either product. Shoppers only ever ask for something the farm
-            // can actually make (see ProductRegistry), so milk simply starts appearing in
-            // orders the moment the first cow shed opens.
-            var menu = new[] { items.Egg, items.Milk };
-
+            // One till per product line, and this is load-bearing.
+            //
+            // Both counters used to share a menu of everything the farm makes. Nothing carries
+            // milk to the egg counter - the egg sellers work the left wing and the milk runs
+            // work the right - so a milk shopper sent to counter A could only ever be served by
+            // the player personally walking it across the farm. Worse, the queue only offers its
+            // head to the till, so that one stranded shopper blocked every egg customer behind
+            // them for a full 75 seconds. It read as the game randomly deciding to punish you.
+            //
+            // Shoppers still only ask for what the farm can currently make (ProductRegistry), so
+            // the dairy till simply stands empty until the first cow shed opens.
             var counterA = LevelBuildKit.AddCounter(street, "farm.counterA", "CounterA", -3f,
-                menu, queueLength: 3, enterFromWest: true);
+                new[] { items.Egg }, queueLength: 3, enterFromWest: true);
 
             var counterB = LevelBuildKit.AddCounter(street, "farm.counterB", "CounterB", 3f,
-                menu, queueLength: 3, enterFromWest: false);
+                new[] { items.Milk }, queueLength: 3, enterFromWest: false);
 
             // ---- left wing: corn, chickens, eggs --------------------------------------
             var cornA = LevelBuildKit.BuildField("farm.cornA", "CornFieldA", root,
@@ -243,19 +249,19 @@ namespace Tycoon.EditorTools
                 color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopB.Beacon);
 
             // Both hay hands are hired at the one hay field they both cut from, side by side.
-            var hireHayA = BuildHire(root, "Farmhand", "HayHandA", AtField(root, hayField, false, 1.2f),
+            var hireHayA = BuildHire(root, "Hay Hand", "HayHandA", AtField(root, hayField, false, 1.2f),
                 price: 1500d, pickup: hayField, dropoff: cowA.Feed,
                 color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0.6d, beacon: cowA.Beacon);
 
-            var hireMilkA = BuildHire(root, "Milk Cashier", "MilkRunA", AtTill(root, counterB, 1),
+            var hireMilkA = BuildHire(root, "Milk Run", "MilkRunA", AtTill(root, counterB, 1),
                 price: 1700d, pickup: cowA.Collect, dropoff: counterB.Register,
                 color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowA.Beacon);
 
-            var hireHayB = BuildHire(root, "Farmhand 2", "HayHandB", AtField(root, hayField, false, -1.2f),
+            var hireHayB = BuildHire(root, "Hay Hand 2", "HayHandB", AtField(root, hayField, false, -1.2f),
                 price: 2200d, pickup: hayField, dropoff: cowB.Feed,
                 color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0.6d, beacon: cowB.Beacon);
 
-            var hireMilkB = BuildHire(root, "Milk Cashier 2", "MilkRunB", AtTill(root, counterB, 2),
+            var hireMilkB = BuildHire(root, "Milk Run 2", "MilkRunB", AtTill(root, counterB, 2),
                 price: 2400d, pickup: cowB.Collect, dropoff: counterB.Register,
                 color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowB.Beacon);
 
@@ -263,19 +269,19 @@ namespace Tycoon.EditorTools
             // Each gate reveals its building AND the hire squares that go with it, so a worker
             // can never be hired for a building that does not exist yet.
             Gate(root, "farm.unlock.cornB", "UnlockCornB", new Vector3(LeftWing, 0f, 10f),
-                new Vector2(5.5f, 3.5f), "New Field", 600d,
+                new Vector2(5.5f, 3.5f), "Field", 600d,
                 cornB.gameObject, hireFarmerB.gameObject);
 
             Gate(root, "farm.unlock.coopB", "UnlockCoopB", new Vector3(LeftWing, 0f, -6f),
-                new Vector2(3.4f, 2.6f), "New Coop", 900d,
+                new Vector2(3.4f, 2.6f), "Coop", 900d,
                 coopB.Root, hireCashierB.gameObject);
 
             Gate(root, "farm.unlock.counterB", "UnlockCounterB", new Vector3(3f, 0f, -13f),
-                new Vector2(3.4f, 2.2f), "New Till", 1400d,
+                new Vector2(3.4f, 2.2f), "Dairy Till", 1400d,
                 counterB.Root);
 
             Gate(root, "farm.unlock.hay", "UnlockHay", new Vector3(RightWing, 0f, 17f),
-                new Vector2(5.5f, 3.5f), "Hay Field", 1800d,
+                new Vector2(5.5f, 3.5f), "Hay", 1800d,
                 hayField.gameObject);
 
             Gate(root, "farm.unlock.cowA", "UnlockCowA", new Vector3(RightWing, 0f, 8f),
@@ -285,6 +291,35 @@ namespace Tycoon.EditorTools
             Gate(root, "farm.unlock.cowB", "UnlockCowB", new Vector3(RightWing, 0f, 0f),
                 new Vector2(3.4f, 2.6f), "Cow Shed", 6000d,
                 cowB.Root, hireHayB.gameObject, hireMilkB.gameObject);
+        }
+
+        /// <summary>
+        /// Shouts at build time if a worker carries goods to a till that does not sell them.
+        ///
+        /// This is the exact mistake that made milk shoppers unservable: the tills listed a
+        /// product nothing delivered to them. It is invisible in the editor and only shows up
+        /// as a customer standing at a counter forever, so it is worth catching here - where
+        /// the layout is written - rather than in play.
+        /// </summary>
+        private static void WarnIfRouteBroken(string worker, StationBase pickup, StationBase dropoff)
+        {
+            var till = dropoff as RegisterStation;
+            if (till == null) return;   // delivering into a hopper, not a counter
+
+            var goods = Produces(pickup);
+            if (goods == null || till.CanFulfill(goods)) return;
+
+            Debug.LogWarning(
+                $"[FarmSceneBuilder] {worker} carries {goods.displayName} to {dropoff.name}, " +
+                $"which does not sell it. That worker's deliveries can never be sold.");
+        }
+
+        /// <summary>What comes out of a square, for routing checks. Null when it produces nothing.</summary>
+        private static ItemDefinition Produces(StationBase station)
+        {
+            if (station is HarvestStation field) return field.crop;
+            if (station is CollectStation collect) return collect.source != null ? collect.source.item : null;
+            return null;
         }
 
         /// <summary>Anything's position expressed in the level's own grid.</summary>
@@ -351,9 +386,13 @@ namespace Tycoon.EditorTools
             Color color, double feePerDelivery, Tycoon.Upkeep.AlertBeacon beacon)
         {
             var worker = LevelBuildKit.BuildWorker(id, root, position, pickup, dropoff, color, feePerDelivery);
+            WarnIfRouteBroken(id, pickup, dropoff);
 
             var hire = LevelBuildKit.Station<UnlockStation>($"farm.hire.{id}", $"Hire{id}", root, position,
-                new Vector2(1.8f, 1.8f), $"Hire {role}", new Color(0.55f, 0.8f, 1f));
+                new Vector2(1.8f, 1.8f), role, new Color(0.55f, 0.8f, 1f));
+            // A person rather than the padlock every other purchase gets: same station type,
+            // very different thing being bought.
+            hire.icon = Tycoon.UI.SquareIcon.Hire;
             hire.price = price;
             hire.payPerTick = Mathf.Max(6f, (float)(price / 40d));
             hire.revealOnUnlock = new[] { worker.gameObject };

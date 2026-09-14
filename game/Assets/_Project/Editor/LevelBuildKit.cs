@@ -471,7 +471,10 @@ namespace Tycoon.EditorTools
             var machineSign = root.AddComponent<InfoSign>();
             machineSign.machine = kit.Machine;
             machineSign.durability = kit.Durability;
-            machineSign.height = 3.5f;
+            // Kept low, just clear of the roof. The camera looks across the farm from one side,
+            // so a sign hung high over a building is drawn well behind it - at 3.5 m this one
+            // landed squarely on top of the feed square's label.
+            machineSign.height = 2.6f;
 
             // Squares are arranged along the screen's vertical axis, never side by side. A
             // portrait phone only shows about 7.8 world units across, so a building that puts
@@ -483,7 +486,7 @@ namespace Tycoon.EditorTools
             kit.Feed.target = kit.Input;
 
             kit.Collect = Station<CollectStation>($"{id}.collect", "Collect", root.transform, new Vector3(0f, 0f, -2.8f),
-                new Vector2(2.6f, 2.0f), output.displayName, new Color(0.55f, 0.9f, 0.5f));
+                new Vector2(2.6f, 2.0f), "Collect", new Color(0.55f, 0.9f, 0.5f));
             kit.Collect.source = kit.Output;
 
             // Repair and buy sit together on the west side; the east belongs to the pen.
@@ -494,7 +497,7 @@ namespace Tycoon.EditorTools
 
             kit.Upgrade = Station<UpgradeStation>($"{id}.upgrade", "BuyUnit", root.transform,
                 new Vector3(-2.9f, 0f, 1.6f), new Vector2(1.8f, 1.8f),
-                $"+1 {unitName}", new Color(0.55f, 0.85f, 0.45f));
+                unitName, new Color(0.55f, 0.85f, 0.45f));
             kit.Upgrade.target = kit.Machine;
             kit.Upgrade.basePrice = unitPrice;
             kit.Upgrade.unitName = unitName;
@@ -561,8 +564,14 @@ namespace Tycoon.EditorTools
         /// doubles how many people the market can serve instead of just giving the existing
         /// queue somewhere else to stand.
         /// </summary>
+        /// <param name="sells">
+        /// What this till deals in. This is the whole of the customer routing: a shopper is only
+        /// ever created for something their own counter can hand over, so a milk shopper can
+        /// never end up queueing at a counter that only does eggs. Give a future till
+        /// <c>{ milk }</c> and milk shoppers start using it with no other change.
+        /// </param>
         public static Counter AddCounter(Shopfront shop, string id, string name, float localX,
-            ItemDefinition[] catalogue, int queueLength = 3, bool enterFromWest = true)
+            ItemDefinition[] sells, int queueLength = 3, bool enterFromWest = true)
         {
             var root = new GameObject(name);
             root.transform.SetParent(shop.Root.transform, false);
@@ -572,6 +581,7 @@ namespace Tycoon.EditorTools
 
             var register = Station<RegisterStation>($"{id}.register", "Register", root.transform,
                 Vector3.zero, new Vector2(3.6f, 2.2f), "Serve", new Color(0.45f, 0.85f, 0.6f));
+            register.sells = sells;
 
             BuildStall(root.transform, new Vector3(0f, 0f, -1.6f));
 
@@ -597,9 +607,11 @@ namespace Tycoon.EditorTools
             {
                 var slot = new GameObject($"Slot_{i}");
                 slot.transform.SetParent(root.transform, false);
-                // The queue trails back the way its shoppers came in.
+                // The queue trails back the way its shoppers came in. Spaced wider than the
+                // shoppers need, because what actually has to fit side by side is their order
+                // bubbles - at 1.5 m apart the bubbles overlapped and hid each other's counts.
                 slot.transform.localPosition =
-                    new Vector3((enterFromWest ? -1.5f : 1.5f) * i, 0f, -3.4f);
+                    new Vector3((enterFromWest ? -2.2f : 2.2f) * i, 0f, -3.4f);
                 slots[i] = slot.transform;
             }
 
@@ -611,8 +623,10 @@ namespace Tycoon.EditorTools
             queue.exitPoint = exitPoint.transform;
             queue.counterPoint = counterPoint.transform;
             queue.slots = slots;
-            queue.catalogue = catalogue;
 
+            // The queue asks the register what it may sell, rather than carrying its own copy
+            // of the menu. One list, on the thing that actually hands the goods over.
+            queue.register = register;
             register.queue = queue;
 
             return new Counter { Root = root, Register = register, Queue = queue };
@@ -630,12 +644,25 @@ namespace Tycoon.EditorTools
             // Solid so the player serves from behind the counter rather than standing in it.
             Box("Counter", stall.transform, new Vector3(0f, 0.5f, 0f),
                 new Vector3(3.4f, 1f, 0.5f), wood, collider: true);
-            Box("PostL", stall.transform, new Vector3(-1.5f, 1.1f, 0f),
+            // Posts, and nothing spanning between them.
+            //
+            // The camera looks at the market from the road, so anything standing on the counter
+            // is drawn over the ground behind it - and the ground behind the counter is exactly
+            // where the serving square lies. The geometry is unforgiving: at this camera angle
+            // anything above about knee height on the stall lands somewhere on that card, so a
+            // canopy blotted out the whole thing and even a thin crossbar struck straight
+            // through the word SERVE.
+            //
+            // The posts are pushed out past the card's edges instead, where they frame it rather
+            // than cross it. A flag on each one gives the stall its colour back.
+            Box("PostL", stall.transform, new Vector3(-1.72f, 1.1f, 0f),
                 new Vector3(0.16f, 2.2f, 0.16f), wood, castShadow: false);
-            Box("PostR", stall.transform, new Vector3(1.5f, 1.1f, 0f),
+            Box("PostR", stall.transform, new Vector3(1.72f, 1.1f, 0f),
                 new Vector3(0.16f, 2.2f, 0.16f), wood, castShadow: false);
-            Box("Awning", stall.transform, new Vector3(0f, 2.2f, -0.3f),
-                new Vector3(3.6f, 0.18f, 1.4f), awning);
+            Box("FlagL", stall.transform, new Vector3(-1.72f, 2.1f, -0.26f),
+                new Vector3(0.14f, 0.5f, 0.42f), awning, castShadow: false);
+            Box("FlagR", stall.transform, new Vector3(1.72f, 2.1f, -0.26f),
+                new Vector3(0.14f, 0.5f, 0.42f), awning, castShadow: false);
         }
 
         /// <summary>
@@ -670,10 +697,29 @@ namespace Tycoon.EditorTools
             ItemDefinition crop, int plots, float regrowSeconds, Vector2 size)
         {
             var station = Station<HarvestStation>(id, name, parent, position, size,
-                crop.displayName, new Color(0.95f, 0.83f, 0.35f));
+                "Harvest", new Color(0.95f, 0.83f, 0.35f));
             station.crop = crop;
             station.plots = plots;
             station.regrowSeconds = regrowSeconds;
+
+            // Tilled soil under the plot. Without it a field is stalks standing in open grass,
+            // which reads as weeds rather than as a field somebody planted - and it gives the
+            // square's label a darker ground to sit on than the lawn.
+            Box("Soil", station.transform, new Vector3(0f, 0.02f, 0f),
+                new Vector3(size.x, 0.04f, size.y),
+                Mat($"Field_Soil_{crop.id}", new Color(0.46f, 0.34f, 0.22f)), castShadow: false);
+
+            // Furrows, so the soil is not one flat slab of brown. Kept close to the soil's own
+            // colour and thin: at higher contrast and any wider they stop reading as tilled rows
+            // and start reading as decking.
+            var furrow = Mat("Field_Furrow", new Color(0.4f, 0.29f, 0.18f));
+            int furrows = Mathf.Max(3, Mathf.RoundToInt(size.y / 0.5f));
+            for (int i = 0; i < furrows; i++)
+            {
+                float z = Mathf.Lerp(-size.y * 0.4f, size.y * 0.4f, i / (float)(furrows - 1));
+                Box($"Furrow_{i}", station.transform, new Vector3(0f, 0.045f, z),
+                    new Vector3(size.x * 0.94f, 0.02f, 0.06f), furrow, castShadow: false);
+            }
 
             var visuals = new GameObject("Crops");
             visuals.transform.SetParent(station.transform, false);

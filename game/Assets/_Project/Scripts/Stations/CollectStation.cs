@@ -12,8 +12,12 @@ namespace Tycoon.Stations
 
         public override bool IsOperational => source != null && !source.IsEmpty;
 
-        public override string StatusText =>
-            source == null ? label : $"{label} {source.Count}";
+        public override string StatusValue => source == null ? string.Empty : source.Count.ToString();
+
+        /// <summary>The goods themselves say "collect" better than any arrow would.</summary>
+        public override Tycoon.Config.ItemDefinition IconItem => source != null ? source.item : null;
+
+        public override Tycoon.UI.SquareIcon Icon => Tycoon.UI.SquareIcon.Collect;
 
         /// <summary>The ring shows how much is left waiting to be picked up.</summary>
         protected override float TransferProgress => source != null ? source.Fill : 0f;

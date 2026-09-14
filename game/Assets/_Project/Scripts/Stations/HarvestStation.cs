@@ -34,8 +34,11 @@ namespace Tycoon.Stations
         public string SaveKey => SaveKeys.For(this);
         public int Ready => _ready;
         public override bool IsOperational => _ready > 0;
-        public override string StatusText =>
-            crop == null ? label : $"{label} {_ready}/{plots}";
+        public override string StatusValue => crop == null ? string.Empty : $"{_ready}/{plots}";
+
+        public override Tycoon.Config.ItemDefinition IconItem => crop;
+
+        public override Tycoon.UI.SquareIcon Icon => Tycoon.UI.SquareIcon.Harvest;
 
         /// <summary>The square's ring shows how much of the field is still standing.</summary>
         protected override float TransferProgress => plots <= 0 ? 0f : (float)_ready / plots;

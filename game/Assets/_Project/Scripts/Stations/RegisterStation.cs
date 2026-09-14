@@ -1,4 +1,5 @@
 using System;
+using Tycoon.Config;
 using Tycoon.Core;
 using Tycoon.Customers;
 using UnityEngine;
@@ -18,8 +19,36 @@ namespace Tycoon.Stations
         [Header("Customers")]
         public CustomerQueue queue;
 
+        [Tooltip("What this till sells.\n\n" +
+                 "A shopper is only ever sent to a counter that lists what they came for, so a " +
+                 "till can never take an order it has no way of filling. Both counters used to " +
+                 "share one menu of every product on the farm, which meant milk shoppers queued " +
+                 "at the egg counter - where no worker ever brings milk - and blocked everyone " +
+                 "behind them until their patience ran out.\n\n" +
+                 "Leave empty and this till serves nobody.")]
+        public ItemDefinition[] sells;
+
         [Tooltip("Applied on top of the item price and the shop's reputation multiplier.")]
         public float priceMultiplier = 1f;
+
+        /// <summary>
+        /// Whether this till is allowed to take an order for these goods.
+        ///
+        /// This is the one question the routing turns on. Today each queue asks its own
+        /// register before inventing an order; a central router covering several shops would
+        /// ask every register the same question and pick a counter that answers yes. Either
+        /// way, adding a till that sells a product is all it takes to make that product's
+        /// shoppers start using it.
+        /// </summary>
+        public bool CanFulfill(ItemDefinition item)
+        {
+            if (item == null || sells == null) return false;
+
+            for (int i = 0; i < sells.Length; i++)
+                if (sells[i] == item) return true;
+
+            return false;
+        }
 
         /// <summary>Fired with the money taken per unit, for popups and audio.</summary>
         public event Action<double> Sold;
@@ -37,20 +66,34 @@ namespace Tycoon.Stations
             }
         }
 
-        public override string StatusText
+        public override string StatusValue
         {
             get
             {
-                if (queue == null) return label;
-
-                var customer = queue.Front;
-                if (customer == null) return $"{label} - waiting";
-
-                return customer.Wanted == null
-                    ? label
-                    : $"{label} {customer.Wanted.displayName} x{customer.Remaining}";
+                var customer = queue != null ? queue.Front : null;
+                if (customer == null) return "-";
+                return customer.Wanted == null ? string.Empty : "x" + customer.Remaining;
             }
         }
+
+        /// <summary>
+        /// Shows what the shopper at the front is actually asking for, so the player can read
+        /// the order off the square without walking round to look at the bubble.
+        /// </summary>
+        public override ItemDefinition IconItem
+        {
+            get
+            {
+                var customer = queue != null ? queue.Front : null;
+                if (customer != null && customer.Wanted != null) return customer.Wanted;
+
+                // Nobody waiting: show what this till deals in, so an idle counter still says
+                // whether it is the egg one or the milk one.
+                return sells != null && sells.Length > 0 ? sells[0] : null;
+            }
+        }
+
+        public override Tycoon.UI.SquareIcon Icon => Tycoon.UI.SquareIcon.Serve;
 
         protected override bool TickWithPlayer()
         {

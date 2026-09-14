@@ -62,15 +62,20 @@ namespace Tycoon.Stations
 
         public override bool IsOperational => !SoldOut;
 
-        public override string StatusText
+        /// <summary>Just the livestock, upper-cased by the square. The plus icon says "buy".</summary>
+        public override string ActionLabel => string.IsNullOrEmpty(unitName) ? label : unitName;
+
+        public override string StatusValue
         {
             get
             {
-                if (target == null) return label;
-                if (SoldOut) return $"{unitName}s {target.units}/{target.maxUnits}";
-                return $"+1 {unitName} {MoneyFormat.Short(Remaining)}";
+                if (target == null) return string.Empty;
+                if (SoldOut) return $"{target.units}/{target.maxUnits}";
+                return MoneyFormat.Short(Remaining);
             }
         }
+
+        public override Tycoon.UI.SquareIcon Icon => Tycoon.UI.SquareIcon.Buy;
 
         /// <summary>The ring fills as this purchase is paid off across however many visits.</summary>
         protected override float TransferProgress =>

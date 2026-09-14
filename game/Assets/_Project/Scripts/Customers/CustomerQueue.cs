@@ -34,7 +34,9 @@ namespace Tycoon.Customers
         public Transform[] slots;
 
         [Header("Orders")]
-        public ItemDefinition[] catalogue;
+        [Tooltip("The till these shoppers queue at. Its `sells` list is the menu: a shopper is " +
+                 "only ever created for something this counter can actually hand over.")]
+        public Tycoon.Stations.RegisterStation register;
 
         [Min(1)] public int minOrder = 1;
         [Min(1)] public int maxOrder = 4;
@@ -93,7 +95,7 @@ namespace Tycoon.Customers
             _waiting.RemoveAll(c => c == null);
 
             if (customerTemplate == null || slots == null || slots.Length == 0) return;
-            if (catalogue == null || catalogue.Length == 0) return;
+            if (register == null || register.sells == null || register.sells.Length == 0) return;
 
             if (_waiting.Count >= slots.Length) return;
 
@@ -123,10 +125,13 @@ namespace Tycoon.Customers
             }
 
             var item = PickOrderableItem();
-            if (item == null)
+
+            // Two separate reasons to turn a shopper away at the door, and both matter:
+            // nothing on this till's menu can be made yet, or - if a level is ever wired up
+            // wrongly - the order does not match what this till sells. Either way, never send
+            // somebody in to queue for something that can never be handed to them.
+            if (item == null || register == null || !register.CanFulfill(item))
             {
-                // Nothing on the menu can actually be made yet; do not send a shopper in to
-                // wait for something that can never arrive.
                 Destroy(go);
                 return;
             }
@@ -138,21 +143,29 @@ namespace Tycoon.Customers
         }
 
         /// <summary>
-        /// A random item from the menu that the farm can currently produce, or null if none.
+        /// A random item from this till's menu that the farm can currently produce, or null.
+        ///
+        /// Two filters, doing different jobs. The register's own list decides what this counter
+        /// is for at all; <see cref="ProductRegistry"/> then holds back anything the player has
+        /// no way of making yet, so a dairy till stands empty until the first cow arrives rather
+        /// than queueing up orders that could only ever time out.
         /// </summary>
         private ItemDefinition PickOrderableItem()
         {
+            var menu = register != null ? register.sells : null;
+            if (menu == null) return null;
+
             int available = 0;
-            for (int i = 0; i < catalogue.Length; i++)
-                if (ProductRegistry.CanProduce(catalogue[i])) available++;
+            for (int i = 0; i < menu.Length; i++)
+                if (ProductRegistry.CanProduce(menu[i])) available++;
 
             if (available == 0) return null;
 
             int pick = UnityEngine.Random.Range(0, available);
-            for (int i = 0; i < catalogue.Length; i++)
+            for (int i = 0; i < menu.Length; i++)
             {
-                if (!ProductRegistry.CanProduce(catalogue[i])) continue;
-                if (pick-- == 0) return catalogue[i];
+                if (!ProductRegistry.CanProduce(menu[i])) continue;
+                if (pick-- == 0) return menu[i];
             }
 
             return null;

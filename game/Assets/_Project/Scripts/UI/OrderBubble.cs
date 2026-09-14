@@ -14,8 +14,9 @@ namespace Tycoon.UI
     /// </summary>
     public class OrderBubble : MonoBehaviour
     {
-        [Tooltip("Height above the customer's feet.")]
-        public float height = 2.05f;
+        [Tooltip("Height above the customer's feet. The bubble hangs centred on this, so it has " +
+                 "to clear a head at about 1.2 m.")]
+        public float height = 2.25f;
 
         [Tooltip("World size of one canvas pixel. 0.01 makes a 160px bubble 1.6 units wide.")]
         public float worldScale = 0.01f;
@@ -41,44 +42,52 @@ namespace Tycoon.UI
             _canvas.renderMode = RenderMode.WorldSpace;
 
             _root = (RectTransform)go.transform;
-            _root.sizeDelta = new Vector2(170f, 150f);
+            // Bigger than it was. The old bubble gave the product about twenty screen pixels,
+            // and since egg and milk are both near-white, a small tinted dot made them
+            // genuinely indistinguishable. The icon now gets roughly double that.
+            _root.sizeDelta = new Vector2(200f, 176f);
             _root.localScale = Vector3.one * worldScale;
 
-            var panel = UIFactory.CreatePanel("Panel", _root, new Color(1f, 1f, 1f, 0.96f));
-            panel.rectTransform.anchorMin = Vector2.zero;
-            panel.rectTransform.anchorMax = Vector2.one;
-            panel.rectTransform.offsetMin = Vector2.zero;
-            panel.rectTransform.offsetMax = new Vector2(0f, -26f);
+            // Tail first, so the panel draws over its top half and the two read as one shape.
+            var tail = UIFactory.CreatePanel("Tail", _root, new Color(1f, 1f, 1f, 0.97f));
+            tail.rectTransform.anchorMin = tail.rectTransform.anchorMax = new Vector2(0.5f, 0f);
+            tail.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            tail.rectTransform.sizeDelta = new Vector2(30f, 30f);
+            tail.rectTransform.anchoredPosition = new Vector2(0f, 28f);
+            tail.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 45f);
 
-            // Little tail so the bubble reads as coming from the customer.
-            var tail = UIFactory.CreatePanel("Tail", _root, new Color(1f, 1f, 1f, 0.96f));
-            tail.rectTransform.anchorMin = new Vector2(0.5f, 0f);
-            tail.rectTransform.anchorMax = new Vector2(0.5f, 0f);
-            tail.rectTransform.pivot = new Vector2(0.5f, 0f);
-            tail.rectTransform.sizeDelta = new Vector2(34f, 34f);
-            tail.rectTransform.anchoredPosition = new Vector2(0f, -14f);
+            // Dark rim, matching the outline on the icons and the border on the squares, so a
+            // bubble and an interaction square look like parts of the same game.
+            var border = UIFactory.CreatePanel("Border", _root, new Color(0.16f, 0.18f, 0.22f, 0.9f));
+            Fill(border.rectTransform, bottomInset: 26f, inset: 0f);
+
+            var panel = UIFactory.CreatePanel("Panel", _root, new Color(1f, 1f, 1f, 0.97f));
+            Fill(panel.rectTransform, bottomInset: 26f, inset: 5f);
 
             var iconGo = UIFactory.CreateRect("Icon", _root);
             _iconImage = iconGo.gameObject.AddComponent<Image>();
             _iconImage.sprite = UIFactory.Circle;
             _iconImage.raycastTarget = false;
-            iconGo.anchorMin = iconGo.anchorMax = new Vector2(0.32f, 0.62f);
+            _iconImage.preserveAspect = true;
+            iconGo.anchorMin = iconGo.anchorMax = new Vector2(0.31f, 0.63f);
             iconGo.pivot = new Vector2(0.5f, 0.5f);
-            iconGo.sizeDelta = new Vector2(74f, 74f);
+            iconGo.sizeDelta = new Vector2(94f, 94f);
 
-            _countLabel = UIFactory.CreateText("Count", _root, "x1", 58);
+            // Secondary to the icon, deliberately: the player should know what is being asked
+            // for before they know how many.
+            _countLabel = UIFactory.CreateText("Count", _root, "x1", 62);
             _countLabel.color = new Color(0.13f, 0.15f, 0.18f);
             _countLabel.fontStyle = FontStyle.Bold;
             _countLabel.rectTransform.anchorMin = _countLabel.rectTransform.anchorMax =
-                new Vector2(0.71f, 0.62f);
+                new Vector2(0.72f, 0.63f);
             _countLabel.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            _countLabel.rectTransform.sizeDelta = new Vector2(90f, 80f);
+            _countLabel.rectTransform.sizeDelta = new Vector2(96f, 84f);
 
             var track = UIFactory.CreatePanel("PatienceTrack", _root, new Color(0.85f, 0.87f, 0.9f, 1f));
-            track.rectTransform.anchorMin = new Vector2(0.5f, 0.24f);
-            track.rectTransform.anchorMax = new Vector2(0.5f, 0.24f);
+            track.rectTransform.anchorMin = new Vector2(0.5f, 0.27f);
+            track.rectTransform.anchorMax = new Vector2(0.5f, 0.27f);
             track.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            track.rectTransform.sizeDelta = new Vector2(120f, 18f);
+            track.rectTransform.sizeDelta = new Vector2(148f, 16f);
 
             var fillGo = UIFactory.CreateRect("PatienceFill", track.rectTransform);
             _patienceFill = fillGo.gameObject.AddComponent<Image>();
@@ -99,24 +108,31 @@ namespace Tycoon.UI
             SetVisible(false);
         }
 
+        /// <summary>
+        /// Shows an order. Entirely driven by the item itself - there is no per-product code
+        /// path here, so a product added later gets a correct bubble for free.
+        /// </summary>
         public void Show(ItemDefinition item, int remaining)
         {
             Build();
             if (item == null) { SetVisible(false); return; }
 
-            if (item.icon != null)
-            {
-                _iconImage.sprite = item.icon;
-                _iconImage.color = Color.white;
-            }
-            else
-            {
-                _iconImage.sprite = UIFactory.Circle;
-                _iconImage.color = item.color;
-            }
+            _iconImage.sprite = IconFactory.For(item);
+            // Drawn icons carry their own colours; the plain-disc fallback for a product with
+            // no artwork still has to be tinted to mean anything.
+            _iconImage.color = IconFactory.HasArtwork(item) ? Color.white : item.color;
 
             _countLabel.text = "x" + Mathf.Max(0, remaining);
             SetVisible(true);
+        }
+
+        /// <summary>Stretches to the bubble's body, leaving the bottom strip for the tail.</summary>
+        private static void Fill(RectTransform rect, float bottomInset, float inset)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = new Vector2(inset, bottomInset + inset);
+            rect.offsetMax = new Vector2(-inset, -inset);
         }
 
         /// <summary>1 = just arrived, 0 = about to walk out in disgust.</summary>

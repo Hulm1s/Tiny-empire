@@ -117,8 +117,41 @@ namespace Tycoon.Stations
         /// <summary>Override to drive the ring in Transfer mode. Zero hides it.</summary>
         protected virtual float TransferProgress => 0f;
 
-        /// <summary>Text for the floating sign. Override to show live numbers or prices.</summary>
-        public virtual string StatusText => label;
+        /// <summary>
+        /// What the square says, in three separate pieces rather than one sentence.
+        ///
+        /// These used to be a single composed string, which is why labels grew into things like
+        /// "Hire Milk Cashier 2 $2.4K" and ran off the side of the square and behind buildings.
+        /// Splitting them lets the square lay the icon, the verb and the number out on their own
+        /// lines inside its own bounds - and lets the icon carry the verb, so the text only has
+        /// to carry the noun.
+        /// </summary>
+        public virtual string ActionLabel => label;
+
+        /// <summary>The live number: "3/10", "22%", "$600". Empty when there is nothing to say.</summary>
+        public virtual string StatusValue => string.Empty;
+
+        /// <summary>Drawn when <see cref="IconItem"/> is null. See <see cref="Tycoon.UI.SquareIcon"/>.</summary>
+        public virtual Tycoon.UI.SquareIcon Icon => Tycoon.UI.SquareIcon.None;
+
+        /// <summary>
+        /// The goods this square is about, if any. A product icon beats an action icon: at a
+        /// collect square an egg says more than an up-arrow does.
+        /// </summary>
+        public virtual Tycoon.Config.ItemDefinition IconItem => null;
+
+        /// <summary>
+        /// The label and value on one line, for anything that wants plain text - the floating
+        /// <see cref="Tycoon.UI.InfoSign"/> and the debug readout.
+        /// </summary>
+        public virtual string StatusText
+        {
+            get
+            {
+                string value = StatusValue;
+                return string.IsNullOrEmpty(value) ? ActionLabel : ActionLabel + " " + value;
+            }
+        }
 
         /// <summary>False greys the square out, e.g. a machine that is jammed or a full hopper.</summary>
         public virtual bool IsOperational => true;
