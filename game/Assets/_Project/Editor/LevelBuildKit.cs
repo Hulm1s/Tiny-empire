@@ -224,7 +224,42 @@ namespace Tycoon.EditorTools
             public DepositStation Feed;
             public CollectStation Collect;
             public RepairStation Repair;
+            public UpgradeStation Upgrade;
             public AlertBeacon Beacon;
+        }
+
+        /// <summary>
+        /// The chickens themselves, one object per possible bird. The machine shows the first
+        /// N, so buying one makes a chicken visibly appear in the yard rather than just
+        /// changing a number.
+        /// </summary>
+        private static Transform BuildFlock(Transform parent, int maxUnits)
+        {
+            var holder = new GameObject("Flock");
+            holder.transform.SetParent(parent, false);
+
+            var feather = Mat("Chicken_Body", new Color(0.97f, 0.96f, 0.92f));
+            var comb = Mat("Chicken_Comb", new Color(0.9f, 0.32f, 0.28f));
+
+            for (int i = 0; i < maxUnits; i++)
+            {
+                var bird = new GameObject($"Chicken_{i}");
+                bird.transform.SetParent(holder.transform, false);
+
+                float x = maxUnits <= 1 ? 0f : Mathf.Lerp(-1.05f, 1.05f, i / (float)(maxUnits - 1));
+                bird.transform.localPosition = new Vector3(x, 0f, -1.45f);
+                // A little scatter so a row of birds does not look stamped out.
+                bird.transform.localRotation = Quaternion.Euler(0f, (i * 47) % 360, 0f);
+
+                Box("Body", bird.transform, new Vector3(0f, 0.22f, 0f),
+                    new Vector3(0.3f, 0.3f, 0.4f), feather);
+                Box("Head", bird.transform, new Vector3(0f, 0.45f, 0.12f),
+                    new Vector3(0.18f, 0.2f, 0.18f), feather);
+                Box("Comb", bird.transform, new Vector3(0f, 0.58f, 0.12f),
+                    new Vector3(0.07f, 0.1f, 0.13f), comb);
+            }
+
+            return holder.transform;
         }
 
         /// <summary>
@@ -291,7 +326,9 @@ namespace Tycoon.EditorTools
             string id, string name, Transform parent, Vector3 position,
             ItemDefinition input, ItemDefinition output,
             float secondsPerOutput, int inputCapacity, int outputCapacity,
-            Color bodyColor, float wearPerOutput = 2f, int inputPerOutput = 1)
+            Color bodyColor, float wearPerOutput = 2f, int inputPerOutput = 1,
+            int startUnits = 1, int maxUnits = 3, double unitPrice = 120d,
+            string unitName = "Chicken")
         {
             var root = new GameObject(name);
             root.transform.SetParent(parent, false);
@@ -340,6 +377,9 @@ namespace Tycoon.EditorTools
             kit.Machine.secondsPerOutput = secondsPerOutput;
             kit.Machine.inputPerOutput = inputPerOutput;
             kit.Machine.durability = kit.Durability;
+            kit.Machine.maxUnits = Mathf.Max(1, maxUnits);
+            kit.Machine.units = Mathf.Clamp(startUnits, 1, kit.Machine.maxUnits);
+            kit.Machine.unitVisuals = BuildFlock(root.transform, kit.Machine.maxUnits);
 
             var machineSign = root.AddComponent<InfoSign>();
             machineSign.machine = kit.Machine;
@@ -362,6 +402,15 @@ namespace Tycoon.EditorTools
             kit.Repair = Station<RepairStation>($"{id}.repair", "Repair", root.transform, new Vector3(-3.1f, 0f, 0f),
                 new Vector2(1.8f, 2.0f), "Fix", new Color(1f, 0.72f, 0.3f));
             kit.Repair.target = kit.Durability;
+
+            // Buying capacity sits opposite the repair square, so the two things you spend
+            // money on at a building are on either side of it.
+            kit.Upgrade = Station<UpgradeStation>($"{id}.upgrade", "BuyUnit", root.transform,
+                new Vector3(3.1f, 0f, 0f), new Vector2(1.8f, 2.0f),
+                $"+1 {unitName}", new Color(0.55f, 0.85f, 0.45f));
+            kit.Upgrade.target = kit.Machine;
+            kit.Upgrade.basePrice = unitPrice;
+            kit.Upgrade.unitName = unitName;
 
             kit.Beacon = root.AddComponent<AlertBeacon>();
             kit.Beacon.businessName = name;

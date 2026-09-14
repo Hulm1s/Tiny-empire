@@ -105,8 +105,14 @@ namespace Tycoon.EditorTools
             var coopA = LevelBuildKit.BuildWorkshop(
                 "farm.coopA", "CoopA", root, new Vector3(0f, 0f, 6f),
                 input: items.Corn, output: items.Egg,
-                secondsPerOutput: 2.5f, inputCapacity: 10, outputCapacity: 12,
-                bodyColor: new Color(0.86f, 0.42f, 0.34f), wearPerOutput: 1.5f);
+                // Paced against demand: a shopper arrives every 8s wanting 1-4 eggs, so the
+                // counter absorbs roughly 19 eggs a minute. One chicken at 6s an egg makes 10
+                // a minute, which is visibly short - that is what makes the second chicken feel
+                // worth buying. Two roughly match demand; a third builds a buffer against the
+                // coop jamming, and any more needs somewhere else to sell.
+                secondsPerOutput: 6f, inputCapacity: 10, outputCapacity: 12,
+                bodyColor: new Color(0.86f, 0.42f, 0.34f), wearPerOutput: 1.5f,
+                startUnits: 1, maxUnits: 3, unitPrice: 120d);
             coopA.Repair.costPerPoint = 0.25d;
 
             // The shopfront: till, stall, queue and the road shoppers walk in along. Eggs are
@@ -119,8 +125,9 @@ namespace Tycoon.EditorTools
             var coopB = LevelBuildKit.BuildWorkshop(
                 "farm.coopB", "CoopB", root, new Vector3(0f, 0f, -2f),
                 input: items.Corn, output: items.Egg,
-                secondsPerOutput: 2.5f, inputCapacity: 10, outputCapacity: 12,
-                bodyColor: new Color(0.62f, 0.5f, 0.85f), wearPerOutput: 1.5f);
+                secondsPerOutput: 6f, inputCapacity: 10, outputCapacity: 12,
+                bodyColor: new Color(0.62f, 0.5f, 0.85f), wearPerOutput: 1.5f,
+                startUnits: 1, maxUnits: 3, unitPrice: 180d);
             coopB.Repair.costPerPoint = 0.25d;
 
             // The buy-square sits exactly where the coop will appear, so paying it off reads

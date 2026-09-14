@@ -30,6 +30,17 @@ namespace Tycoon.Stations
         [Tooltip("Seconds of work per unit produced.")]
         [Min(0.05f)] public float secondsPerOutput = 3f;
 
+        [Header("Capacity")]
+        [Tooltip("How many chickens / ovens / staff are working here. Output scales with this, " +
+                 "and so does the feed the building eats - which is the point. More chickens " +
+                 "means more eggs AND more corn runs, so growing production grows the work.")]
+        [Min(1)] public int units = 1;
+
+        [Min(1)] public int maxUnits = 3;
+
+        [Tooltip("Parent whose children are the individual chickens. The first N are shown.")]
+        public Transform unitVisuals;
+
         [Header("Upkeep")]
         [Tooltip("Optional. Without it the machine never wears out and never needs repair.")]
         public Durability durability;
@@ -40,8 +51,14 @@ namespace Tycoon.Stations
 
         public event Action Changed;
 
+        /// <summary>Seconds per unit at the current headcount.</summary>
+        public float SecondsPerOutputNow => secondsPerOutput / Mathf.Max(1, units);
+
+        public bool IsAtMaxUnits => units >= maxUnits;
+
         /// <summary>0-1 progress through the current unit, for the floating progress ring.</summary>
-        public float Progress01 => secondsPerOutput <= 0f ? 0f : Mathf.Clamp01(_progress / secondsPerOutput);
+        public float Progress01 =>
+            SecondsPerOutputNow <= 0f ? 0f : Mathf.Clamp01(_progress / SecondsPerOutputNow);
 
         public Blockage CurrentBlockage { get; private set; }
         public bool IsBlocked => CurrentBlockage != Blockage.None;
@@ -51,8 +68,29 @@ namespace Tycoon.Stations
         private void OnEnable() => SaveSystem.Register(this);
         private void OnDisable() => SaveSystem.Unregister(this);
 
+        /// <summary>Adds one chicken. Returns false when the building is already full.</summary>
+        public bool TryAddUnit()
+        {
+            if (IsAtMaxUnits) return false;
+
+            units++;
+            RefreshUnitVisuals();
+            Changed?.Invoke();
+            return true;
+        }
+
+        private void RefreshUnitVisuals()
+        {
+            if (unitVisuals == null) return;
+
+            for (int i = 0; i < unitVisuals.childCount; i++)
+                unitVisuals.GetChild(i).gameObject.SetActive(i < units);
+        }
+
         private void Start()
         {
+            RefreshUnitVisuals();
+
             // Deliberately deferred to Start: every buffer in the scene has finished restoring
             // its own saved contents by now, so offline production runs against real numbers.
             if (!_awaitingCatchUp) return;
@@ -66,7 +104,7 @@ namespace Tycoon.Stations
 
         private void Advance(double seconds)
         {
-            if (secondsPerOutput <= 0f || output == null) return;
+            if (SecondsPerOutputNow <= 0f || output == null) return;
 
             double remaining = seconds;
             int guard = 0;
@@ -76,7 +114,7 @@ namespace Tycoon.Stations
                 CurrentBlockage = EvaluateBlockage();
                 if (CurrentBlockage != Blockage.None) break;
 
-                double needed = secondsPerOutput - _progress;
+                double needed = SecondsPerOutputNow - _progress;
                 if (remaining < needed)
                 {
                     _progress += (float)remaining;
@@ -113,12 +151,14 @@ namespace Tycoon.Stations
         {
             public float progress;
             public double lastUnix;
+            public int units;
         }
 
         public string CaptureState() => JsonUtility.ToJson(new State
         {
             progress = _progress,
-            lastUnix = GameClock.NowUnix
+            lastUnix = GameClock.NowUnix,
+            units = units
         });
 
         public void RestoreState(string json)
@@ -127,6 +167,9 @@ namespace Tycoon.Stations
             _progress = s.progress;
             _restoredAtUnix = s.lastUnix;
             _awaitingCatchUp = true;
+            // Older saves have no headcount recorded; leave the scene's starting value alone.
+            if (s.units > 0) units = Mathf.Clamp(s.units, 1, maxUnits);
+            RefreshUnitVisuals();
         }
     }
 }
