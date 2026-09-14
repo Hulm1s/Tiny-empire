@@ -40,6 +40,7 @@ namespace Tycoon.Customers
 
         public Phase CurrentPhase { get; private set; } = Phase.Arriving;
         public ItemDefinition Wanted => _wanted;
+        public int Requested => _requested;
         public int Remaining => Mathf.Max(0, _requested - _delivered);
         public bool IsSatisfied => _delivered >= _requested;
 
@@ -114,6 +115,11 @@ namespace Tycoon.Customers
         {
             CurrentPhase = Phase.Leaving;
             if (bubble != null) bubble.SetVisible(false);
+
+            Tycoon.UI.WorldFeedback.Show(
+                transform.position + Vector3.up * 2.1f,
+                happy ? "THANKS!" : "LEFT ANGRY",
+                happy ? new Color(0.55f, 0.92f, 0.55f) : new Color(0.95f, 0.4f, 0.35f));
 
             if (_queue != null)
             {

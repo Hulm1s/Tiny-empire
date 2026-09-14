@@ -30,9 +30,10 @@ namespace Tycoon.UI
 
         /// <summary>
         /// Corner readout of frame time and player state. Invaluable when the only way to
-        /// inspect a Web build is to look at a screenshot of it. Turn off before release.
+        /// inspect a Web build is to look at a screenshot of it, so it stays in the code -
+        /// flip this to true whenever something needs diagnosing on a real device.
         /// </summary>
-        public static bool ShowDebug = true;
+        public static bool ShowDebug = false;
 
         private Text _debugLabel;
         private float _fpsSmoothed;

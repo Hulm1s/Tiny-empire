@@ -1,5 +1,6 @@
 using System.IO;
 using Tycoon.Config;
+using Tycoon.Core;
 using Tycoon.Player;
 using Tycoon.Stations;
 using Tycoon.UI;
@@ -137,12 +138,14 @@ namespace Tycoon.EditorTools
         /// Creates a station: trigger volume, floor decal and floating sign, all sized together.
         /// This is the single call every interaction in the game is built from.
         /// </summary>
-        public static T Station<T>(string name, Transform parent, Vector3 position, Vector2 size,
-            string label, Color color) where T : StationBase
+        public static T Station<T>(string id, string name, Transform parent, Vector3 position,
+            Vector2 size, string label, Color color) where T : StationBase
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.localPosition = position;
+
+            Identify(go, id);
 
             var trigger = go.AddComponent<BoxCollider>();
             trigger.isTrigger = true;
@@ -153,23 +156,26 @@ namespace Tycoon.EditorTools
             station.label = label;
             station.zoneColor = color;
 
-            Decal(go.transform, size, color, $"Zone_{name}");
+            // The square replaces the old flat slab. It is the game's main way of talking to
+            // the player, so it carries the label, the "you are standing here" state and the
+            // progress ring all in one.
+            var square = go.AddComponent<InteractionSquare>();
+            square.Configure(station, size, color);
 
-            var sign = go.AddComponent<InfoSign>();
-            sign.station = station;
-            // Station signs sit low and machine signs sit high, so a building's own status
-            // never collides with the labels of the squares around it.
-            sign.height = 1.5f;
-
+            // No floating sign here on purpose: the square itself now carries the label and
+            // the numbers. Two labels for one action was clutter, and putting the text on the
+            // ground keeps the information where the action happens.
             return station;
         }
 
-        public static ItemBuffer Buffer(string name, Transform parent, Vector3 position,
+        public static ItemBuffer Buffer(string id, string name, Transform parent, Vector3 position,
             ItemDefinition item, int capacity, int starting = 0)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.localPosition = position;
+
+            Identify(go, id);
 
             var buffer = go.AddComponent<ItemBuffer>();
             buffer.item = item;
@@ -180,6 +186,19 @@ namespace Tycoon.EditorTools
             so.ApplyModifiedPropertiesWithoutUndo();
 
             return buffer;
+        }
+
+        /// <summary>
+        /// Stamps a stable save id. Every object that saves state needs one: without it the
+        /// save key falls back to the hierarchy path, and renaming or moving the object
+        /// silently wipes its progress.
+        /// </summary>
+        public static SaveIdentity Identify(GameObject go, string id)
+        {
+            var identity = go.GetComponent<SaveIdentity>();
+            if (identity == null) identity = go.AddComponent<SaveIdentity>();
+            identity.Assign(id);
+            return identity;
         }
 
         /// <summary>
@@ -249,7 +268,7 @@ namespace Tycoon.EditorTools
         }
 
         public static Workshop BuildWorkshop(
-            string name, Transform parent, Vector3 position,
+            string id, string name, Transform parent, Vector3 position,
             ItemDefinition input, ItemDefinition output,
             float secondsPerOutput, int inputCapacity, int outputCapacity,
             Color bodyColor, float wearPerOutput = 2f, int inputPerOutput = 1)
@@ -264,11 +283,15 @@ namespace Tycoon.EditorTools
             Box("Body", root.transform, new Vector3(0f, 0.9f, 0f), new Vector3(3.0f, 1.8f, 2.2f), body);
             Box("Roof", root.transform, new Vector3(0f, 1.95f, 0f), new Vector3(3.4f, 0.3f, 2.6f), roof);
 
+            // The machine and its durability both live on the root; the type suffix in the
+            // save key keeps them apart.
+            Identify(root, id);
+
             var kit = new Workshop { Root = root };
 
-            kit.Input = Buffer("InputBuffer", root.transform, new Vector3(0f, 0.3f, 1.4f),
+            kit.Input = Buffer($"{id}.input", "InputBuffer", root.transform, new Vector3(0f, 0.3f, 1.4f),
                 input, inputCapacity);
-            kit.Output = Buffer("OutputBuffer", root.transform, new Vector3(0f, 0.3f, -1.4f),
+            kit.Output = Buffer($"{id}.output", "OutputBuffer", root.transform, new Vector3(0f, 0.3f, -1.4f),
                 output, outputCapacity);
 
             kit.Durability = root.AddComponent<Durability>();
@@ -291,15 +314,15 @@ namespace Tycoon.EditorTools
             // its input on the left and its output on the right runs off both edges at once.
             // Stacking them also gives the level a single downhill flow: harvest at the top,
             // feed, collect, sell at the bottom.
-            kit.Feed = Station<DepositStation>("Feed", root.transform, new Vector3(0f, 0f, 2.5f),
+            kit.Feed = Station<DepositStation>($"{id}.feed", "Feed", root.transform, new Vector3(0f, 0f, 2.5f),
                 new Vector2(2.6f, 2.0f), "Feed", new Color(0.42f, 0.72f, 1f));
             kit.Feed.target = kit.Input;
 
-            kit.Collect = Station<CollectStation>("Collect", root.transform, new Vector3(0f, 0f, -2.5f),
+            kit.Collect = Station<CollectStation>($"{id}.collect", "Collect", root.transform, new Vector3(0f, 0f, -2.5f),
                 new Vector2(2.6f, 2.0f), output.displayName, new Color(0.55f, 0.9f, 0.5f));
             kit.Collect.source = kit.Output;
 
-            kit.Repair = Station<RepairStation>("Repair", root.transform, new Vector3(-2.8f, 0f, 0f),
+            kit.Repair = Station<RepairStation>($"{id}.repair", "Repair", root.transform, new Vector3(-2.8f, 0f, 0f),
                 new Vector2(1.8f, 2.0f), "Fix", new Color(1f, 0.72f, 0.3f));
             kit.Repair.target = kit.Durability;
 
@@ -324,7 +347,7 @@ namespace Tycoon.EditorTools
             public Tycoon.Customers.CustomerQueue Queue;
         }
 
-        public static Shopfront BuildShopfront(string name, Transform parent, Vector3 position,
+        public static Shopfront BuildShopfront(string id, string name, Transform parent, Vector3 position,
             ItemDefinition[] catalogue, int queueLength = 3, float roadHalfLength = 14f)
         {
             var root = new GameObject(name);
@@ -347,7 +370,9 @@ namespace Tycoon.EditorTools
             }
 
             // --- the till the player stands at -------------------------------------------
-            var register = Station<RegisterStation>("Register", root.transform, Vector3.zero,
+            Identify(root, id);
+
+            var register = Station<RegisterStation>($"{id}.register", "Register", root.transform, Vector3.zero,
                 new Vector2(4f, 2.2f), "Serve", new Color(0.45f, 0.85f, 0.6f));
 
             BuildStall(root.transform, new Vector3(0f, 0f, -1.6f));
@@ -437,10 +462,10 @@ namespace Tycoon.EditorTools
         }
 
         /// <summary>A crop field the player harvests by walking through it.</summary>
-        public static HarvestStation BuildField(string name, Transform parent, Vector3 position,
+        public static HarvestStation BuildField(string id, string name, Transform parent, Vector3 position,
             ItemDefinition crop, int plots, float regrowSeconds, Vector2 size)
         {
-            var station = Station<HarvestStation>(name, parent, position, size,
+            var station = Station<HarvestStation>(id, name, parent, position, size,
                 crop.displayName, new Color(0.95f, 0.83f, 0.35f));
             station.crop = crop;
             station.plots = plots;

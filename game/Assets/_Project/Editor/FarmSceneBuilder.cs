@@ -43,6 +43,7 @@ namespace Tycoon.EditorTools
             var root = CreateLevelRoot();
 
             BuildFarm(root, items);
+            BuildBoundary(root);
             // Start between the first coop and the empty plot, so both the corn field above
             // and the locked plot below are on screen from the first frame.
             CreatePlayer(new Vector3(0f, 0.2f, 1f), root.rotation);
@@ -97,11 +98,11 @@ namespace Tycoon.EditorTools
             // A workshop is about 7 units deep once its feed and collect squares are counted,
             // so the buildings are spaced accordingly. Everything stays within roughly 6 units
             // of the centre line, which is what the portrait camera can actually show.
-            var cornField = LevelBuildKit.BuildField("CornField", root, new Vector3(0f, 0f, 12f),
+            var cornField = LevelBuildKit.BuildField("farm.cornfield", "CornField", root, new Vector3(0f, 0f, 12f),
                 items.Corn, plots: 8, regrowSeconds: 2.2f, size: new Vector2(6.5f, 3.5f));
 
             var coopA = LevelBuildKit.BuildWorkshop(
-                "CoopA", root, new Vector3(0f, 0f, 6f),
+                "farm.coopA", "CoopA", root, new Vector3(0f, 0f, 6f),
                 input: items.Corn, output: items.Egg,
                 secondsPerOutput: 2.5f, inputCapacity: 10, outputCapacity: 12,
                 bodyColor: new Color(0.86f, 0.42f, 0.34f), wearPerOutput: 1.5f);
@@ -110,12 +111,12 @@ namespace Tycoon.EditorTools
             // The shopfront: till, stall, queue and the road shoppers walk in along. Eggs are
             // only worth money when somebody at the counter is asking for them, so the farm
             // has to keep pace with demand rather than just pile up stock.
-            var shop = LevelBuildKit.BuildShopfront("Market", root, new Vector3(0f, 0f, -8f),
+            var shop = LevelBuildKit.BuildShopfront("farm.market", "Market", root, new Vector3(0f, 0f, -8f),
                 catalogue: new[] { items.Egg }, queueLength: 3);
 
             // --- the first expansion --------------------------------------------------
             var coopB = LevelBuildKit.BuildWorkshop(
-                "CoopB", root, new Vector3(0f, 0f, -1.5f),
+                "farm.coopB", "CoopB", root, new Vector3(0f, 0f, -1.5f),
                 input: items.Corn, output: items.Egg,
                 secondsPerOutput: 2.5f, inputCapacity: 10, outputCapacity: 12,
                 bodyColor: new Color(0.62f, 0.5f, 0.85f), wearPerOutput: 1.5f);
@@ -123,7 +124,7 @@ namespace Tycoon.EditorTools
 
             // The buy-square sits exactly where the coop will appear, so paying it off reads
             // as the building rising out of the plot you were standing on.
-            var unlock = LevelBuildKit.Station<UnlockStation>("UnlockCoopB", root,
+            var unlock = LevelBuildKit.Station<UnlockStation>("farm.unlock.coopB", "UnlockCoopB", root,
                 new Vector3(0f, 0f, -1.5f), new Vector2(3.4f, 2.6f),
                 "New Coop", new Color(1f, 0.85f, 0.35f));
             unlock.price = 150d;
@@ -132,9 +133,9 @@ namespace Tycoon.EditorTools
 
             // --- automation, and the running cost that comes with it ------------------
             // Each hire square sits beside the leg of the chain it takes over, so it is
-            // obvious what you are buying. Wages are drawn continuously, which is what keeps
-            // a fully automated farm from being the end of the game: it still jams, still
-            // spoils, and now it costs money every minute whether you are watching or not.
+            // obvious what you are buying. Workers take a cut of every unit they deliver, so
+            // automation is a running cost that scales with throughput - and a fully automated
+            // farm still jams and still spoils, so it is never the end of the game.
             BuildHire(root, "Harvester", new Vector3(2.9f, 0f, 8.5f), price: 250d,
                 pickup: cornField, dropoff: coopA.Feed,
                 color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopA.Beacon);
@@ -158,7 +159,7 @@ namespace Tycoon.EditorTools
         {
             var worker = LevelBuildKit.BuildWorker(name, root, position, pickup, dropoff, color, feePerDelivery);
 
-            var hire = LevelBuildKit.Station<UnlockStation>($"Hire{name}", root, position,
+            var hire = LevelBuildKit.Station<UnlockStation>($"farm.hire.{name}", $"Hire{name}", root, position,
                 new Vector2(1.8f, 1.8f), $"Hire {name}", new Color(0.55f, 0.8f, 1f));
             hire.price = price;
             hire.payPerTick = 6d;
@@ -168,6 +169,47 @@ namespace Tycoon.EditorTools
             if (beacon != null && beacon.worker == null) beacon.worker = worker;
 
             worker.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Invisible walls around the playable area.
+        ///
+        /// Without these the player can simply walk off the edge of the ground plane and fall
+        /// out of the world forever, with no way back except reloading. Found by holding a
+        /// movement key for twenty seconds, which a bored player will absolutely do.
+        ///
+        /// Sized to comfortably contain the farm and the full length of the road.
+        /// </summary>
+        private static void BuildBoundary(Transform root)
+        {
+            const float halfWidth = 20f;
+            const float halfDepth = 22f;
+            const float thickness = 2f;
+            const float height = 6f;
+
+            var boundary = new GameObject("Boundary");
+            boundary.transform.SetParent(root, false);
+
+            AddWall(boundary.transform, "North", new Vector3(0f, height * 0.5f, halfDepth),
+                new Vector3(halfWidth * 2f, height, thickness));
+            AddWall(boundary.transform, "South", new Vector3(0f, height * 0.5f, -halfDepth),
+                new Vector3(halfWidth * 2f, height, thickness));
+            AddWall(boundary.transform, "East", new Vector3(halfWidth, height * 0.5f, 0f),
+                new Vector3(thickness, height, halfDepth * 2f));
+            AddWall(boundary.transform, "West", new Vector3(-halfWidth, height * 0.5f, 0f),
+                new Vector3(thickness, height, halfDepth * 2f));
+        }
+
+        private static void AddWall(Transform parent, string name, Vector3 position, Vector3 size)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = position;
+
+            var box = go.AddComponent<BoxCollider>();
+            box.size = size;
+            // Solid, not a trigger: the CharacterController must actually be stopped by it.
+            box.isTrigger = false;
         }
 
         private static void BuildEnvironment()

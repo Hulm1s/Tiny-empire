@@ -15,6 +15,9 @@ namespace Tycoon.Stations
         public override string StatusText =>
             source == null ? label : $"{label} {source.Count}";
 
+        /// <summary>The ring shows how much is left waiting to be picked up.</summary>
+        protected override float TransferProgress => source != null ? source.Fill : 0f;
+
         protected override bool TickWithPlayer()
         {
             if (source == null || source.item == null || source.IsEmpty) return false;
@@ -28,6 +31,10 @@ namespace Tycoon.Stations
                 source.Add(1);
                 return false;
             }
+
+            Tycoon.UI.WorldFeedback.Add($"collect{GetInstanceID()}",
+                Carry.transform.position + Vector3.up * 2.2f, 1,
+                source.item.displayName, source.item.color);
 
             return true;
         }
