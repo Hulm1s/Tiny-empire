@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using Tycoon.Config;
@@ -54,6 +55,7 @@ namespace Tycoon.EditorTools
             EditorSceneManager.SaveScene(scene, ScenePath);
 
             RegisterOnlyScene();
+            RememberSceneForNextOpen();
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -62,6 +64,38 @@ namespace Tycoon.EditorTools
             Debug.Log("[FarmSceneBuilder] SCENE_OK");
 
             if (Application.isBatchMode) EditorApplication.Exit(0);
+        }
+
+        /// <summary>
+        /// Makes the editor open the farm next time somebody launches the project.
+        ///
+        /// A headless rebuild quits through EditorApplication.Exit, which skips the shutdown
+        /// that normally records which scenes were open. Unity then starts with no scene loaded
+        /// at all, so opening the project shows an empty grey viewport and looks for all the
+        /// world like the game has vanished - the scene asset is fine, nothing is displaying it.
+        ///
+        /// Writing the file the editor reads on startup is blunt, but it is the only thing that
+        /// survives Exit, and being wrong costs nothing: a bad file just means no scene opens,
+        /// which is exactly where we were.
+        /// </summary>
+        private static void RememberSceneForNextOpen()
+        {
+            try
+            {
+                const string setupFile = "Library/LastSceneManagerSetup.txt";
+                Directory.CreateDirectory("Library");
+                File.WriteAllText(setupFile,
+                    "sceneSetups:\n" +
+                    $"- path: {ScenePath}\n" +
+                    "  isLoaded: 1\n" +
+                    "  isActive: 1\n" +
+                    "  isSubScene: 0\n");
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                // Only a convenience; never worth failing a build over.
+                Debug.LogWarning($"[FarmSceneBuilder] Could not record the open scene: {e.Message}");
+            }
         }
 
         private class Items
