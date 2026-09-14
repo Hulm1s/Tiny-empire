@@ -1,6 +1,6 @@
+using System.Collections.Generic;
 using System.Text;
 using Tycoon.Stations;
-using Tycoon.UI;
 using UnityEngine;
 
 namespace Tycoon.Upkeep
@@ -35,10 +35,25 @@ namespace Tycoon.Upkeep
 
         private readonly StringBuilder _builder = new StringBuilder(64);
 
+        /// <summary>
+        /// Every beacon currently running, so the HUD can poll them on its own schedule.
+        ///
+        /// Beacons used to push into the HUD from their own Update, which meant every business
+        /// composed an alert string sixty times a second to report a condition that changes
+        /// once a minute. The HUD now asks, a few times a second, and nothing is built in
+        /// between.
+        /// </summary>
+        public static readonly List<AlertBeacon> Active = new List<AlertBeacon>();
+
         /// <summary>Non-empty when this business wants attention. Read by the world map later.</summary>
         public string CurrentAlert { get; private set; }
 
-        private void Update()
+        private void OnEnable() => Active.Add(this);
+
+        private void OnDisable() => Active.Remove(this);
+
+        /// <summary>Recomputes <see cref="CurrentAlert"/>. Called by the HUD, not per frame.</summary>
+        public void Refresh()
         {
             _builder.Clear();
 
@@ -54,9 +69,6 @@ namespace Tycoon.Upkeep
             else if (inputBuffer != null && inputBuffer.IsEmpty && machine != null) { /* covered above */ }
 
             CurrentAlert = _builder.Length == 0 ? "" : $"{businessName}: {_builder}";
-
-            if (!string.IsNullOrEmpty(CurrentAlert) && HudRoot.Instance != null)
-                HudRoot.Instance.ReportAlert(CurrentAlert);
         }
 
         private void Add(string reason)

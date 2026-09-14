@@ -184,38 +184,44 @@ namespace Tycoon.EditorTools
             cowB.Repair.costPerPoint = 0.35d;
 
             // ---- hired hands ----------------------------------------------------------
-            // Hire squares sit in the central corridor beside the leg they take over, so it is
-            // obvious what each one buys. Workers take a cut of every unit they deliver, so
-            // automation is a running cost that scales with throughput.
-            var hireHarvestA = BuildHire(root, "Harvester", "HarvesterA", HireSpot(cornA, true),
+            // A hire square goes where its worker's job visibly happens, not on some separate
+            // staffing row: the hand who cuts the crop and carries it to the birds is taken on
+            // at the field, and the one who works the till is taken on at the till. Standing in
+            // front of a counter and buying a cashier is immediately understandable in a way
+            // that a square out in the corridor never was.
+            //
+            // Workers take a cut of every unit they deliver, so automation is a running cost
+            // that scales with throughput.
+            var hireFarmerA = BuildHire(root, "Farmer", "HarvesterA", AtField(root, cornA, true),
                 price: 250d, pickup: cornA, dropoff: coopA.Feed,
                 color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopA.Beacon);
 
-            var hireSellA = BuildHire(root, "Seller", "SellerA", HireSpot(coopA.Collect, true),
+            var hireCashierA = BuildHire(root, "Cashier", "SellerA", AtTill(root, counterA, -1),
                 price: 400d, pickup: coopA.Collect, dropoff: counterA.Register,
                 color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopA.Beacon);
 
-            var hireHarvestB = BuildHire(root, "Harvester", "HarvesterB", HireSpot(cornB, true),
+            var hireFarmerB = BuildHire(root, "Farmer 2", "HarvesterB", AtField(root, cornB, true),
                 price: 700d, pickup: cornB, dropoff: coopB.Feed,
                 color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopB.Beacon);
 
-            var hireSellB = BuildHire(root, "Seller", "SellerB", HireSpot(coopB.Collect, true),
+            var hireCashierB = BuildHire(root, "Cashier 2", "SellerB", AtTill(root, counterA, -2),
                 price: 800d, pickup: coopB.Collect, dropoff: counterA.Register,
                 color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopB.Beacon);
 
-            var hireHayA = BuildHire(root, "Hay Hand", "HayHandA", HireSpot(hayField, false),
+            // Both hay hands are hired at the one hay field they both cut from, side by side.
+            var hireHayA = BuildHire(root, "Farmhand", "HayHandA", AtField(root, hayField, false, 1.2f),
                 price: 1500d, pickup: hayField, dropoff: cowA.Feed,
                 color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0.6d, beacon: cowA.Beacon);
 
-            var hireMilkA = BuildHire(root, "Milk Run", "MilkRunA", HireSpot(cowA.Collect, false),
+            var hireMilkA = BuildHire(root, "Milk Cashier", "MilkRunA", AtTill(root, counterB, 1),
                 price: 1700d, pickup: cowA.Collect, dropoff: counterB.Register,
                 color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowA.Beacon);
 
-            var hireHayB = BuildHire(root, "Hay Hand", "HayHandB", HireSpot(cowB.Feed, false),
+            var hireHayB = BuildHire(root, "Farmhand 2", "HayHandB", AtField(root, hayField, false, -1.2f),
                 price: 2200d, pickup: hayField, dropoff: cowB.Feed,
                 color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0.6d, beacon: cowB.Beacon);
 
-            var hireMilkB = BuildHire(root, "Milk Run", "MilkRunB", HireSpot(cowB.Collect, false),
+            var hireMilkB = BuildHire(root, "Milk Cashier 2", "MilkRunB", AtTill(root, counterB, 2),
                 price: 2400d, pickup: cowB.Collect, dropoff: counterB.Register,
                 color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowB.Beacon);
 
@@ -224,11 +230,11 @@ namespace Tycoon.EditorTools
             // can never be hired for a building that does not exist yet.
             Gate(root, "farm.unlock.cornB", "UnlockCornB", new Vector3(LeftWing, 0f, 10f),
                 new Vector2(5.5f, 3.5f), "New Field", 600d,
-                cornB.gameObject, hireHarvestB.gameObject);
+                cornB.gameObject, hireFarmerB.gameObject);
 
             Gate(root, "farm.unlock.coopB", "UnlockCoopB", new Vector3(LeftWing, 0f, -6f),
                 new Vector2(3.4f, 2.6f), "New Coop", 900d,
-                coopB.Root, hireSellB.gameObject);
+                coopB.Root, hireCashierB.gameObject);
 
             Gate(root, "farm.unlock.counterB", "UnlockCounterB", new Vector3(3f, 0f, -13f),
                 new Vector2(3.4f, 2.2f), "New Till", 1400d,
@@ -247,17 +253,41 @@ namespace Tycoon.EditorTools
                 cowB.Root, hireHayB.gameObject, hireMilkB.gameObject);
         }
 
-        /// <summary>
-        /// Where a hire square goes: in the central corridor, level with the square it
-        /// automates, on the side of the wing that faces the middle of the farm.
-        /// </summary>
-        private static Vector3 HireSpot(Component nextTo, bool leftWing)
-        {
-            Vector3 local = nextTo.transform.parent != null
-                ? nextTo.transform.parent.InverseTransformPoint(nextTo.transform.position)
-                : nextTo.transform.position;
+        /// <summary>Anything's position expressed in the level's own grid.</summary>
+        private static Vector3 LevelLocal(Transform root, Component thing) =>
+            root.InverseTransformPoint(thing.transform.position);
 
-            return new Vector3(leftWing ? local.x + 3.6f : local.x - 3.6f, 0f, local.z);
+        /// <summary>
+        /// A hire square at the outer edge of a crop field.
+        ///
+        /// Deliberately on the far side from the corridor. The player walks the length of the
+        /// wing dozens of times a session, and a hire square on that line would be stepped in
+        /// constantly - which, since standing in one spends money, is a tax on walking past.
+        /// </summary>
+        private static Vector3 AtField(Transform root, Component field, bool leftWing, float alongZ = 0f)
+        {
+            Vector3 local = LevelLocal(root, field);
+            // Half the field, half the square, and a gap - so the two never overlap and the
+            // player cannot be harvesting and buying at the same time.
+            const float clearance = 3.95f;
+            return new Vector3(local.x + (leftWing ? -clearance : clearance), 0f, local.z + alongZ);
+        }
+
+        /// <summary>
+        /// A hire square beside a till, on the serving side. <paramref name="slot"/> counts
+        /// outwards from the counter, away from the middle of the street, so a second cashier
+        /// lines up next to the first instead of drifting into the road or the other till.
+        /// </summary>
+        private static Vector3 AtTill(Transform root, LevelBuildKit.Counter till, int slot)
+        {
+            Vector3 local = LevelLocal(root, till.Register);
+
+            // The serving square is 3.6 wide and a hire square 1.8, so the first one has to
+            // start 3.1 out to leave a gap; after that they simply sit shoulder to shoulder.
+            float sign = slot < 0 ? -1f : 1f;
+            float offset = 3.1f + (Mathf.Abs(slot) - 1) * 2.1f;
+
+            return new Vector3(local.x + sign * offset, 0f, local.z);
         }
 
         /// <summary>

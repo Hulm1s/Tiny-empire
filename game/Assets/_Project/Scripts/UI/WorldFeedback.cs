@@ -81,7 +81,6 @@ namespace Tycoon.UI
 
         private Text _text;
         private RectTransform _root;
-        private Camera _camera;
         private float _age;
         private int _amount;
         private string _suffix;
@@ -192,8 +191,10 @@ namespace Tycoon.UI
 
         private void LateUpdate()
         {
-            if (_camera == null) _camera = Camera.main;
-            if (_camera != null) transform.rotation = _camera.transform.rotation;
+            // Popups are created several times a second during a transfer, so they share the
+            // cached camera rather than each running a tag search on their first frame.
+            var camera = WorldUi.Camera;
+            if (camera != null) transform.rotation = camera.transform.rotation;
         }
     }
 }

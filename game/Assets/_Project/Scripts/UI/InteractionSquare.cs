@@ -44,11 +44,42 @@ namespace Tycoon.UI
         private Image _iconImage;
         private Text _label;
         private RectTransform _labelRoot;
-        private Camera _camera;
 
         private float _scale = 1f;
 
-        private void Awake() => Build();
+        // ---- cost control -------------------------------------------------------------
+        // Writing to a Graphic's colour, or to an Image's fillAmount, marks its canvas dirty
+        // and rebuilds the mesh. A square that nobody is standing in has constant colours, so
+        // the last applied values are remembered and identical writes are skipped. An idle
+        // square then costs a handful of float comparisons instead of a canvas rebuild.
+        private Color _lastBorder, _lastBackdrop, _lastFill, _lastLabelColor;
+        private float _lastFillAmount = -1f;
+        private bool _hasAppliedColors;
+
+        /// <summary>Seconds between off-screen checks. Cheap, but there is no need to be exact.</summary>
+        private const float VisibilityInterval = 0.2f;
+
+        /// <summary>
+        /// Seconds between label refreshes. Every StatusText override builds a new string, so
+        /// at frame rate the squares alone allocated a couple of thousand strings a second -
+        /// which on WebGL is paid back as collection hitches. Six times a second still reads
+        /// as live for a counter that changes at most a few times a second anyway.
+        /// </summary>
+        private const float LabelInterval = 0.16f;
+
+        private float _visibilityTimer;
+        private float _labelTimer;
+        private bool _visible = true;
+
+        private void Awake()
+        {
+            Build();
+
+            // Stagger the timers so thirty-five squares do not all do their off-screen test and
+            // rebuild their labels on the same frame, which would show up as a regular stutter.
+            _visibilityTimer = Random.value * VisibilityInterval;
+            _labelTimer = Random.value * LabelInterval;
+        }
 
         /// <summary>
         /// Called by the level builder. Deliberately stores data only and builds nothing:
@@ -164,14 +195,47 @@ namespace Tycoon.UI
 
         private void LateUpdate()
         {
-            if (_labelRoot == null) return;
-            if (_camera == null) _camera = Camera.main;
-            if (_camera != null) _labelRoot.rotation = _camera.transform.rotation;
+            if (_labelRoot == null || !_visible) return;
+
+            var camera = WorldUi.Camera;
+            if (camera != null) _labelRoot.rotation = camera.transform.rotation;
+        }
+
+        /// <summary>
+        /// Turns the whole square off when it is off screen. Disabling the canvas objects takes
+        /// them out of the UI rebuild and render passes entirely, which is the single biggest
+        /// saving available: a full farm has thirty-five squares and the camera shows about six.
+        /// </summary>
+        private void SetVisible(bool visible)
+        {
+            if (_visible == visible) return;
+            _visible = visible;
+
+            if (_root != null) _root.gameObject.SetActive(visible);
+            if (_labelRoot != null) _labelRoot.gameObject.SetActive(visible);
+
+            // Coming back on screen, re-apply everything: the station may have changed
+            // completely while it was hidden.
+            if (visible)
+            {
+                _hasAppliedColors = false;
+                _lastFillAmount = -1f;
+                _labelTimer = 0f;
+            }
         }
 
         private void Update()
         {
             if (_root == null || station == null) return;
+
+            _visibilityTimer -= Time.deltaTime;
+            if (_visibilityTimer <= 0f)
+            {
+                _visibilityTimer = VisibilityInterval;
+                SetVisible(WorldUi.IsVisible(transform.position));
+            }
+
+            if (!_visible) return;
 
             bool occupied = station.IsOccupied;
             bool usable = station.IsOperational;
@@ -185,32 +249,74 @@ namespace Tycoon.UI
             else if (occupied)
                 targetScale = 1.03f;
 
+            float previous = _scale;
             _scale = Mathf.Lerp(_scale, targetScale, Time.deltaTime * 9f);
-            _root.localScale = Vector3.one * 0.01f * _scale;
+            // Moving the canvas root re-transforms every child, so a square that has settled at
+            // its resting size (an unusable one, or one being stood in) stops writing.
+            if (Mathf.Abs(_scale - previous) > 0.0002f)
+                _root.localScale = Vector3.one * 0.01f * _scale;
 
             Color baseColor = usable ? color : Color.Lerp(color, new Color(0.55f, 0.57f, 0.6f), 0.45f);
 
             // Border: thin and soft when idle, bright and solid the moment you step in. This is
             // the single clearest signal that the player is standing in the right place.
-            _border.color = new Color(
+            Apply(_border, ref _lastBorder, new Color(
                 Mathf.Lerp(baseColor.r, 1f, occupied ? 0.55f : 0.15f),
                 Mathf.Lerp(baseColor.g, 1f, occupied ? 0.55f : 0.15f),
                 Mathf.Lerp(baseColor.b, 1f, occupied ? 0.55f : 0.15f),
-                occupied ? 0.95f : 0.45f);
+                occupied ? 0.95f : 0.45f));
 
-            _backdrop.color = new Color(baseColor.r, baseColor.g, baseColor.b, occupied ? 0.55f : 0.34f);
+            Apply(_backdrop, ref _lastBackdrop,
+                new Color(baseColor.r, baseColor.g, baseColor.b, occupied ? 0.55f : 0.34f));
 
-            _fill.color = new Color(
+            Apply(_fill, ref _lastFill, new Color(
                 Mathf.Lerp(baseColor.r, 1f, 0.35f),
                 Mathf.Lerp(baseColor.g, 1f, 0.35f),
                 Mathf.Lerp(baseColor.b, 1f, 0.35f),
-                0.75f);
-            _fill.fillAmount = Mathf.Lerp(_fill.fillAmount, progress, Time.deltaTime * 12f);
+                0.75f));
 
-            _label.color = new Color(1f, 1f, 1f, usable ? 0.95f : 0.5f);
+            Apply(_label, ref _lastLabelColor, new Color(1f, 1f, 1f, usable ? 0.95f : 0.5f));
 
-            string wanted = station.StatusText;
-            if (_label.text != wanted) _label.text = wanted;
+            _hasAppliedColors = true;
+
+            // Changing fillAmount regenerates the image's geometry, so the eased value is
+            // snapped to a step first. Forty steps is finer than the ring is wide on a phone,
+            // and it means a ring that has finished moving stops costing anything at all.
+            float eased = Mathf.Lerp(_lastFillAmount < 0f ? progress : _lastFillAmount,
+                progress, Time.deltaTime * 12f);
+            float stepped = Mathf.Round(eased * 40f) / 40f;
+            if (!Mathf.Approximately(stepped, _lastFillAmount))
+            {
+                _lastFillAmount = stepped;
+                _fill.fillAmount = stepped;
+            }
+
+            _labelTimer -= Time.deltaTime;
+            if (_labelTimer <= 0f)
+            {
+                _labelTimer = LabelInterval;
+                string wanted = station.StatusText;
+                if (_label.text != wanted) _label.text = wanted;
+            }
         }
+
+        /// <summary>
+        /// Writes a colour only when it has actually changed. Assigning the same colour still
+        /// dirties the graphic and rebuilds its canvas, and an idle square assigns the same four
+        /// colours every single frame.
+        /// </summary>
+        private void Apply(Graphic graphic, ref Color last, Color wanted)
+        {
+            if (graphic == null) return;
+            if (_hasAppliedColors && Same(last, wanted)) return;
+
+            last = wanted;
+            graphic.color = wanted;
+        }
+
+        /// <summary>Equal to well below one step of an eight-bit colour channel.</summary>
+        private static bool Same(Color a, Color b) =>
+            Mathf.Abs(a.r - b.r) < 0.002f && Mathf.Abs(a.g - b.g) < 0.002f &&
+            Mathf.Abs(a.b - b.b) < 0.002f && Mathf.Abs(a.a - b.a) < 0.002f;
     }
 }

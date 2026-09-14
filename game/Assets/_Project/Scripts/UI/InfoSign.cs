@@ -36,10 +36,24 @@ namespace Tycoon.UI
 
         private TextMesh _text;
         private Transform _pivot;
-        private Camera _camera;
         private readonly StringBuilder _builder = new StringBuilder(64);
 
-        private void Awake() => EnsureText();
+        /// <summary>
+        /// Seconds between recomposes. Every line of this sign is built with string
+        /// interpolation, so composing at frame rate turns a handful of signs into a steady
+        /// stream of garbage - and WebGL pays for that in collection pauses, which is exactly
+        /// the stutter it is supposed to be helping the player avoid.
+        /// </summary>
+        private const float RefreshInterval = 0.2f;
+
+        private float _refreshTimer;
+        private bool _visible = true;
+
+        private void Awake()
+        {
+            EnsureText();
+            _refreshTimer = Random.value * RefreshInterval;
+        }
 
         private void EnsureText()
         {
@@ -78,11 +92,27 @@ namespace Tycoon.UI
             EnsureText();
             if (_text == null) return;
 
-            if (_camera == null) _camera = Camera.main;
+            _refreshTimer -= Time.deltaTime;
+            bool refresh = _refreshTimer <= 0f;
+            if (refresh)
+            {
+                _refreshTimer = RefreshInterval;
+                _visible = WorldUi.IsVisible(transform.position);
+            }
+
+            // A sign nobody can see needs neither billboarding nor a new string.
+            if (!_visible)
+            {
+                if (_text.gameObject.activeSelf) _text.gameObject.SetActive(false);
+                return;
+            }
 
             _pivot.localPosition = Vector3.up * height;
             // The camera angle is fixed, so matching its rotation is all the billboarding needed.
-            if (_camera != null) _pivot.rotation = _camera.transform.rotation;
+            var camera = WorldUi.Camera;
+            if (camera != null) _pivot.rotation = camera.transform.rotation;
+
+            if (!refresh) return;
 
             string content = Compose();
             if (_text.text != content) _text.text = content;
@@ -90,7 +120,8 @@ namespace Tycoon.UI
             bool show = !hideWhenEmpty || !string.IsNullOrEmpty(content);
             if (_text.gameObject.activeSelf != show) _text.gameObject.SetActive(show);
 
-            _text.color = Tint();
+            var tint = Tint();
+            if (_text.color != tint) _text.color = tint;
         }
 
         private string Compose()

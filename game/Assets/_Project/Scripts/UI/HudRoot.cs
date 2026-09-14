@@ -28,6 +28,11 @@ namespace Tycoon.UI
         private float _moneyPulse;
         private readonly List<string> _alerts = new List<string>();
 
+        /// <summary>Seconds between sweeps of the businesses for problems.</summary>
+        private const float AlertInterval = 0.25f;
+
+        private float _alertTimer;
+
         /// <summary>
         /// Corner readout of frame time and player state. Invaluable when the only way to
         /// inspect a Web build is to look at a screenshot of it, so it stays in the code -
@@ -205,7 +210,13 @@ namespace Tycoon.UI
                 _moneyPanel.localScale = new Vector3(scale, scale, 1f);
             }
 
-            RefreshAlerts();
+            _alertTimer -= Time.unscaledDeltaTime;
+            if (_alertTimer <= 0f)
+            {
+                _alertTimer = AlertInterval;
+                RefreshAlerts();
+            }
+
             RefreshDebug();
         }
 
@@ -230,18 +241,37 @@ namespace Tycoon.UI
             _safeArea.offsetMax = Vector2.zero;
         }
 
-        /// <summary>Registered by anything that wants the player's attention this frame.</summary>
+        /// <summary>Registered by anything that wants the player's attention.</summary>
         public void ReportAlert(string message)
         {
             if (!string.IsNullOrEmpty(message) && !_alerts.Contains(message)) _alerts.Add(message);
         }
 
+        /// <summary>
+        /// Asks every running business whether it needs the player, and redraws the list.
+        ///
+        /// Polled a few times a second rather than every frame: these are slow conditions - a
+        /// jam, a full basket - and composing the lines at frame rate cost more than the whole
+        /// rest of the upkeep system put together.
+        /// </summary>
         private void RefreshAlerts()
         {
             if (_alertLabel == null) return;
 
-            _alertLabel.text = _alerts.Count == 0 ? "" : string.Join("\n", _alerts);
             _alerts.Clear();
+
+            var beacons = Tycoon.Upkeep.AlertBeacon.Active;
+            for (int i = 0; i < beacons.Count; i++)
+            {
+                var beacon = beacons[i];
+                if (beacon == null) continue;
+
+                beacon.Refresh();
+                ReportAlert(beacon.CurrentAlert);
+            }
+
+            string wanted = _alerts.Count == 0 ? "" : string.Join("\n", _alerts);
+            if (_alertLabel.text != wanted) _alertLabel.text = wanted;
         }
     }
 }

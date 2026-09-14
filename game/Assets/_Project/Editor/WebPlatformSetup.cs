@@ -53,8 +53,14 @@ namespace Tycoon.EditorTools
                 // One hard-shadow cascade: enough to ground the buildings, nothing more.
                 SetBool(so, "m_SoftShadowsSupported", false);
                 SetInt(so, "m_ShadowCascadeCount", 1);
-                SetFloat(so, "m_ShadowDistance", 40f);
+                // The orthographic camera shows about 19 world units top to bottom, so anything
+                // past ~22 units is off screen and its shadow cannot be seen. Everything inside
+                // this radius is drawn a second time into the shadow map, so the distance is
+                // directly a draw-call budget - 40 was paying to shadow half the farm at once.
+                SetFloat(so, "m_ShadowDistance", 22f);
                 SetInt(so, "m_MainLightShadowmapResolution", 1024);
+                // Additional lights cost a per-object pass each; this game has one sun.
+                SetInt(so, "m_AdditionalLightsRenderingMode", 0); // Disabled
 
                 so.ApplyModifiedPropertiesWithoutUndo();
                 EditorUtility.SetDirty(asset);

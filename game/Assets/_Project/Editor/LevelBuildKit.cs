@@ -99,8 +99,16 @@ namespace Tycoon.EditorTools
 
         // ---------------------------------------------------------------- primitives
 
+        /// <summary>
+        /// A greybox block.
+        ///
+        /// <paramref name="castShadow"/> is worth thinking about for every call. Anything that
+        /// casts a shadow is drawn a second time into the shadow map, and this level is built
+        /// from hundreds of small props - crop stalks, road markings, fence rails. None of them
+        /// casts a shadow anyone would miss, and together they were most of the shadow pass.
+        /// </summary>
         public static GameObject Box(string name, Transform parent, Vector3 position, Vector3 scale,
-            Material material, bool collider = false)
+            Material material, bool collider = false, bool castShadow = true)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.name = name;
@@ -111,12 +119,18 @@ namespace Tycoon.EditorTools
             var box = go.GetComponent<Collider>();
             if (!collider && box != null) Object.DestroyImmediate(box);
 
-            go.GetComponent<Renderer>().sharedMaterial = material;
+            var renderer = go.GetComponent<Renderer>();
+            renderer.sharedMaterial = material;
+            if (!castShadow)
+            {
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+            }
             return go;
         }
 
         public static GameObject Cylinder(string name, Transform parent, Vector3 position, Vector3 scale,
-            Material material)
+            Material material, bool castShadow = true)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             go.name = name;
@@ -127,7 +141,13 @@ namespace Tycoon.EditorTools
             var collider = go.GetComponent<Collider>();
             if (collider != null) Object.DestroyImmediate(collider);
 
-            go.GetComponent<Renderer>().sharedMaterial = material;
+            var renderer = go.GetComponent<Renderer>();
+            renderer.sharedMaterial = material;
+            if (!castShadow)
+            {
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+            }
             return go;
         }
 
@@ -257,17 +277,17 @@ namespace Tycoon.EditorTools
             var rail = Mat("Pen_Rail", new Color(0.85f, 0.73f, 0.55f));
 
             Box("Ground", pen.transform, new Vector3(0f, 0.02f, 0f),
-                new Vector3(size.x, 0.04f, size.y), dirt);
+                new Vector3(size.x, 0.04f, size.y), dirt, castShadow: false);
 
             float hx = size.x * 0.5f, hz = size.y * 0.5f;
             for (int sx = -1; sx <= 1; sx += 2)
                 for (int sz = -1; sz <= 1; sz += 2)
                     Box($"Post_{sx}_{sz}", pen.transform, new Vector3(hx * sx, 0.35f, hz * sz),
-                        new Vector3(0.12f, 0.7f, 0.12f), post);
+                        new Vector3(0.12f, 0.7f, 0.12f), post, castShadow: false);
 
-            Box("RailN", pen.transform, new Vector3(0f, 0.45f, hz), new Vector3(size.x, 0.08f, 0.07f), rail);
-            Box("RailS", pen.transform, new Vector3(0f, 0.45f, -hz), new Vector3(size.x, 0.08f, 0.07f), rail);
-            Box("RailE", pen.transform, new Vector3(hx, 0.45f, 0f), new Vector3(0.07f, 0.08f, size.y), rail);
+            Box("RailN", pen.transform, new Vector3(0f, 0.45f, hz), new Vector3(size.x, 0.08f, 0.07f), rail, castShadow: false);
+            Box("RailS", pen.transform, new Vector3(0f, 0.45f, -hz), new Vector3(size.x, 0.08f, 0.07f), rail, castShadow: false);
+            Box("RailE", pen.transform, new Vector3(hx, 0.45f, 0f), new Vector3(0.07f, 0.08f, size.y), rail, castShadow: false);
 
             if (!cows)
             {
@@ -278,9 +298,9 @@ namespace Tycoon.EditorTools
                 {
                     float z = Mathf.Lerp(-hz * 0.6f, hz * 0.6f, i / 2f);
                     Box($"Nest_{i}", pen.transform, new Vector3(-hx + 0.3f, 0.17f, z),
-                        new Vector3(0.5f, 0.34f, 0.6f), nest);
+                        new Vector3(0.5f, 0.34f, 0.6f), nest, castShadow: false);
                     Box($"Straw_{i}", pen.transform, new Vector3(-hx + 0.3f, 0.36f, z),
-                        new Vector3(0.42f, 0.06f, 0.5f), straw);
+                        new Vector3(0.42f, 0.06f, 0.5f), straw, castShadow: false);
                 }
             }
 
@@ -519,14 +539,15 @@ namespace Tycoon.EditorTools
             var markings = Mat("RoadLine", new Color(0.88f, 0.88f, 0.8f));
 
             Box("Road", root.transform, new Vector3(0f, 0.02f, -4.6f),
-                new Vector3(roadHalfLength * 2f, 0.04f, 2.8f), tarmac);
+                new Vector3(roadHalfLength * 2f, 0.04f, 2.8f), tarmac, castShadow: false);
 
             // Dashes down the middle so it reads as a road rather than a grey strip.
             int dashes = Mathf.RoundToInt(roadHalfLength);
             for (int i = -dashes; i <= dashes; i++)
             {
                 Box($"Line_{i + dashes}", root.transform,
-                    new Vector3(i * 2f, 0.05f, -4.6f), new Vector3(0.9f, 0.04f, 0.14f), markings);
+                    new Vector3(i * 2f, 0.05f, -4.6f), new Vector3(0.9f, 0.04f, 0.14f), markings,
+                    castShadow: false);
             }
 
             return new Shopfront { Root = root, RoadHalfLength = roadHalfLength };
@@ -610,9 +631,9 @@ namespace Tycoon.EditorTools
             Box("Counter", stall.transform, new Vector3(0f, 0.5f, 0f),
                 new Vector3(3.4f, 1f, 0.5f), wood, collider: true);
             Box("PostL", stall.transform, new Vector3(-1.5f, 1.1f, 0f),
-                new Vector3(0.16f, 2.2f, 0.16f), wood);
+                new Vector3(0.16f, 2.2f, 0.16f), wood, castShadow: false);
             Box("PostR", stall.transform, new Vector3(1.5f, 1.1f, 0f),
-                new Vector3(0.16f, 2.2f, 0.16f), wood);
+                new Vector3(0.16f, 2.2f, 0.16f), wood, castShadow: false);
             Box("Awning", stall.transform, new Vector3(0f, 2.2f, -0.3f),
                 new Vector3(3.6f, 0.18f, 1.4f), awning);
         }
@@ -678,9 +699,9 @@ namespace Tycoon.EditorTools
                 plot.transform.localPosition = new Vector3(x, 0f, z);
 
                 Cylinder("Stalk", plot.transform, new Vector3(0f, 0.45f, 0f),
-                    new Vector3(0.12f, 0.45f, 0.12f), stalk);
+                    new Vector3(0.12f, 0.45f, 0.12f), stalk, castShadow: false);
                 Box("Head", plot.transform, new Vector3(0f, 1f, 0f),
-                    new Vector3(0.3f, 0.42f, 0.3f), head);
+                    new Vector3(0.3f, 0.42f, 0.3f), head, castShadow: false);
             }
 
             return station;

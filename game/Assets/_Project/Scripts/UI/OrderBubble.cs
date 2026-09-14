@@ -25,7 +25,7 @@ namespace Tycoon.UI
         private Image _iconImage;
         private Image _patienceFill;
         private Text _countLabel;
-        private Camera _camera;
+        private float _lastPatience = -1f;
 
         private void Awake() => Build();
 
@@ -123,11 +123,22 @@ namespace Tycoon.UI
         public void SetPatience(float normalised)
         {
             if (_patienceFill == null) return;
+
+            // Called every frame by the customer, and both of these writes rebuild the bubble's
+            // canvas. The bar is 120 pixels wide, so quantising to sixty steps is finer than
+            // anyone can see and leaves most frames with nothing to do.
             float t = Mathf.Clamp01(normalised);
-            _patienceFill.fillAmount = t;
-            _patienceFill.color = t > 0.5f ? new Color(0.35f, 0.78f, 0.45f)
-                : t > 0.25f ? new Color(0.95f, 0.75f, 0.25f)
-                : new Color(0.9f, 0.35f, 0.3f);
+            float stepped = Mathf.Round(t * 60f) / 60f;
+            if (!Mathf.Approximately(stepped, _lastPatience))
+            {
+                _lastPatience = stepped;
+                _patienceFill.fillAmount = stepped;
+
+                var wanted = t > 0.5f ? new Color(0.35f, 0.78f, 0.45f)
+                    : t > 0.25f ? new Color(0.95f, 0.75f, 0.25f)
+                    : new Color(0.9f, 0.35f, 0.3f);
+                if (_patienceFill.color != wanted) _patienceFill.color = wanted;
+            }
         }
 
         public void SetVisible(bool visible)
@@ -138,11 +149,12 @@ namespace Tycoon.UI
         private void LateUpdate()
         {
             if (_canvas == null || !_canvas.gameObject.activeSelf) return;
-            if (_camera == null) _camera = Camera.main;
-            if (_camera == null) return;
+
+            var camera = WorldUi.Camera;
+            if (camera == null) return;
 
             // Fixed camera angle, so matching its rotation is all the billboarding needed.
-            _root.rotation = _camera.transform.rotation;
+            _root.rotation = camera.transform.rotation;
             _root.localPosition = Vector3.up * height;
         }
     }
