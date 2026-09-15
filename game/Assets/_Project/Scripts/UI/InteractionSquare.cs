@@ -53,15 +53,17 @@ namespace Tycoon.UI
         private static readonly Vector2 MinCard = new Vector2(2.5f, 2.1f);
 
         /// <summary>
-        /// And never grows beyond this, however big the trigger is.
+        /// The readable block in the middle of the square: icon, label, value, progress.
         ///
-        /// A corn field's trigger is 5.5 x 3.5 m; a card that size would be a billboard lying in
-        /// a field. The crops already show how far the field reaches, so the card only has to be
-        /// big enough to read.
+        /// Fixed, while the outline around it grows with the trigger. Those are two different
+        /// jobs - the outline says where you may stand, the block says what happens - and tying
+        /// them together got both wrong. A corn field's outline used to be capped well inside
+        /// the crop it covered, so the player stood on corn that looked outside the square.
         /// </summary>
-        private static readonly Vector2 MaxCard = new Vector2(3.4f, 2.4f);
+        private static readonly Vector2 ContentSize = new Vector2(2.5f, 2.1f);
 
         private RectTransform _root;
+        private RectTransform _content;
         private Image[] _edges;
         private Image _backdrop;
         private Image _progressTrack;
@@ -124,10 +126,16 @@ namespace Tycoon.UI
             color = squareColor;
         }
 
-        /// <summary>The card's footprint: the trigger's, held inside readable limits.</summary>
+        /// <summary>
+        /// The outline's footprint: exactly the trigger, never smaller than legible.
+        ///
+        /// Matching the trigger is the point - a player standing anywhere inside the dashes
+        /// can perform the action, and anywhere outside them cannot. The minimum only applies
+        /// to triggers too small to draw.
+        /// </summary>
         private Vector2 CardSize => new Vector2(
-            Mathf.Clamp(size.x, MinCard.x, MaxCard.x),
-            Mathf.Clamp(size.y, MinCard.y, MaxCard.y));
+            Mathf.Max(size.x, MinCard.x),
+            Mathf.Max(size.y, MinCard.y));
 
         private void Build()
         {
@@ -149,10 +157,14 @@ namespace Tycoon.UI
             _root = (RectTransform)go.transform;
 
             Vector2 card = CardSize;
-            float w = card.x * 100f;
-            float h = card.y * 100f;
+            float cardW = card.x * 100f;
+            float cardH = card.y * 100f;
 
-            // Proportions of the card's height, so every size of card is laid out the same.
+            // Content is laid out against its own fixed box, not the outline, so a field
+            // and a repair square carry identically sized text.
+            float w = ContentSize.x * 100f;
+            float h = ContentSize.y * 100f;
+
             float pad = h * 0.06f;
             float barHeight = h * 0.07f;
             float iconHeight = h * 0.26f;
@@ -168,7 +180,7 @@ namespace Tycoon.UI
             var frameGo = UIFactory.CreateRect("Frame", _root);
             Stretch(frameGo, 0f);
             var frame = frameGo.gameObject.AddComponent<Image>();
-            frame.sprite = UIFactory.DashedFrame(Mathf.RoundToInt(w), Mathf.RoundToInt(h));
+            frame.sprite = UIFactory.DashedFrame(Mathf.RoundToInt(cardW), Mathf.RoundToInt(cardH));
             frame.raycastTarget = false;
             _edges = new[] { frame };
 
@@ -181,6 +193,12 @@ namespace Tycoon.UI
             // one side, so a building always spills over the ground *behind* it - and a square
             // tucked against a coop loses its near edge under the roof. Whatever else gets
             // clipped, the word survives.
+            _content = UIFactory.CreateRect("Content", _root);
+            _content.anchorMin = _content.anchorMax = new Vector2(0.5f, 0.5f);
+            _content.pivot = new Vector2(0.5f, 0.5f);
+            _content.sizeDelta = new Vector2(w, h);
+            _content.anchoredPosition = Vector2.zero;
+
             float cursor = h * 0.5f - pad;
 
             _label = TextBlock("Label", w - pad * 2f, labelHeight, ref cursor, Mathf.RoundToInt(labelHeight * 0.82f));
@@ -204,7 +222,7 @@ namespace Tycoon.UI
 
             // Progress sits along the bottom edge as a bar rather than sweeping across the whole
             // card, so a half-filled ring can never wash out the text sitting on top of it.
-            _progressTrack = UIFactory.CreatePanel("ProgressTrack", _root, Color.white);
+            _progressTrack = UIFactory.CreatePanel("ProgressTrack", _content, Color.white);
             var track = _progressTrack.rectTransform;
             track.anchorMin = track.anchorMax = new Vector2(0.5f, 0f);
             track.pivot = new Vector2(0.5f, 0f);
@@ -230,7 +248,7 @@ namespace Tycoon.UI
         /// <summary>Carves the next horizontal band out of the card, top down.</summary>
         private RectTransform Block(string blockName, float width, float height, ref float cursor)
         {
-            var rect = UIFactory.CreateRect(blockName, _root);
+            var rect = UIFactory.CreateRect(blockName, _content);
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 1f);
             rect.sizeDelta = new Vector2(width, height);

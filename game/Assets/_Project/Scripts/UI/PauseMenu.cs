@@ -141,6 +141,9 @@ namespace Tycoon.UI
             }
 
             DisarmDelete();
+            // Close before reloading. The HUD survives the scene load, so leaving the menu up
+            // means the player is staring at PAUSED over a farm that has already reset.
+            SetOpen(false);
             Time.timeScale = 1f;
             GameRoot.Instance?.ResetProgress();
         }

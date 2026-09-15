@@ -108,12 +108,13 @@ namespace Tycoon.EditorTools
         /// casts a shadow anyone would miss, and together they were most of the shadow pass.
         /// </summary>
         public static GameObject Box(string name, Transform parent, Vector3 position, Vector3 scale,
-            Material material, bool collider = false, bool castShadow = true)
+            Material material, bool collider = false, bool castShadow = true, Vector3 rot = default)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.name = name;
             go.transform.SetParent(parent, false);
             go.transform.localPosition = position;
+            go.transform.localRotation = Quaternion.Euler(rot);
             go.transform.localScale = scale;
 
             var box = go.GetComponent<Collider>();
@@ -161,6 +162,111 @@ namespace Tycoon.EditorTools
             return decal;
         }
 
+
+        // ---------------------------------------------------------------- ground cover
+
+        /// <summary>
+        /// Scatters grass as a single combined mesh.
+        ///
+        /// Thousands of little grass objects would each cost a draw call and a transform;
+        /// baked into one mesh they cost one of each, which is the difference between grass
+        /// being free and grass being the reason the phone gets warm. Nothing here casts a
+        /// shadow either - a tuft's shadow is invisible and the shadow pass is not.
+        /// </summary>
+        public static GameObject BuildGrass(Transform parent, Rect area, Rect[] keepClear,
+            int tufts = 900, int seed = 20260915)
+        {
+            var random = new System.Random(seed);
+            var vertices = new System.Collections.Generic.List<Vector3>();
+            var triangles = new System.Collections.Generic.List<int>();
+            var colours = new System.Collections.Generic.List<Color>();
+
+            var pale = new Color(0.52f, 0.68f, 0.34f);
+            var deep = new Color(0.30f, 0.50f, 0.22f);
+
+            int placed = 0, attempts = 0;
+            while (placed < tufts && attempts < tufts * 12)
+            {
+                attempts++;
+
+                float x = (float)(random.NextDouble() * area.width + area.xMin);
+                float z = (float)(random.NextDouble() * area.height + area.yMin);
+
+                bool blocked = false;
+                for (int i = 0; i < keepClear.Length; i++)
+                    if (keepClear[i].Contains(new Vector2(x, z))) { blocked = true; break; }
+                if (blocked) continue;
+
+                placed++;
+
+                // Three blades per tuft, each a narrow triangle leaning a different way.
+                float height = 0.18f + (float)random.NextDouble() * 0.22f;
+                Color tint = Color.Lerp(pale, deep, (float)random.NextDouble());
+
+                for (int blade = 0; blade < 3; blade++)
+                {
+                    float angle = (float)(random.NextDouble() * Mathf.PI * 2f);
+                    float width = 0.05f + (float)random.NextDouble() * 0.04f;
+                    float lean = ((float)random.NextDouble() - 0.5f) * 0.14f;
+
+                    Vector3 side = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * width;
+                    Vector3 root3 = new Vector3(x, 0f, z) +
+                                    new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle)) * 0.06f;
+
+                    int b = vertices.Count;
+                    vertices.Add(root3 - side);
+                    vertices.Add(root3 + side);
+                    vertices.Add(root3 + new Vector3(lean, height, lean));
+
+                    // Both windings, so a blade is visible from either side without
+                    // needing a two-sided shader.
+                    triangles.Add(b); triangles.Add(b + 2); triangles.Add(b + 1);
+                    triangles.Add(b); triangles.Add(b + 1); triangles.Add(b + 2);
+
+                    colours.Add(tint * 0.75f);
+                    colours.Add(tint * 0.75f);
+                    colours.Add(tint);
+                }
+            }
+
+            var mesh = new Mesh { name = "GrassCover" };
+            mesh.indexFormat = vertices.Count > 65000
+                ? UnityEngine.Rendering.IndexFormat.UInt32
+                : UnityEngine.Rendering.IndexFormat.UInt16;
+            mesh.SetVertices(vertices);
+            mesh.SetTriangles(triangles, 0);
+            mesh.SetColors(colours);
+
+            // Every blade points straight up, whatever way it leans.
+            //
+            // Recalculating normals here gives black grass: each blade is written with both
+            // windings so it is visible from either side, and averaging two opposite face
+            // normals cancels them out. Facing them all at the sky also lights the grass like
+            // the ground it grows from, which is what stylised foliage wants anyway.
+            var up = new Vector3[vertices.Count];
+            for (int i = 0; i < up.Length; i++) up[i] = Vector3.up;
+            mesh.normals = up;
+
+            mesh.RecalculateBounds();
+
+            EnsureFolder("Assets/_Project/Meshes");
+            const string meshPath = "Assets/_Project/Meshes/GrassCover.asset";
+            AssetDatabase.DeleteAsset(meshPath);
+            AssetDatabase.CreateAsset(mesh, meshPath);
+
+            var go = new GameObject("Grass");
+            go.transform.SetParent(parent, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = Mat("Grass", new Color(0.45f, 0.62f, 0.30f));
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+
+            Debug.Log($"[LevelBuildKit] Grass: {placed} tufts, {triangles.Count / 3} triangles, 1 draw call");
+            return go;
+        }
+
         // ---------------------------------------------------------------- stations
 
         /// <summary>
@@ -177,11 +283,18 @@ namespace Tycoon.EditorTools
             Identify(go, id);
 
             var trigger = go.AddComponent<BoxCollider>();
+            var station = go.AddComponent<T>();
+
+            // Sized AFTER the station component exists, not before.
+            //
+            // Adding a StationBase in the editor fires its Reset(), which stamps the collider
+            // back to a default two metre cube. Setting the size first therefore did nothing:
+            // half the farm ended up with a 2x2 trigger under a 5.5x3.5 outline, so a player
+            // standing on most of a corn field was outside the square that told them to stand
+            // there. It also fed the wrong field width to the hire-square spacing.
             trigger.isTrigger = true;
             trigger.size = new Vector3(size.x, 2.5f, size.y);
             trigger.center = new Vector3(0f, 1.25f, 0f);
-
-            var station = go.AddComponent<T>();
             station.label = label;
             station.zoneColor = color;
 
@@ -356,7 +469,7 @@ namespace Tycoon.EditorTools
 
         public static WorkerAgent BuildWorker(string name, Transform parent, Vector3 position,
             StationBase pickup, StationBase dropoff, Color color, double feePerDelivery,
-            int capacity = 4)
+            int capacity = 4, string role = null)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
@@ -387,14 +500,17 @@ namespace Tycoon.EditorTools
             var visual = new GameObject("Visual");
             visual.transform.SetParent(go.transform, false);
 
-            Box("Body", visual.transform, new Vector3(0f, 0.45f, 0f),
-                new Vector3(0.5f, 0.66f, 0.38f), Mat($"Worker_{name}", color));
-            Box("Head", visual.transform, new Vector3(0f, 0.98f, 0f),
-                new Vector3(0.42f, 0.42f, 0.42f), Mat("Player_Head", new Color(0.98f, 0.82f, 0.68f)));
+            // The model brings its own animator; the shirt is tinted so two workers on
+            // the same route are still telling apart at a glance.
+            var model = CharacterLibrary.Spawn(role ?? CharacterLibrary.Farmer, visual.transform, "Model");
+            if (model != null) CharacterLibrary.Tint(model, CharacterLibrary.ShirtSlot, color);
 
+            // Goods ride in front of the chest, where the carry animation puts the hands.
+            // They used to float above the head, which was fine on a box and looks broken
+            // the moment the character has arms and raises them.
             var anchor = new GameObject("CarryAnchor");
             anchor.transform.SetParent(visual.transform, false);
-            anchor.transform.localPosition = new Vector3(0f, 1.3f, 0f);
+            anchor.transform.localPosition = CharacterLibrary.HandAnchor;
 
             var carry = go.AddComponent<CarryStack>();
             carry.anchor = anchor.transform;
@@ -468,13 +584,13 @@ namespace Tycoon.EditorTools
             kit.Machine.units = Mathf.Clamp(startUnits, 1, kit.Machine.maxUnits);
             kit.Machine.unitVisuals = BuildPen(root.transform, kit.Machine.maxUnits, livestock);
 
-            var machineSign = root.AddComponent<InfoSign>();
-            machineSign.machine = kit.Machine;
-            machineSign.durability = kit.Durability;
-            // Kept low, just clear of the roof. The camera looks across the farm from one side,
-            // so a sign hung high over a building is drawn well behind it - at 3.5 m this one
-            // landed squarely on top of the feed square's label.
-            machineSign.height = 2.6f;
+            // What the building holds, how many animals work it, and whether it has stopped
+            // because the output is full. Kept low, just clear of the roof: the camera looks
+            // across the farm, so a sign hung high is drawn over the ground well behind it.
+            var sign = root.AddComponent<CapacitySign>();
+            sign.output = kit.Output;
+            sign.machine = kit.Machine;
+            sign.height = 2.65f;
 
             // Squares are arranged along the screen's vertical axis, never side by side. A
             // portrait phone only shows about 7.8 world units across, so a building that puts
@@ -677,24 +793,35 @@ namespace Tycoon.EditorTools
             var visual = new GameObject("Visual");
             visual.transform.SetParent(go.transform, false);
 
-            var bodyGo = Box("Body", visual.transform, new Vector3(0f, 0.45f, 0f),
-                new Vector3(0.48f, 0.66f, 0.36f), Mat("Customer_Body", Color.white));
-            Box("Head", visual.transform, new Vector3(0f, 0.98f, 0f),
-                new Vector3(0.4f, 0.4f, 0.4f), Mat("Player_Head", new Color(0.98f, 0.82f, 0.68f)));
+            var model = CharacterLibrary.Spawn(CharacterLibrary.Customer, visual.transform, "Model");
 
             var bubble = go.AddComponent<OrderBubble>();
             var agent = go.AddComponent<Tycoon.Customers.CustomerAgent>();
             agent.visual = visual.transform;
-            agent.tintTarget = bodyGo.GetComponent<Renderer>();
+            // Only the shirt gets recoloured per shopper. Tinting the whole renderer
+            // would wash the skin and boots through the same colour as well.
+            agent.tintTarget = model != null ? model.GetComponentInChildren<SkinnedMeshRenderer>() : null;
+            agent.tintMaterialIndex = CharacterLibrary.ShirtSlot;
             agent.bubble = bubble;
 
             go.SetActive(false);
             return go;
         }
 
+        /// <summary>What a field looks like. Purely visual; the harvesting is identical.</summary>
+        public enum FieldStyle
+        {
+            /// <summary>Tall stalks with a cob on top. Corn.</summary>
+            Cereal,
+
+            /// <summary>Low golden clumps on dry stubble, with bales. Hay.</summary>
+            Meadow
+        }
+
         /// <summary>A crop field the player harvests by walking through it.</summary>
         public static HarvestStation BuildField(string id, string name, Transform parent, Vector3 position,
-            ItemDefinition crop, int plots, float regrowSeconds, Vector2 size)
+            ItemDefinition crop, int plots, float regrowSeconds, Vector2 size,
+            FieldStyle style = FieldStyle.Cereal)
         {
             var station = Station<HarvestStation>(id, name, parent, position, size,
                 "Harvest", new Color(0.95f, 0.83f, 0.35f));
@@ -702,30 +829,52 @@ namespace Tycoon.EditorTools
             station.plots = plots;
             station.regrowSeconds = regrowSeconds;
 
-            // Tilled soil under the plot. Without it a field is stalks standing in open grass,
-            // which reads as weeds rather than as a field somebody planted - and it gives the
-            // square's label a darker ground to sit on than the lawn.
+            bool meadow = style == FieldStyle.Meadow;
+
+            // Ground under the plot. Dark tilled soil for a sown crop, pale dry stubble for a
+            // meadow - two fields side by side have to be tellable apart from the ground up,
+            // not just by the colour of whatever is growing on them.
             Box("Soil", station.transform, new Vector3(0f, 0.02f, 0f),
                 new Vector3(size.x, 0.04f, size.y),
-                Mat($"Field_Soil_{crop.id}", new Color(0.46f, 0.34f, 0.22f)), castShadow: false);
+                Mat($"Field_Soil_{crop.id}",
+                    meadow ? new Color(0.68f, 0.60f, 0.34f) : new Color(0.46f, 0.34f, 0.22f)),
+                castShadow: false);
 
-            // Furrows, so the soil is not one flat slab of brown. Kept close to the soil's own
-            // colour and thin: at higher contrast and any wider they stop reading as tilled rows
-            // and start reading as decking.
-            var furrow = Mat("Field_Furrow", new Color(0.4f, 0.29f, 0.18f));
-            int furrows = Mathf.Max(3, Mathf.RoundToInt(size.y / 0.5f));
-            for (int i = 0; i < furrows; i++)
+            if (meadow)
             {
-                float z = Mathf.Lerp(-size.y * 0.4f, size.y * 0.4f, i / (float)(furrows - 1));
-                Box($"Furrow_{i}", station.transform, new Vector3(0f, 0.045f, z),
-                    new Vector3(size.x * 0.94f, 0.02f, 0.06f), furrow, castShadow: false);
+                // Mown stripes, the way a cut meadow actually looks, running the other way
+                // from the corn's furrows so even the ground pattern differs.
+                var mown = Mat("Field_Mown", new Color(0.60f, 0.53f, 0.29f));
+                int stripes = Mathf.Max(3, Mathf.RoundToInt(size.x / 0.9f));
+                for (int i = 0; i < stripes; i += 2)
+                {
+                    float x = Mathf.Lerp(-size.x * 0.42f, size.x * 0.42f, i / (float)(stripes - 1));
+                    Box($"Mown_{i}", station.transform, new Vector3(x, 0.045f, 0f),
+                        new Vector3(size.x / stripes * 0.9f, 0.02f, size.y * 0.92f), mown,
+                        castShadow: false);
+                }
+            }
+            else
+            {
+                // Furrows, so the soil is not one flat slab of brown. Kept close to the soil's
+                // own colour and thin: at higher contrast and any wider they stop reading as
+                // tilled rows and start reading as decking.
+                var furrow = Mat("Field_Furrow", new Color(0.4f, 0.29f, 0.18f));
+                int furrows = Mathf.Max(3, Mathf.RoundToInt(size.y / 0.5f));
+                for (int i = 0; i < furrows; i++)
+                {
+                    float z = Mathf.Lerp(-size.y * 0.4f, size.y * 0.4f, i / (float)(furrows - 1));
+                    Box($"Furrow_{i}", station.transform, new Vector3(0f, 0.045f, z),
+                        new Vector3(size.x * 0.94f, 0.02f, 0.06f), furrow, castShadow: false);
+                }
             }
 
             var visuals = new GameObject("Crops");
             visuals.transform.SetParent(station.transform, false);
             station.cropVisuals = visuals.transform;
 
-            var stalk = Mat($"Stalk_{crop.id}", new Color(0.35f, 0.62f, 0.28f));
+            var stalk = Mat($"Stalk_{crop.id}",
+                meadow ? new Color(0.78f, 0.66f, 0.36f) : new Color(0.35f, 0.62f, 0.28f));
             var head = Mat($"Head_{crop.id}", crop.color);
 
             // Lay the plots out in a grid that fills the square, so the field visibly empties
@@ -737,17 +886,37 @@ namespace Tycoon.EditorTools
             {
                 int cx = i % columns;
                 int cz = i / columns;
-                float x = Mathf.Lerp(-size.x * 0.34f, size.x * 0.34f, columns <= 1 ? 0.5f : cx / (float)(columns - 1));
-                float z = Mathf.Lerp(-size.y * 0.34f, size.y * 0.34f, rows <= 1 ? 0.5f : cz / (float)(rows - 1));
+                float x = Mathf.Lerp(-size.x * 0.40f, size.x * 0.40f, columns <= 1 ? 0.5f : cx / (float)(columns - 1));
+                float z = Mathf.Lerp(-size.y * 0.40f, size.y * 0.40f, rows <= 1 ? 0.5f : cz / (float)(rows - 1));
 
                 var plot = new GameObject($"Plot_{i}");
                 plot.transform.SetParent(visuals.transform, false);
                 plot.transform.localPosition = new Vector3(x, 0f, z);
 
-                Cylinder("Stalk", plot.transform, new Vector3(0f, 0.45f, 0f),
-                    new Vector3(0.12f, 0.45f, 0.12f), stalk, castShadow: false);
-                Box("Head", plot.transform, new Vector3(0f, 1f, 0f),
-                    new Vector3(0.3f, 0.42f, 0.3f), head, castShadow: false);
+                if (meadow)
+                {
+                    // A low fan of blades and a rolled bale - knee height, not head height.
+                    // Corn is a forest of vertical stalks; this has to read as the opposite.
+                    for (int blade = 0; blade < 5; blade++)
+                    {
+                        float lean = (blade - 2) * 11f;
+                        Box($"Blade_{blade}", plot.transform,
+                            new Vector3((blade - 2) * 0.07f, 0.17f, 0f),
+                            new Vector3(0.07f, 0.34f, 0.07f), head,
+                            rot: new Vector3(0f, (blade * 37) % 180, lean));
+                    }
+
+                    Cylinder("Bale", plot.transform, new Vector3(0.12f, 0.17f, 0.1f),
+                        new Vector3(0.34f, 0.16f, 0.34f), stalk, castShadow: false)
+                        .transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                }
+                else
+                {
+                    Cylinder("Stalk", plot.transform, new Vector3(0f, 0.45f, 0f),
+                        new Vector3(0.12f, 0.45f, 0.12f), stalk, castShadow: false);
+                    Box("Head", plot.transform, new Vector3(0f, 1f, 0f),
+                        new Vector3(0.3f, 0.42f, 0.3f), head, castShadow: false);
+                }
             }
 
             return station;

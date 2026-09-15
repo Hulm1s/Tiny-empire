@@ -9,7 +9,7 @@
 // Getting this wrong is the classic "I uploaded a new build and she still sees the old one"
 // bug, which is very hard to talk someone through over the phone.
 
-const CACHE_NAME = "Home Made-Tiny Empire-2026.09.14.1854";
+const CACHE_NAME = "Home Made-Tiny Empire-2026.09.15.2040";
 
 const PRECACHE = [
   "index.html",

@@ -1,4 +1,5 @@
 using System;
+using Tycoon.Config;
 using Tycoon.Core;
 using Tycoon.Upkeep;
 using UnityEngine;
@@ -15,7 +16,7 @@ namespace Tycoon.Stations
     /// to prevent.
     /// </summary>
     [DefaultExecutionOrder(50)]
-    public class ProducerMachine : MonoBehaviour, ISaveable
+    public class ProducerMachine : MonoBehaviour, ISaveable, IProducer
     {
         public enum Blockage { None, NoInput, OutputFull, Broken }
 
@@ -56,6 +57,11 @@ namespace Tycoon.Stations
 
         public bool IsAtMaxUnits => units >= maxUnits;
 
+        /// <summary>IProducer: what this building makes, and how much of it at once.</summary>
+        public ItemDefinition Output => output != null ? output.item : null;
+
+        public int Capacity => units;
+
         /// <summary>0-1 progress through the current unit, for the floating progress ring.</summary>
         public float Progress01 =>
             SecondsPerOutputNow <= 0f ? 0f : Mathf.Clamp01(_progress / SecondsPerOutputNow);
@@ -70,13 +76,13 @@ namespace Tycoon.Stations
             SaveSystem.Register(this);
             // Announce what this building can make, so shops only take orders for it while the
             // building actually exists. Locked buildings are inactive and announce nothing.
-            if (output != null) ProductRegistry.Register(output.item);
+            ProductRegistry.Register(this);
         }
 
         private void OnDisable()
         {
             SaveSystem.Unregister(this);
-            if (output != null) ProductRegistry.Unregister(output.item);
+            ProductRegistry.Unregister(this);
         }
 
         /// <summary>Adds one chicken. Returns false when the building is already full.</summary>

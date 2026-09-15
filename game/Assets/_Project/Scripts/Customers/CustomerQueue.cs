@@ -41,8 +41,18 @@ namespace Tycoon.Customers
         [Min(1)] public int minOrder = 1;
         [Min(1)] public int maxOrder = 4;
 
-        [Tooltip("Seconds between arrivals at full reputation. A poor shop gets fewer.")]
-        public float spawnIntervalSeconds = 5f;
+        [Tooltip("Seconds between arrivals at full reputation, with a single unit of " +
+                 "production behind the counter. Demand and reputation both divide into it.")]
+        public float spawnIntervalSeconds = 2.5f;
+
+        [Tooltip("Extra demand per unit of production capacity past the first. At 0.35 a " +
+                 "second coop brings shoppers about a third faster, and each extra hen " +
+                 "counts too - the farm growing is felt at the till without retuning anything.")]
+        public float demandPerCapacity = 0.35f;
+
+        [Tooltip("Ceiling on demand growth. The queue only has so many standing slots, so " +
+                 "past this point a faster spawn rate just churns shoppers who cannot fit.")]
+        public float maxDemand = 3f;
 
         [Header("Reputation")]
         [Range(0f, 1f)] public float startingReputation = 1f;
@@ -58,6 +68,29 @@ namespace Tycoon.Customers
 
         /// <summary>What the shop can charge. A neglected counter genuinely earns less.</summary>
         public float PriceMultiplier => Mathf.Lerp(0.6f, 1.15f, Mathf.Clamp01(_reputation));
+
+        /// <summary>
+        /// How much busier this counter is than a one-hen farm.
+        ///
+        /// Read live off the production registry rather than stored, so unlocking a coop
+        /// or buying a cow moves it immediately with nothing to notify. The same
+        /// mechanism covers the dairy till: it sells milk, so it scales with cows.
+        /// </summary>
+        public float DemandMultiplier
+        {
+            get
+            {
+                var menu = register != null ? register.sells : null;
+                if (menu == null) return 1f;
+
+                int capacity = 0;
+                for (int i = 0; i < menu.Length; i++)
+                    capacity += ProductRegistry.Capacity(menu[i]);
+
+                return Mathf.Clamp(1f + demandPerCapacity * Mathf.Max(0, capacity - 1),
+                                   1f, Mathf.Max(1f, maxDemand));
+            }
+        }
 
         public Vector3 ExitPosition => exitPoint != null ? exitPoint.position : transform.position;
         public Vector3 CounterPosition => counterPoint != null ? counterPoint.position : transform.position;
@@ -101,8 +134,11 @@ namespace Tycoon.Customers
 
             _spawnTimer += Mathf.Min(Time.deltaTime, 0.1f);
 
-            // A poorly run shop sees fewer people through the door.
-            float interval = spawnIntervalSeconds / Mathf.Max(0.2f, _reputation);
+            // A poorly run shop sees fewer people through the door; a bigger farm sees more.
+            // The slot limit above is still the hard cap on how many can be waiting at once,
+            // so this only changes how quickly the queue refills.
+            float interval = spawnIntervalSeconds /
+                             (DemandMultiplier * Mathf.Max(0.2f, _reputation));
             if (_spawnTimer < interval) return;
 
             _spawnTimer = 0f;

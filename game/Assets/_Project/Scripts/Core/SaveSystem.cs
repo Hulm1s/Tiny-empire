@@ -30,6 +30,17 @@ namespace Tycoon.Core
         private static bool _loaded;
         private static double _pendingMoney;
 
+        /// <summary>
+        /// True while progress is being wiped, from the moment the save is deleted until the
+        /// fresh scene has finished loading.
+        ///
+        /// Deleting the save clears the stored blob, but reloading the scene then destroys
+        /// every saveable in the old one - and unregistering captures state on the way out,
+        /// which put all the old progress straight back. Purchases the player had partly paid
+        /// off survived a wipe that had, as far as the player could tell, just happened.
+        /// </summary>
+        private static bool _wiping;
+
         /// <summary>Seconds that elapsed while the game was closed, clamped. Zero on a fresh save.</summary>
         public static double OfflineSeconds { get; private set; }
 
@@ -95,8 +106,9 @@ namespace Tycoon.Core
         public static void Unregister(ISaveable saveable)
         {
             if (saveable == null) return;
-            // Capture on the way out so unloading a level does not lose its progress.
-            CaptureOne(saveable);
+            // Capture on the way out so unloading a level does not lose its progress - unless
+            // the progress is exactly what is being thrown away.
+            if (!_wiping) CaptureOne(saveable);
             Live.Remove(saveable);
         }
 
@@ -136,8 +148,20 @@ namespace Tycoon.Core
         public static void DeleteSave()
         {
             Stored.Clear();
+            Live.Clear();
+            _pendingMoney = 0d;
+            OfflineSeconds = 0d;
+            HasSave = false;
+            _wiping = true;
+
             PlayerPrefs.DeleteKey(PrefsKey);
             PlayerPrefs.Save();
         }
+
+        /// <summary>
+        /// Called once the replacement scene is up, to start recording again.
+        /// Until this runs, nothing that unloads writes anything back.
+        /// </summary>
+        public static void FinishWipe() => _wiping = false;
     }
 }

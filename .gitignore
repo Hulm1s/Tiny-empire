@@ -43,3 +43,8 @@ build-*.log
 
 # Node (only used for the local static server during testing)
 node_modules/
+
+# Intermediate model exports; the source .glb and the pipeline scripts are tracked.
+models/villagers/
+models/lowpoly/
+*.blend1

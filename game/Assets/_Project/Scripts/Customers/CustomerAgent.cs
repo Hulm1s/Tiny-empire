@@ -32,6 +32,10 @@ namespace Tycoon.Customers
         public OrderBubble bubble;
         public Renderer tintTarget;
 
+        [Tooltip("Which material slot gets the shopper's colour. -1 tints the whole " +
+                 "renderer, which on a villager would recolour skin and boots too.")]
+        public int tintMaterialIndex = -1;
+
         private CustomerQueue _queue;
         private ItemDefinition _wanted;
         private int _requested;
@@ -64,7 +68,11 @@ namespace Tycoon.Customers
                 var block = new MaterialPropertyBlock();
                 block.SetColor("_BaseColor", tint);
                 block.SetColor("_Color", tint);
-                tintTarget.SetPropertyBlock(block);
+
+                if (tintMaterialIndex >= 0)
+                    tintTarget.SetPropertyBlock(block, tintMaterialIndex);
+                else
+                    tintTarget.SetPropertyBlock(block);
             }
 
             if (bubble != null) bubble.Show(_wanted, Remaining);

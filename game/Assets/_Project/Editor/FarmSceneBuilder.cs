@@ -44,6 +44,7 @@ namespace Tycoon.EditorTools
             var root = CreateLevelRoot();
 
             BuildFarm(root, items);
+            BuildGroundCover(root);
             BuildBoundary(root);
             BuildNavigation();
             // Start in the corridor between the wings, within sight of both the first coop
@@ -146,6 +147,17 @@ namespace Tycoon.EditorTools
         private const float LeftWing = -5f;    // corn -> chickens -> eggs
         private const float RightWing = 5f;    // hay  -> cows     -> milk
 
+        // ---- demand --------------------------------------------------------------
+        // Every number that decides how busy the market is lives here.
+        //
+        // Shoppers arrive twice as often as they used to (the interval halved), and
+        // faster again as the farm grows, because demand is pegged to what the farm can
+        // actually produce. Opening the second coop or buying another hen is felt at the
+        // counter straight away. The dairy till runs on the same rule against cows.
+        private const float BaseSpawnInterval = 2.5f;
+        private const float DemandPerCapacity = 0.35f;
+        private const float MaxDemand = 3f;
+
         private static void BuildFarm(Transform root, Items items)
         {
             // ---- the market ----------------------------------------------------------
@@ -168,6 +180,13 @@ namespace Tycoon.EditorTools
 
             var counterB = LevelBuildKit.AddCounter(street, "farm.counterB", "CounterB", 3f,
                 new[] { items.Milk }, queueLength: 3, enterFromWest: false);
+
+            foreach (var till in new[] { counterA, counterB })
+            {
+                till.Queue.spawnIntervalSeconds = BaseSpawnInterval;
+                till.Queue.demandPerCapacity = DemandPerCapacity;
+                till.Queue.maxDemand = MaxDemand;
+            }
 
             // ---- left wing: corn, chickens, eggs --------------------------------------
             var cornA = LevelBuildKit.BuildField("farm.cornA", "CornFieldA", root,
@@ -200,9 +219,12 @@ namespace Tycoon.EditorTools
             coopB.Repair.costPerPoint = 0.25d;
 
             // ---- right wing: hay, cows, milk ------------------------------------------
+            // A meadow, not a second corn field: low golden clumps and bales on pale stubble.
+            // Side by side the two were the same shape in slightly different colours.
             var hayField = LevelBuildKit.BuildField("farm.hayfield", "HayField", root,
                 new Vector3(RightWing, 0f, 17f), items.Hay,
-                plots: 8, regrowSeconds: 2.6f, size: new Vector2(5.5f, 3.5f));
+                plots: 8, regrowSeconds: 2.6f, size: new Vector2(5.5f, 3.5f),
+                style: LevelBuildKit.FieldStyle.Meadow);
 
             var cowA = LevelBuildKit.BuildWorkshop(
                 "farm.cowA", "CowShedA", root, new Vector3(RightWing, 0f, 8f),
@@ -280,13 +302,21 @@ namespace Tycoon.EditorTools
                 new Vector2(3.4f, 2.2f), "Dairy Till", 1400d,
                 counterB.Root);
 
-            Gate(root, "farm.unlock.hay", "UnlockHay", new Vector3(RightWing, 0f, 17f),
-                new Vector2(5.5f, 3.5f), "Hay", 1800d,
-                hayField.gameObject);
-
+            // The meadow comes with the cow shed, deliberately, and this is a softlock fix
+            // rather than a tidy-up.
+            //
+            // The hay field used to be its own cheaper purchase. Hay has exactly one place it
+            // can go - a cow's feed hopper - so a player who bought the field first could fill
+            // their arms with hay that had nowhere to be put down. A full stack cannot pick up
+            // eggs, eggs are the only income, and the shed costs money: no way out except
+            // starting over. Selling the two together means hay can never exist before
+            // something that eats it.
+            //
+            // Priced under the sum of the two it replaces, because it now has to be saved for
+            // in one go rather than in two steps.
             Gate(root, "farm.unlock.cowA", "UnlockCowA", new Vector3(RightWing, 0f, 8f),
-                new Vector2(3.4f, 2.6f), "Cow Shed", 2600d,
-                cowA.Root, hireHayA.gameObject, hireMilkA.gameObject);
+                new Vector2(3.4f, 2.6f), "Dairy", 3200d,
+                cowA.Root, hayField.gameObject, hireHayA.gameObject, hireMilkA.gameObject);
 
             Gate(root, "farm.unlock.cowB", "UnlockCowB", new Vector3(RightWing, 0f, 0f),
                 new Vector2(3.4f, 2.6f), "Cow Shed", 6000d,
@@ -336,9 +366,20 @@ namespace Tycoon.EditorTools
         private static Vector3 AtField(Transform root, Component field, bool leftWing, float alongZ = 0f)
         {
             Vector3 local = LevelLocal(root, field);
-            // Half the field, half the square, and a gap - so the two never overlap and the
-            // player cannot be harvesting and buying at the same time.
-            const float clearance = 3.95f;
+
+            // Measured off the field's own trigger rather than assumed. A fixed clearance was
+            // tuned against one field size and left the hire square overlapping the crop, so
+            // the player standing in it was buying a worker and harvesting at the same time.
+            var trigger = field.GetComponent<BoxCollider>();
+            float fieldHalf = trigger != null ? trigger.size.x * 0.5f : 2.75f;
+
+            // Measured against the drawn outline, not the trigger. A hire trigger is 1.8 m
+            // but its square is never drawn smaller than 2.5, so clearing 0.9 still left the
+            // two outlines overlapping on screen.
+            const float hireHalf = 1.25f;
+            const float gap = 1.0f;
+
+            float clearance = fieldHalf + hireHalf + gap;
             return new Vector3(local.x + (leftWing ? -clearance : clearance), 0f, local.z + alongZ);
         }
 
@@ -351,10 +392,11 @@ namespace Tycoon.EditorTools
         {
             Vector3 local = LevelLocal(root, till.Register);
 
-            // The serving square is 3.6 wide and a hire square 1.8, so the first one has to
-            // start 3.1 out to leave a gap; after that they simply sit shoulder to shoulder.
+            // Same correction as the fields: these are outline widths, not trigger widths.
+            // The till's square is 3.6 wide and a hire square is drawn 2.5 wide, so the first
+            // one clears at 1.8 + 1.25 + gap, and each one after is a full outline further out.
             float sign = slot < 0 ? -1f : 1f;
-            float offset = 3.1f + (Mathf.Abs(slot) - 1) * 2.1f;
+            float offset = 3.45f + (Mathf.Abs(slot) - 1) * 2.9f;
 
             return new Vector3(local.x + sign * offset, 0f, local.z);
         }
@@ -385,7 +427,14 @@ namespace Tycoon.EditorTools
             double price, Tycoon.Stations.StationBase pickup, Tycoon.Stations.StationBase dropoff,
             Color color, double feePerDelivery, Tycoon.Upkeep.AlertBeacon beacon)
         {
-            var worker = LevelBuildKit.BuildWorker(id, root, position, pickup, dropoff, color, feePerDelivery);
+            // Field hands wear the straw hat, till staff the cap. Derived from the role
+            // name so adding a hire does not mean remembering to pass a model as well.
+            string model = role.StartsWith("Cashier") || role.StartsWith("Milk")
+                ? CharacterLibrary.Cashier
+                : CharacterLibrary.Farmer;
+
+            var worker = LevelBuildKit.BuildWorker(id, root, position, pickup, dropoff,
+                color, feePerDelivery, role: model);
             WarnIfRouteBroken(id, pickup, dropoff);
 
             var hire = LevelBuildKit.Station<UnlockStation>($"farm.hire.{id}", $"Hire{id}", root, position,
@@ -402,6 +451,32 @@ namespace Tycoon.EditorTools
 
             worker.gameObject.SetActive(false);
             return hire;
+        }
+
+        /// <summary>
+        /// Grass everywhere the farm is not.
+        ///
+        /// The keep-clear rectangles matter more than the grass does: a tuft is up to 40 cm
+        /// tall and an interaction square is painted 9 cm off the ground, so grass growing
+        /// under one pokes straight through it. Rather than list every square, the two
+        /// production wings and the market are excluded wholesale - those are exactly the
+        /// places covered in buildings, plots and squares anyway.
+        /// </summary>
+        private static void BuildGroundCover(Transform root)
+        {
+            var area = new Rect(-22f, -25f, 44f, 50f);
+
+            var keepClear = new[]
+            {
+                // Left wing: corn fields, coops, their squares and the hire spots beside them.
+                new Rect(-11.5f, -9.5f, 10.5f, 29f),
+                // Right wing: hay, cow sheds, same again.
+                new Rect(1f, -3.5f, 10.5f, 23f),
+                // The market, its road, the queues and the till squares.
+                new Rect(-12f, -20f, 24f, 10.5f),
+            };
+
+            LevelBuildKit.BuildGrass(root, area, keepClear);
         }
 
         /// <summary>
@@ -531,20 +606,13 @@ namespace Tycoon.EditorTools
             var visual = new GameObject("Visual");
             visual.transform.SetParent(go.transform, false);
 
-            var skin = LevelBuildKit.Mat("Player_Body", new Color(0.25f, 0.55f, 0.92f));
-            var head = LevelBuildKit.Mat("Player_Head", new Color(0.98f, 0.82f, 0.68f));
-
-            LevelBuildKit.Box("Body", visual.transform, new Vector3(0f, 0.55f, 0f),
-                new Vector3(0.62f, 0.8f, 0.45f), skin);
-            LevelBuildKit.Box("Head", visual.transform, new Vector3(0f, 1.15f, 0f),
-                new Vector3(0.5f, 0.5f, 0.5f), head);
-            // A small nose so the facing direction is unmistakable at this camera angle.
-            LevelBuildKit.Box("Nose", visual.transform, new Vector3(0f, 1.12f, 0.28f),
-                new Vector3(0.12f, 0.12f, 0.12f), skin);
+            // The owner: white shirt and a red cap, so the one character the player
+            // actually controls is never confused with the staff or the shoppers.
+            CharacterLibrary.Spawn(CharacterLibrary.Owner, visual.transform, "Model");
 
             var anchor = new GameObject("CarryAnchor");
             anchor.transform.SetParent(visual.transform, false);
-            anchor.transform.localPosition = new Vector3(0f, 1.5f, 0f);
+            anchor.transform.localPosition = CharacterLibrary.HandAnchor;
 
             var motor = go.AddComponent<PlayerMotor>();
             motor.visual = visual.transform;

@@ -86,7 +86,7 @@
       // does not merely look stale - it fails outright, with the wasm demanding an import the
       // older framework never defined. Stamping the build version into the URL makes every
       // build a distinct resource, which removes the whole class of problem on any host.
-      var cacheBust = "?v=" + encodeURIComponent("2026.09.14.1854");
+      var cacheBust = "?v=" + encodeURIComponent("2026.09.15.2040");
 
       var loaderUrl = buildUrl + "/docs.loader.js" + cacheBust;
       var config = {
@@ -97,7 +97,7 @@
         streamingAssetsUrl: "StreamingAssets",
         companyName: "Home Made",
         productName: "Tiny Empire",
-        productVersion: "2026.09.14.1854",
+        productVersion: "2026.09.15.2040",
         showBanner: unityShowBanner,
         // An iPhone reports a device pixel ratio of 3. Rendering a 3D scene at native 3x on a
         // phone GPU is the single easiest way to drop to 20fps, and on a screen this small the

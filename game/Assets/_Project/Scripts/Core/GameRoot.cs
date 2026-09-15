@@ -81,8 +81,22 @@ namespace Tycoon.Core
         {
             SaveSystem.DeleteSave();
             Wallet.SetSilently(0d);
-            UnityEngine.SceneManagement.SceneManager.LoadScene(
-                UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
+
+            var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnWipedSceneLoaded;
+            UnityEngine.SceneManagement.SceneManager.LoadScene(scene.buildIndex);
+        }
+
+        /// <summary>
+        /// Re-arms saving once the clean scene exists. Everything in the old scene is
+        /// destroyed between the delete and this callback, and none of it may write back.
+        /// </summary>
+        private void OnWipedSceneLoaded(UnityEngine.SceneManagement.Scene scene,
+            UnityEngine.SceneManagement.LoadSceneMode mode)
+        {
+            UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnWipedSceneLoaded;
+            SaveSystem.FinishWipe();
+            Wallet.SetSilently(0d);
         }
     }
 }
