@@ -23,7 +23,9 @@ fi
 
 VERSION=$(grep -o 'bundleVersion: .*' game/ProjectSettings/ProjectSettings.asset | awk '{print $2}')
 SOURCE=$(git rev-parse --short HEAD)
-INDEX=$(mktemp)
+# -u: a name only. git refuses to use an existing empty file as an index
+# ("index file smaller than expected"), so the file must not be created for us.
+INDEX=$(mktemp -u)
 trap 'rm -f "$INDEX"' EXIT
 
 # Stage docs/ as if it were the repository root, into an index we throw away.
