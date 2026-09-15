@@ -37,8 +37,21 @@ want it on the phone.
 
 ## Getting it onto the live site
 
-The live site is whatever is on the `main` branch, in the `docs/` folder.
-In GitHub Desktop: commit, then push to `main`. It goes live in a minute or two.
+Build the web player, then run:
+
+```bash
+./publish.sh
+```
+
+That pushes `docs/` to the `gh-pages` branch, which is what GitHub Pages serves.
+It goes live in a minute or two.
+
+**`docs/` is deliberately not committed to `main` any more.** A Unity web build is
+about 13 MB of wasm and data that changes completely every time and does not
+compress against the previous version, so committing it added 13 MB to the
+repository's history on *every* publish — 113 MB after nine of them. The
+`gh-pages` branch is force-pushed with a single parentless commit instead, so it
+never accumulates.
 
 Working on a branch first is safer — she is playing the live one.
 

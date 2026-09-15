@@ -48,3 +48,8 @@ node_modules/
 models/villagers/
 models/lowpoly/
 *.blend1
+
+# Build output. Published to the gh-pages branch by publish.sh, never committed to
+# main - a Unity web build is ~13 MB of binaries that would be added to history on
+# every single publish.
+docs/
