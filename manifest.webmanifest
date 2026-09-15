@@ -1,0 +1,31 @@
+{
+  "name": "Tiny Empire",
+  "short_name": "Tiny Empire",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#78b5dd",
+  "theme_color": "#78b5dd",
+  "description": "",
+  "icons": [
+    {
+      "src": "TemplateData/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "TemplateData/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "TemplateData/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
