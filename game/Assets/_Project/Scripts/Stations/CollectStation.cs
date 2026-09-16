@@ -12,7 +12,13 @@ namespace Tycoon.Stations
 
         public override bool IsOperational => source != null && !source.IsEmpty;
 
-        public override string StatusValue => source == null ? string.Empty : source.Count.ToString();
+        /// <summary>
+        /// How much is waiting against how much the basket holds - "7 / 12", the same shape as
+        /// every other capacity on the farm. The bare count left the player guessing how close
+        /// the basket was to filling up and stalling the building.
+        /// </summary>
+        public override string StatusValue =>
+            source == null ? string.Empty : $"{source.Count} / {source.capacity}";
 
         /// <summary>The goods themselves say "collect" better than any arrow would.</summary>
         public override Tycoon.Config.ItemDefinition IconItem => source != null ? source.item : null;

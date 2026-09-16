@@ -14,7 +14,7 @@ namespace Tycoon.Stations
         public override bool IsOperational => target != null && !target.IsFull;
 
         public override string StatusValue =>
-            target == null ? string.Empty : $"{target.Count}/{target.capacity}";
+            target == null ? string.Empty : $"{target.Count} / {target.capacity}";
 
         /// <summary>
         /// An arrow rather than the goods: what matters here is the direction goods travel,

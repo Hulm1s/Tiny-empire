@@ -191,6 +191,20 @@ namespace Tycoon.Upkeep
             StationBase target = _headingToDropoff ? dropoff : pickup;
             if (target == null) return;
 
+            // A square that has not been bought yet still has a position, but no live trigger.
+            // A worker sent there walks to the empty grass where the building will one day
+            // stand and waits full for ever, looking every bit like broken AI. Standing still
+            // instead is recoverable the moment the other half of the route is paid for.
+            //
+            // The level builder sells a hire with the building its worker delivers into, so
+            // this should never fire in the farm as shipped - it is here so that a level wired
+            // up wrongly degrades into an idle worker rather than a stuck one.
+            if (!target.isActiveAndEnabled)
+            {
+                Bob(delta, false);
+                return;
+            }
+
             // The player owns the square while they are in it. The worker waits its turn
             // rather than draining the basket out from under them - see
             // StationBase.ReservedForPlayer, which is also what stops it working in there.

@@ -267,6 +267,152 @@ namespace Tycoon.EditorTools
             return go;
         }
 
+        /// <summary>One straight run of fence, in the level's own grid.</summary>
+        public struct FenceRun
+        {
+            public Vector2 From;
+            public Vector2 To;
+
+            public FenceRun(float fromX, float fromZ, float toX, float toZ)
+            {
+                From = new Vector2(fromX, fromZ);
+                To = new Vector2(toX, toZ);
+            }
+        }
+
+        /// <summary>
+        /// A post-and-rail fence round the edge of the farm.
+        ///
+        /// It exists to answer a question the player asks by walking: where does this place
+        /// end? Without it the grass simply carries on until the invisible wall stops you,
+        /// which reads as the level running out rather than as the farm having a boundary.
+        /// A fence turns the same wall into somewhere deliberate.
+        ///
+        /// Built as one combined mesh for the same reason the grass is: fifty posts and a
+        /// hundred rail segments as separate objects would be a hundred and fifty draw calls
+        /// to draw something nobody looks at directly.
+        /// </summary>
+        public static GameObject BuildFence(Transform parent, FenceRun[] runs,
+            float postSpacing = 2.6f)
+        {
+            var vertices = new System.Collections.Generic.List<Vector3>();
+            var triangles = new System.Collections.Generic.List<int>();
+            var colours = new System.Collections.Generic.List<Color>();
+
+            var postTop = new Color(0.68f, 0.50f, 0.32f);
+            var postBottom = new Color(0.44f, 0.31f, 0.19f);
+            var railColour = new Color(0.78f, 0.62f, 0.42f);
+
+            const float postHeight = 1.15f;
+            const float postThickness = 0.14f;
+            const float railThickness = 0.07f;
+            const float railDepth = 0.11f;
+
+            int posts = 0;
+
+            foreach (var run in runs)
+            {
+                Vector2 along = run.To - run.From;
+                float length = along.magnitude;
+                if (length < 0.01f) continue;
+
+                Vector2 direction = along / length;
+                // Perpendicular in the ground plane, so a rail has thickness across the run
+                // whichever way the run happens to point.
+                var across = new Vector2(-direction.y, direction.x);
+
+                int spans = Mathf.Max(1, Mathf.RoundToInt(length / postSpacing));
+                for (int i = 0; i <= spans; i++)
+                {
+                    Vector2 at = Vector2.Lerp(run.From, run.To, i / (float)spans);
+                    AddBox(vertices, triangles, colours,
+                        new Vector3(at.x, postHeight * 0.5f, at.y),
+                        direction, across,
+                        postThickness, postHeight, postThickness,
+                        postBottom, postTop);
+                    posts++;
+                }
+
+                // Two rails per run, one long box each rather than one per span: the posts
+                // already break the silhouette up, so nothing is gained by segmenting them.
+                Vector2 middle = (run.From + run.To) * 0.5f;
+                foreach (float y in new[] { 0.42f, 0.82f })
+                {
+                    AddBox(vertices, triangles, colours,
+                        new Vector3(middle.x, y, middle.y),
+                        direction, across,
+                        length, railThickness, railDepth,
+                        railColour * 0.82f, railColour);
+                }
+            }
+
+            var mesh = new Mesh { name = "FenceLine" };
+            mesh.indexFormat = vertices.Count > 65000
+                ? UnityEngine.Rendering.IndexFormat.UInt32
+                : UnityEngine.Rendering.IndexFormat.UInt16;
+            mesh.SetVertices(vertices);
+            mesh.SetTriangles(triangles, 0);
+            mesh.SetColors(colours);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+
+            EnsureFolder("Assets/_Project/Meshes");
+            const string meshPath = "Assets/_Project/Meshes/FenceLine.asset";
+            AssetDatabase.DeleteAsset(meshPath);
+            AssetDatabase.CreateAsset(mesh, meshPath);
+
+            var go = new GameObject("Fence");
+            go.transform.SetParent(parent, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = Mat("Fence", new Color(0.72f, 0.56f, 0.36f));
+            renderer.receiveShadows = false;
+
+            Debug.Log($"[LevelBuildKit] Fence: {posts} posts, {triangles.Count / 3} triangles, 1 draw call");
+            return go;
+        }
+
+        /// <summary>
+        /// Appends one box to a mesh being built up, oriented along a run rather than along
+        /// the axes, so a fence can turn a corner without a transform per plank.
+        /// </summary>
+        private static void AddBox(
+            System.Collections.Generic.List<Vector3> vertices,
+            System.Collections.Generic.List<int> triangles,
+            System.Collections.Generic.List<Color> colours,
+            Vector3 centre, Vector2 direction, Vector2 across,
+            float length, float height, float depth,
+            Color bottom, Color top)
+        {
+            Vector3 dx = new Vector3(direction.x, 0f, direction.y) * (length * 0.5f);
+            Vector3 dz = new Vector3(across.x, 0f, across.y) * (depth * 0.5f);
+            Vector3 dy = Vector3.up * (height * 0.5f);
+
+            int b = vertices.Count;
+            for (int corner = 0; corner < 8; corner++)
+            {
+                Vector3 sx = (corner & 1) == 0 ? -dx : dx;
+                Vector3 sy = (corner & 2) == 0 ? -dy : dy;
+                Vector3 sz = (corner & 4) == 0 ? -dz : dz;
+                vertices.Add(centre + sx + sy + sz);
+                colours.Add((corner & 2) == 0 ? bottom : top);
+            }
+
+            // Corner bits: 1 = +x, 2 = +y, 4 = +z. Wound so every face points outwards.
+            int[] faces =
+            {
+                0, 2, 3, 0, 3, 1,   // -z
+                5, 7, 6, 5, 6, 4,   // +z
+                4, 6, 2, 4, 2, 0,   // -x
+                1, 3, 7, 1, 7, 5,   // +x
+                2, 6, 7, 2, 7, 3,   // +y
+                4, 0, 1, 4, 1, 5,   // -y
+            };
+
+            for (int i = 0; i < faces.Length; i++) triangles.Add(b + faces[i]);
+        }
+
         // ---------------------------------------------------------------- stations
 
         /// <summary>
@@ -377,12 +523,19 @@ namespace Tycoon.EditorTools
         {
             if (kind == Livestock.None) return null;
 
+            // Sized against the column spacing, not by eye.
+            //
+            // A workshop reaches 5.15 m west of its centre for the repair and buy squares, so
+            // whatever the pen reaches east of centre sets how far apart two columns have to
+            // stand. The old pasture reached 4.9 m and the columns were 8.5 m apart, which is
+            // how a cow shed's squares ended up painted across its neighbour's pasture and the
+            // first dairy ended up sitting on the chicken pen. These reach 4.1 and 3.7.
             bool cows = kind == Livestock.Cow;
-            Vector2 size = cows ? new Vector2(3.4f, 4.6f) : new Vector2(2.6f, 3.8f);
+            Vector2 size = cows ? new Vector2(2.8f, 4.2f) : new Vector2(2.4f, 3.6f);
 
             var pen = new GameObject(cows ? "Pasture" : "Pen");
             pen.transform.SetParent(parent, false);
-            pen.transform.localPosition = new Vector3(cows ? 3.2f : 2.8f, 0f, 0f);
+            pen.transform.localPosition = new Vector3(cows ? 2.7f : 2.5f, 0f, 0f);
 
             var dirt = Mat(cows ? "Pen_Pasture" : "Pen_Dirt",
                 cows ? new Color(0.46f, 0.62f, 0.32f) : new Color(0.62f, 0.53f, 0.38f));
@@ -657,11 +810,6 @@ namespace Tycoon.EditorTools
             root.transform.SetParent(parent, false);
             root.transform.localPosition = position;
 
-            // Deliberately not grey. The bin stands at the edge of the road, and a grey bin on a
-            // grey slab beside grey tarmac disappears into it - which is useless for the one
-            // object in the game a player goes looking for when something has gone wrong.
-            var metal = Mat("Bin_Body", new Color(0.27f, 0.52f, 0.45f), smoothness: 0.35f);
-            var rim = Mat("Bin_Rim", new Color(0.19f, 0.38f, 0.34f), smoothness: 0.4f);
             var pad = Mat("Bin_Pad", new Color(0.78f, 0.77f, 0.73f));
 
             // Turned with the buildings so it sits in the level like everything else, while
@@ -675,24 +823,21 @@ namespace Tycoon.EditorTools
             // unturned root, not the shell, so it stays lined up with the square whatever angle
             // the bin itself is set at.
             Box("Pad", root.transform, new Vector3(0f, 0.03f, 1.15f),
-                new Vector3(2.8f, 0.06f, 4.6f), pad, castShadow: false);
+                new Vector3(2.6f, 0.06f, 4.4f), pad, castShadow: false);
 
+            // A proper tapered can rather than a stack of boxes: narrow at the foot, wide at
+            // the mouth, lid leaning against the back. Eight sided, so the facets themselves
+            // read as the ribs down a metal bin without costing any extra geometry.
+            //
             // Deliberately not solid. A bin the player can be stopped by is a bin they can be
             // wedged against while trying to empty their arms into it.
-            Box("Body", shell.transform, new Vector3(0f, 0.62f, 0f),
-                new Vector3(1.1f, 1.24f, 1.1f), metal);
-            Box("Rim", shell.transform, new Vector3(0f, 1.28f, 0f),
-                new Vector3(1.26f, 0.14f, 1.26f), rim);
+            var can = new GameObject("Can");
+            can.transform.SetParent(shell.transform, false);
+            can.AddComponent<MeshFilter>().sharedMesh = BinMesh();
 
-            // Lid standing almost upright behind it, not lying flat. Flat it read as a second
-            // slab; upright it is a silhouette that says "open" from right across the farm.
-            Box("Lid", shell.transform, new Vector3(0f, 1.78f, -0.62f),
-                new Vector3(1.26f, 0.14f, 1.26f), rim, rot: new Vector3(72f, 0f, 0f));
-
-            // A dark mouth, so the top reads as a hole rather than a lid left closed.
-            Box("Mouth", shell.transform, new Vector3(0f, 1.3f, 0.02f),
-                new Vector3(1.0f, 0.06f, 1.0f),
-                Mat("Bin_Mouth", new Color(0.09f, 0.14f, 0.13f)), castShadow: false);
+            var canRenderer = can.AddComponent<MeshRenderer>();
+            canRenderer.sharedMaterial = Mat("Bin_Body", new Color(0.30f, 0.56f, 0.49f),
+                smoothness: 0.35f);
 
             Identify(root, id);
 
@@ -707,11 +852,136 @@ namespace Tycoon.EditorTools
             return station;
         }
 
+        private static Mesh _binMesh;
+
+        /// <summary>
+        /// The waste bin's geometry, built once and shared by every bin on the map.
+        ///
+        /// A tapered eight-sided can, a dark mouth so the top reads as open rather than shut,
+        /// and a lid resting against the back of it. Generated rather than assembled out of
+        /// primitives because a Unity cylinder cannot taper, and a stack of boxes is exactly
+        /// what this replaced - it read as a crate rather than as a bin.
+        /// </summary>
+        private static Mesh BinMesh()
+        {
+            if (_binMesh != null) return _binMesh;
+
+            var vertices = new System.Collections.Generic.List<Vector3>();
+            var triangles = new System.Collections.Generic.List<int>();
+            var colours = new System.Collections.Generic.List<Color>();
+
+            var foot = new Color(0.66f, 0.74f, 0.72f);
+            var mouth = new Color(1.05f, 1.08f, 1.05f);
+            var lid = new Color(0.82f, 0.90f, 0.88f);
+            var hole = new Color(0.14f, 0.20f, 0.19f);
+
+            // Body: narrow foot, wide mouth.
+            AddFrustum(vertices, triangles, colours, Vector3.zero,
+                0.40f, 0.56f, 1.18f, 8, foot, mouth, false, 0f);
+
+            // The rim the lid drops onto, with the dark opening just inside it. The opening is
+            // barely visible under the lid, but it is what stops the top reading as a solid
+            // block when the lid is seen edge-on from across the farm.
+            AddFrustum(vertices, triangles, colours, new Vector3(0f, 1.18f, 0f),
+                0.60f, 0.58f, 0.10f, 8, lid, lid, false, 0f);
+
+            AddFrustum(vertices, triangles, colours, new Vector3(0f, 1.19f, 0f),
+                0.50f, 0.50f, 0.02f, 8, hole, hole, true, 0f);
+
+            // Lid sitting squarely on top with a handle, the way the reference drawing has it.
+            // Set down rather than leaning: a lid propped against the back read as a second
+            // slab lying on the paving unless you were looking straight at it.
+            AddFrustum(vertices, triangles, colours, new Vector3(0f, 1.28f, 0f),
+                0.62f, 0.52f, 0.13f, 8, lid, lid, true, 0f);
+
+            AddFrustum(vertices, triangles, colours, new Vector3(0f, 1.41f, 0f),
+                0.12f, 0.10f, 0.11f, 8, lid, mouth, true, 0f);
+
+            var mesh = new Mesh { name = "TrashCan" };
+            mesh.SetVertices(vertices);
+            mesh.SetTriangles(triangles, 0);
+            mesh.SetColors(colours);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+
+            EnsureFolder("Assets/_Project/Meshes");
+            const string meshPath = "Assets/_Project/Meshes/TrashCan.asset";
+            AssetDatabase.DeleteAsset(meshPath);
+            AssetDatabase.CreateAsset(mesh, meshPath);
+
+            Debug.Log($"[LevelBuildKit] TrashCan mesh: {vertices.Count} verts, " +
+                      $"{triangles.Count / 3} tris, bounds {mesh.bounds.size}");
+
+            _binMesh = mesh;
+            return mesh;
+        }
+
+        /// <summary>
+        /// Appends a tapered prism - a cylinder whose two ends differ in radius - to a mesh
+        /// being built up. Every face gets its own four vertices so the facets stay crisp when
+        /// normals are recalculated, which is what makes eight sides read as a ribbed metal
+        /// bin rather than as a smooth tube.
+        /// </summary>
+        private static void AddFrustum(
+            System.Collections.Generic.List<Vector3> vertices,
+            System.Collections.Generic.List<int> triangles,
+            System.Collections.Generic.List<Color> colours,
+            Vector3 origin, float bottomRadius, float topRadius, float height, int sides,
+            Color bottom, Color top, bool capTop, float tilt)
+        {
+            var turn = Quaternion.Euler(tilt, 0f, 0f);
+
+            Vector3 At(float radius, float y, int i)
+            {
+                float a = i / (float)sides * Mathf.PI * 2f;
+                var local = new Vector3(Mathf.Cos(a) * radius, y, Mathf.Sin(a) * radius);
+                return origin + turn * local;
+            }
+
+            for (int i = 0; i < sides; i++)
+            {
+                int next = (i + 1) % sides;
+
+                int v = vertices.Count;
+                vertices.Add(At(bottomRadius, 0f, i));
+                vertices.Add(At(bottomRadius, 0f, next));
+                vertices.Add(At(topRadius, height, next));
+                vertices.Add(At(topRadius, height, i));
+                colours.Add(bottom); colours.Add(bottom); colours.Add(top); colours.Add(top);
+
+                triangles.Add(v); triangles.Add(v + 2); triangles.Add(v + 1);
+                triangles.Add(v); triangles.Add(v + 3); triangles.Add(v + 2);
+            }
+
+            if (!capTop) return;
+
+            for (int i = 0; i < sides; i++)
+            {
+                int next = (i + 1) % sides;
+                int v = vertices.Count;
+                vertices.Add(origin + turn * new Vector3(0f, height, 0f));
+                vertices.Add(At(topRadius, height, i));
+                vertices.Add(At(topRadius, height, next));
+                colours.Add(top); colours.Add(top); colours.Add(top);
+
+                triangles.Add(v); triangles.Add(v + 2); triangles.Add(v + 1);
+            }
+        }
+
         /// <summary>The shared street a market's counters face onto.</summary>
         public class Shopfront
         {
             public GameObject Root;
+
+            /// <summary>Half the length of the tarmac itself, which runs off past the farm.</summary>
             public float RoadHalfLength;
+
+            /// <summary>
+            /// Half the length shoppers actually use. Shorter than the road on purpose: the
+            /// tarmac carries on out of the level so the player never sees it stop, but a
+            /// shopper spawned out there would be beyond the boundary and off the navmesh.
+            /// </summary>
+            public float WalkHalfLength;
         }
 
         /// <summary>One till, with its own queue of shoppers.</summary>
@@ -727,8 +997,10 @@ namespace Tycoon.EditorTools
         /// separately, so a market can grow a second till without a second road appearing.
         /// </summary>
         public static Shopfront BuildShopfront(string id, string name, Transform parent,
-            Vector3 position, float roadHalfLength = 17f)
+            Vector3 position, float roadHalfLength = 17f, float walkHalfLength = 0f)
         {
+            if (walkHalfLength <= 0f) walkHalfLength = roadHalfLength;
+
             var root = new GameObject(name);
             root.transform.SetParent(parent, false);
             root.transform.localPosition = position;
@@ -748,7 +1020,12 @@ namespace Tycoon.EditorTools
                     castShadow: false);
             }
 
-            return new Shopfront { Root = root, RoadHalfLength = roadHalfLength };
+            return new Shopfront
+            {
+                Root = root,
+                RoadHalfLength = roadHalfLength,
+                WalkHalfLength = walkHalfLength
+            };
         }
 
         /// <summary>
@@ -786,8 +1063,8 @@ namespace Tycoon.EditorTools
 
             // Shoppers for each till arrive from opposite ends of the street, so two queues do
             // not tangle up walking through one another.
-            float inX = (enterFromWest ? -shop.RoadHalfLength : shop.RoadHalfLength) - localX;
-            float outX = (enterFromWest ? shop.RoadHalfLength : -shop.RoadHalfLength) - localX;
+            float inX = (enterFromWest ? -shop.WalkHalfLength : shop.WalkHalfLength) - localX;
+            float outX = (enterFromWest ? shop.WalkHalfLength : -shop.WalkHalfLength) - localX;
 
             var spawnPoint = new GameObject("SpawnPoint");
             spawnPoint.transform.SetParent(root.transform, false);

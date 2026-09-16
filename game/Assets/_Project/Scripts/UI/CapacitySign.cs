@@ -14,9 +14,14 @@ namespace Tycoon.UI
     /// is the feed: a coop with an empty hopper looks exactly like a coop with a full one until
     /// the eggs quietly stop, and by then the run to the corn field is already overdue.
     ///
-    /// So the board leads with feed, as a bar that goes green to amber to red, and keeps one
-    /// small line underneath for the other reason a building stops - a full basket, which is
-    /// the only case where the answer is "collect" rather than "feed".
+    /// So the board leads with feed: how many are in the hopper against how many fit, over a
+    /// bar that goes green to amber to red. Deliberately "6 / 10" rather than "60% FED" - the
+    /// player is deciding whether to make a corn run, and a percentage is a second sum to do
+    /// before they can. Both numbers come off the buffer, so resizing a hopper reports itself.
+    ///
+    /// The small line underneath says what to do about it, in the order things stop a
+    /// building: a full basket has already halted it, an empty hopper is about to, and
+    /// otherwise there is nothing to do and it reports the headcount instead.
     ///
     /// Nothing here is specific to chickens. A cow shed gets the same board off the same
     /// component with hay in place of corn, and so will anything else with a hopper.
@@ -48,7 +53,8 @@ namespace Tycoon.UI
         private Text _headline;
         private Text _footnote;
 
-        private int _lastPercent = -1;
+        private int _lastCount = -1;
+        private int _lastCapacity = -1;
         private int _lastUnits = -1;
         private bool _lastStarved;
         private bool _lastOutputFull;
@@ -112,12 +118,12 @@ namespace Tycoon.UI
             iconRect.pivot = new Vector2(0.5f, 0.5f);
             iconRect.sizeDelta = new Vector2(52f, 52f);
 
-            _headline = UIFactory.CreateText("Headline", _root, "", 40);
+            _headline = UIFactory.CreateText("Headline", _root, "", 38);
             _headline.color = Ink;
             _headline.fontStyle = FontStyle.Bold;
-            _headline.rectTransform.anchorMin = _headline.rectTransform.anchorMax = new Vector2(0.60f, 0.71f);
+            _headline.rectTransform.anchorMin = _headline.rectTransform.anchorMax = new Vector2(0.63f, 0.71f);
             _headline.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            _headline.rectTransform.sizeDelta = new Vector2(140f, 56f);
+            _headline.rectTransform.sizeDelta = new Vector2(150f, 56f);
 
             _barTrack = UIFactory.CreatePanel("BarTrack", _root, new Color(0.82f, 0.83f, 0.86f));
             var track = _barTrack.rectTransform;
@@ -177,28 +183,34 @@ namespace Tycoon.UI
         {
             // A building with no hopper - a well, a machine that makes something from nothing -
             // has no feed to report, so it falls back to reporting its basket.
-            float fill = input != null && input.capacity > 0 ? input.Fill : 1f;
-            bool starved = input != null && input.IsEmpty;
-            int percent = Mathf.Clamp(Mathf.RoundToInt(fill * 100f), 0, 100);
+            ItemBuffer reported = input != null ? input : output;
+            if (reported == null) return;
 
-            // Rounded to fives. The hopper drains one unit at a time out of ten, so the number
-            // would otherwise sit still for seconds and then jump; and every write to a Text
-            // rebuilds this canvas.
-            percent = Mathf.RoundToInt(percent / 5f) * 5;
+            int count = reported.Count;
+            int capacity = Mathf.Max(1, reported.capacity);
+            float fill = (float)count / capacity;
+            bool starved = count <= 0;
 
-            if (percent != _lastPercent || starved != _lastStarved)
+            // Read once, because both the headline and the line under it react to it and the
+            // first to write it would otherwise hide the change from the second.
+            bool starvedChanged = starved != _lastStarved;
+
+            // "6 / 10", not "60% FED".
+            //
+            // A percentage is a second thing to work out: the player is deciding whether to
+            // make a corn run, and what settles that is how many are actually in there against
+            // how many fit. Both numbers come straight off the buffer, so a building whose
+            // hopper is resized reports the new size without anything here changing.
+            if (count != _lastCount || capacity != _lastCapacity || starvedChanged)
             {
-                _lastPercent = percent;
-                _lastStarved = starved;
+                _lastCount = count;
+                _lastCapacity = capacity;
 
-                // The word beats the number when the hopper has actually run out: 0% FED reads
-                // as a statistic, NO FEED reads as a job.
-                _headline.text = input == null ? "" : starved ? "NO FEED" : percent + "% FED";
-                _headline.fontSize = starved ? 36 : 40;
+                _headline.text = count + " / " + capacity;
                 _headline.color = starved ? Empty : Ink;
             }
 
-            var feedItem = input != null ? input.item : (output != null ? output.item : null);
+            var feedItem = reported.item;
             Sprite sprite = IconFactory.For(feedItem);
             if (sprite != _lastIcon)
             {
@@ -213,7 +225,11 @@ namespace Tycoon.UI
             bool outputFull = output != null && output.IsFull;
             int units = machine != null ? machine.units : 0;
 
-            if (outputFull != _lastOutputFull || units != _lastUnits)
+            // The line underneath says what to do about it, now that the headline is pure
+            // numbers. Ordered by what stops the building soonest: a full basket has already
+            // halted it, an empty hopper is about to, and otherwise there is nothing to do and
+            // it goes back to reporting the headcount.
+            if (outputFull != _lastOutputFull || units != _lastUnits || starvedChanged)
             {
                 _lastOutputFull = outputFull;
                 _lastUnits = units;
@@ -223,12 +239,19 @@ namespace Tycoon.UI
                     _footnote.text = "FULL - COLLECT";
                     _footnote.color = Empty;
                 }
+                else if (starved && input != null)
+                {
+                    _footnote.text = "NEEDS FEED";
+                    _footnote.color = Empty;
+                }
                 else
                 {
                     _footnote.text = machine != null ? $"{units}/{machine.maxUnits} working" : "";
                     _footnote.color = Quiet;
                 }
             }
+
+            _lastStarved = starved;
 
             float stepped = Mathf.Round(fill * 32f) / 32f;
             if (!Mathf.Approximately(stepped, _lastFill))

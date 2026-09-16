@@ -34,7 +34,7 @@ namespace Tycoon.Stations
         public string SaveKey => SaveKeys.For(this);
         public int Ready => _ready;
         public override bool IsOperational => _ready > 0;
-        public override string StatusValue => crop == null ? string.Empty : $"{_ready}/{plots}";
+        public override string StatusValue => crop == null ? string.Empty : $"{_ready} / {plots}";
 
         public override Tycoon.Config.ItemDefinition IconItem => crop;
 
