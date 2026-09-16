@@ -28,6 +28,45 @@ namespace Tycoon.EditorTools
             public Rect Trigger;    // where the action actually works
             public Rect Card;       // what the player sees
             public bool Active;
+
+            /// <summary>
+            /// True once every purchase has been made: gates delete themselves, and everything
+            /// they were hiding is on. That is the fullest the farm ever gets, and so the state
+            /// most likely to have two squares fighting over the same patch of grass.
+            /// </summary>
+            public bool ActiveWhenBuilt;
+        }
+
+        /// <summary>
+        /// Reports every pair of squares that share ground in one particular state of the farm.
+        ///
+        /// A gate sits exactly on top of whatever it unlocks, by design, so a pair is only a
+        /// fault when both halves are live at the same moment - hence taking the state as a
+        /// predicate rather than reading it off the scene.
+        /// </summary>
+        private static int Overlaps(List<Entry> entries, string state, System.Func<Entry, bool> live)
+        {
+            int clashes = 0;
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                for (int j = i + 1; j < entries.Count; j++)
+                {
+                    var a = entries[i];
+                    var b = entries[j];
+                    if (!live(a) || !live(b)) continue;
+                    if (!a.Card.Overlaps(b.Card)) continue;
+
+                    clashes++;
+                    var shared = Intersection(a.Card, b.Card);
+                    Debug.LogWarning(
+                        $"[Audit] OVERLAP ({state}) {a.Name} x {b.Name} " +
+                        $"by {shared.width:0.00} x {shared.height:0.00} m");
+                }
+            }
+
+            Debug.Log($"[Audit] {state}: {clashes} overlapping pairs.");
+            return clashes;
         }
 
         [MenuItem("Tycoon/Audit Interaction Squares")]
@@ -65,32 +104,18 @@ namespace Tycoon.EditorTools
                     Trigger = Centred(local, triggerSize),
                     Card = Centred(local, cardSize),
                     Active = station.gameObject.activeInHierarchy,
+                    // Every UnlockStation hides itself once paid off (hideSelfOnUnlock), and
+                    // everything else in the scene is either on already or revealed by one.
+                    ActiveWhenBuilt = !(station is UnlockStation),
                 });
             }
 
             Debug.Log($"[Audit] {entries.Count} squares");
 
-            int clashes = 0;
-            for (int i = 0; i < entries.Count; i++)
-            {
-                for (int j = i + 1; j < entries.Count; j++)
-                {
-                    var a = entries[i];
-                    var b = entries[j];
-                    if (!a.Card.Overlaps(b.Card)) continue;
-
-                    // A gate sits on top of whatever it unlocks, by design - but only one of
-                    // the pair is ever active, so the player can never be in both.
-                    if (!a.Active || !b.Active) continue;
-
-                    clashes++;
-                    var shared = Intersection(a.Card, b.Card);
-                    Debug.LogWarning(
-                        $"[Audit] OVERLAP {a.Name} x {b.Name} " +
-                        $"by {shared.width:0.00} x {shared.height:0.00} m " +
-                        $"(active: {a.Active}/{b.Active})");
-                }
-            }
+            // Checked twice: as the game opens, and as it ends. An overlap that only appears
+            // once the second coop has been bought is still an overlap the player will meet.
+            int clashes = Overlaps(entries, "day one", e => e.Active)
+                        + Overlaps(entries, "fully built", e => e.ActiveWhenBuilt);
 
             // A trigger noticeably bigger than its outline means the player can act from
             // somewhere the game never told them about, and vice versa.

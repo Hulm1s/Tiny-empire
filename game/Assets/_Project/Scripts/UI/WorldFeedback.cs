@@ -48,6 +48,31 @@ namespace Tycoon.UI
             Merging[key] = label;
         }
 
+        /// <summary>
+        /// A counted message for goods leaving the player, rendered "-3 Corn".
+        ///
+        /// Same merging as <see cref="Add"/>: dropping a full stack in the bin fires once per
+        /// unit, and eight separate labels racing each other up the screen would read as a bug
+        /// rather than as one deliberate action.
+        /// </summary>
+        public static void Remove(string key, Vector3 worldPosition, int amount, string suffix, Color color)
+        {
+            if (Merging.TryGetValue(key, out var dropping))
+            {
+                if (dropping != null && dropping.CanAbsorb(MergeWindow))
+                {
+                    dropping.Absorb(amount, worldPosition);
+                    return;
+                }
+                Merging.Remove(key);
+            }
+
+            var dropped = FloatingLabel.Create(worldPosition, color);
+            dropped.SetCounted(amount, suffix, negative: true);
+            dropped.MergeKey = key;
+            Merging[key] = dropped;
+        }
+
         /// <summary>A counted money message, rendered as "+$25" rather than "+25 $".</summary>
         public static void AddMoney(string key, Vector3 worldPosition, int amount)
         {
@@ -85,6 +110,7 @@ namespace Tycoon.UI
         private int _amount;
         private string _suffix;
         private bool _isMoney;
+        private bool _isNegative;
         private Color _color;
 
         internal string MergeKey;
@@ -128,11 +154,12 @@ namespace Tycoon.UI
             if (_text != null) _text.text = message;
         }
 
-        public void SetCounted(int amount, string suffix)
+        public void SetCounted(int amount, string suffix, bool negative = false)
         {
             _amount = amount;
             _suffix = suffix;
             _isMoney = false;
+            _isNegative = negative;
             Refresh();
         }
 
@@ -141,6 +168,7 @@ namespace Tycoon.UI
             _amount = amount;
             _suffix = null;
             _isMoney = true;
+            _isNegative = false;
             Refresh();
         }
 
@@ -159,8 +187,12 @@ namespace Tycoon.UI
         private void Refresh()
         {
             if (_text == null) return;
-            if (_isMoney) _text.text = $"+${_amount}";
-            else _text.text = string.IsNullOrEmpty(_suffix) ? $"+{_amount}" : $"+{_amount} {_suffix}";
+            if (_isMoney) { _text.text = $"+${_amount}"; return; }
+
+            string sign = _isNegative ? "-" : "+";
+            _text.text = string.IsNullOrEmpty(_suffix)
+                ? $"{sign}{_amount}"
+                : $"{sign}{_amount} {_suffix}";
         }
 
         private void Update()

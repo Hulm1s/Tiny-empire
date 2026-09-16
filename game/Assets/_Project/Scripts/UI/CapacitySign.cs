@@ -6,20 +6,30 @@ using UnityEngine.UI;
 namespace Tycoon.UI
 {
     /// <summary>
-    /// The board over a production building: what it holds, how many are working it, and
-    /// whether it has stopped because the shelf is full.
+    /// The board over a production building. It answers one question: does this place need me?
     ///
-    /// A full output buffer silently halts a coop. Before this there was nothing in the
-    /// world that said so - the player just noticed, eventually, that the eggs had stopped.
-    /// The bar going red is the whole point; the counts are the supporting detail.
+    /// It used to report the output basket - "8/12 eggs" - which turned out to be the one
+    /// number the player already has. The collect square directly below the building shows the
+    /// same count, in the place where the player would act on it. What is genuinely invisible
+    /// is the feed: a coop with an empty hopper looks exactly like a coop with a full one until
+    /// the eggs quietly stop, and by then the run to the corn field is already overdue.
     ///
-    /// Built from the same sprites, palette and corner radius as the interaction squares
-    /// and order bubbles, so the farm keeps speaking one visual language.
+    /// So the board leads with feed, as a bar that goes green to amber to red, and keeps one
+    /// small line underneath for the other reason a building stops - a full basket, which is
+    /// the only case where the answer is "collect" rather than "feed".
+    ///
+    /// Nothing here is specific to chickens. A cow shed gets the same board off the same
+    /// component with hay in place of corn, and so will anything else with a hopper.
     /// </summary>
     public class CapacitySign : MonoBehaviour
     {
         [Header("What to report")]
+        [Tooltip("The feed hopper. This is the headline: how close the animals are to going hungry.")]
+        public ItemBuffer input;
+
+        [Tooltip("The output basket. Only surfaced when it is full, because that also stops production.")]
         public ItemBuffer output;
+
         public ProducerMachine machine;
 
         [Header("Placement")]
@@ -35,20 +45,31 @@ namespace Tycoon.UI
         private Image _barTrack;
         private Image _barFill;
         private Image _icon;
-        private Text _count;
-        private Text _units;
+        private Text _headline;
+        private Text _footnote;
 
-        private int _lastCount = -1, _lastCapacity = -1, _lastUnits = -1;
+        private int _lastPercent = -1;
+        private int _lastUnits = -1;
+        private bool _lastStarved;
+        private bool _lastOutputFull;
         private float _lastFill = -1f;
         private Color _lastFillColour;
+        private Sprite _lastIcon;
         private bool _visible = true;
         private float _timer;
 
         private const float Interval = 0.2f;
 
+        /// <summary>Below this the hopper is amber; below <see cref="Critical"/> it is red.</summary>
+        private const float Low = 0.5f;
+
+        private const float Critical = 0.2f;
+
         private static readonly Color Good = new Color(0.36f, 0.78f, 0.45f);
         private static readonly Color Warn = new Color(0.95f, 0.75f, 0.25f);
-        private static readonly Color Stopped = new Color(0.92f, 0.34f, 0.30f);
+        private static readonly Color Empty = new Color(0.92f, 0.34f, 0.30f);
+        private static readonly Color Ink = new Color(0.12f, 0.14f, 0.17f);
+        private static readonly Color Quiet = new Color(0.33f, 0.36f, 0.40f);
 
         private void Awake()
         {
@@ -81,6 +102,8 @@ namespace Tycoon.UI
             _panel = UIFactory.CreatePanel("Panel", _root, new Color(0.97f, 0.97f, 0.96f, 0.97f));
             Stretch(_panel.rectTransform, 5f);
 
+            // The feed itself, not an arrow: a corn cob over a coop and a hay bale over a cow
+            // shed say which building needs which run without a word of text.
             var iconRect = UIFactory.CreateRect("Icon", _root);
             _icon = iconRect.gameObject.AddComponent<Image>();
             _icon.raycastTarget = false;
@@ -89,12 +112,12 @@ namespace Tycoon.UI
             iconRect.pivot = new Vector2(0.5f, 0.5f);
             iconRect.sizeDelta = new Vector2(52f, 52f);
 
-            _count = UIFactory.CreateText("Count", _root, "0/0", 44);
-            _count.color = new Color(0.12f, 0.14f, 0.17f);
-            _count.fontStyle = FontStyle.Bold;
-            _count.rectTransform.anchorMin = _count.rectTransform.anchorMax = new Vector2(0.58f, 0.71f);
-            _count.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            _count.rectTransform.sizeDelta = new Vector2(130f, 56f);
+            _headline = UIFactory.CreateText("Headline", _root, "", 40);
+            _headline.color = Ink;
+            _headline.fontStyle = FontStyle.Bold;
+            _headline.rectTransform.anchorMin = _headline.rectTransform.anchorMax = new Vector2(0.60f, 0.71f);
+            _headline.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            _headline.rectTransform.sizeDelta = new Vector2(140f, 56f);
 
             _barTrack = UIFactory.CreatePanel("BarTrack", _root, new Color(0.82f, 0.83f, 0.86f));
             var track = _barTrack.rectTransform;
@@ -109,14 +132,15 @@ namespace Tycoon.UI
             _barFill.fillOrigin = (int)Image.OriginHorizontal.Left;
             _barFill.fillAmount = 0f;
 
-            // How many animals are actually working in there, which is the other half of
-            // "why is this coop slow" and is otherwise only countable by eye in the pen.
-            _units = UIFactory.CreateText("Units", _root, "", 30);
-            _units.color = new Color(0.33f, 0.36f, 0.40f);
-            _units.fontStyle = FontStyle.Bold;
-            _units.rectTransform.anchorMin = _units.rectTransform.anchorMax = new Vector2(0.5f, 0.17f);
-            _units.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            _units.rectTransform.sizeDelta = new Vector2(170f, 32f);
+            // Normally the headcount, which is the other half of "why is this coop slow".
+            // Taken over by the basket when a full one has stopped the building, because that
+            // is the more urgent of the two and they can never both be the answer.
+            _footnote = UIFactory.CreateText("Footnote", _root, "", 30);
+            _footnote.color = Quiet;
+            _footnote.fontStyle = FontStyle.Bold;
+            _footnote.rectTransform.anchorMin = _footnote.rectTransform.anchorMax = new Vector2(0.5f, 0.17f);
+            _footnote.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            _footnote.rectTransform.sizeDelta = new Vector2(200f, 32f);
         }
 
         private static void Stretch(RectTransform rect, float inset)
@@ -151,34 +175,61 @@ namespace Tycoon.UI
 
         private void Refresh()
         {
-            if (output == null) return;
+            // A building with no hopper - a well, a machine that makes something from nothing -
+            // has no feed to report, so it falls back to reporting its basket.
+            float fill = input != null && input.capacity > 0 ? input.Fill : 1f;
+            bool starved = input != null && input.IsEmpty;
+            int percent = Mathf.Clamp(Mathf.RoundToInt(fill * 100f), 0, 100);
 
-            int count = output.Count;
-            int capacity = Mathf.Max(1, output.capacity);
+            // Rounded to fives. The hopper drains one unit at a time out of ten, so the number
+            // would otherwise sit still for seconds and then jump; and every write to a Text
+            // rebuilds this canvas.
+            percent = Mathf.RoundToInt(percent / 5f) * 5;
+
+            if (percent != _lastPercent || starved != _lastStarved)
+            {
+                _lastPercent = percent;
+                _lastStarved = starved;
+
+                // The word beats the number when the hopper has actually run out: 0% FED reads
+                // as a statistic, NO FEED reads as a job.
+                _headline.text = input == null ? "" : starved ? "NO FEED" : percent + "% FED";
+                _headline.fontSize = starved ? 36 : 40;
+                _headline.color = starved ? Empty : Ink;
+            }
+
+            var feedItem = input != null ? input.item : (output != null ? output.item : null);
+            Sprite sprite = IconFactory.For(feedItem);
+            if (sprite != _lastIcon)
+            {
+                _lastIcon = sprite;
+                _icon.sprite = sprite;
+                _icon.enabled = sprite != null;
+                _icon.color = feedItem != null && !IconFactory.HasArtwork(feedItem)
+                    ? feedItem.color
+                    : Color.white;
+            }
+
+            bool outputFull = output != null && output.IsFull;
             int units = machine != null ? machine.units : 0;
 
-            if (count != _lastCount || capacity != _lastCapacity)
+            if (outputFull != _lastOutputFull || units != _lastUnits)
             {
-                _lastCount = count;
-                _lastCapacity = capacity;
-
-                // The word matters more than the numbers when production has stopped.
-                _count.text = count >= capacity ? "FULL" : $"{count}/{capacity}";
-                _count.fontSize = count >= capacity ? 40 : 44;
-
-                var item = output.item;
-                _icon.sprite = IconFactory.For(item);
-                _icon.enabled = _icon.sprite != null;
-                _icon.color = item != null && !IconFactory.HasArtwork(item) ? item.color : Color.white;
-            }
-
-            if (units != _lastUnits && machine != null)
-            {
+                _lastOutputFull = outputFull;
                 _lastUnits = units;
-                _units.text = $"{units}/{machine.maxUnits} working";
+
+                if (outputFull)
+                {
+                    _footnote.text = "FULL - COLLECT";
+                    _footnote.color = Empty;
+                }
+                else
+                {
+                    _footnote.text = machine != null ? $"{units}/{machine.maxUnits} working" : "";
+                    _footnote.color = Quiet;
+                }
             }
 
-            float fill = Mathf.Clamp01(count / (float)capacity);
             float stepped = Mathf.Round(fill * 32f) / 32f;
             if (!Mathf.Approximately(stepped, _lastFill))
             {
@@ -186,9 +237,9 @@ namespace Tycoon.UI
                 _barFill.fillAmount = stepped;
             }
 
-            // Green while there is room, amber as it fills, red once it has stopped the
-            // building. Writing colour every tick would rebuild the canvas for nothing.
-            Color wanted = fill >= 0.999f ? Stopped : fill > 0.75f ? Warn : Good;
+            // Green while there is plenty, amber as it runs down, red once the animals are
+            // nearly out. Writing colour every tick would rebuild the canvas for nothing.
+            Color wanted = fill <= Critical ? Empty : fill <= Low ? Warn : Good;
             if (wanted != _lastFillColour)
             {
                 _lastFillColour = wanted;

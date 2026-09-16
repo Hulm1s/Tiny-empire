@@ -52,6 +52,8 @@ namespace Tycoon.Upkeep
         private bool _headingToDropoff;
         private int _lastCarryCount;
         private float _underpaidTimer;
+        private float _yieldHold;
+        private Vector3 _holdSpot;
 
         /// <summary>
         /// True if a recent fee could not be covered in full. Purely informational - the worker
@@ -65,6 +67,7 @@ namespace Tycoon.Upkeep
             get
             {
                 string leg = _headingToDropoff ? "->drop" : "->pick";
+                if (IsStandingOff) leg += " (yielding)";
                 if (_agent == null) return $"{name} {leg} (no agent)";
                 if (!_agent.isOnNavMesh) return $"{name} {leg} OFF-NAVMESH";
 
@@ -81,6 +84,22 @@ namespace Tycoon.Upkeep
 
         /// <summary>Only the two squares on this worker's route; see IStationUser.</summary>
         public bool WillUse(StationBase station) => station == pickup || station == dropoff;
+
+        /// <summary>True while this worker is waiting for the player to finish at its target.</summary>
+        public bool IsStandingOff => _yieldHold > 0f;
+
+        /// <summary>
+        /// Seconds a worker keeps standing off after the player has gone.
+        ///
+        /// The player walks in and out of a trigger constantly while working a square, and
+        /// without this the worker would turn round on the spot every time they crossed the
+        /// edge - which looks broken and gets nothing done. Long enough to ride out the
+        /// flicker, short enough that a worker never looks idle.
+        /// </summary>
+        private const float HoldAfterPlayerLeaves = 0.8f;
+
+        /// <summary>How far back a standing-off worker waits. Clear of any square's outline.</summary>
+        private const float HoldDistance = 2.9f;
 
         private void Awake()
         {
@@ -102,6 +121,7 @@ namespace Tycoon.Upkeep
             float delta = Mathf.Min(Time.deltaTime, 0.05f);
 
             if (_underpaidTimer > 0f) _underpaidTimer -= delta;
+            if (_yieldHold > 0f) _yieldHold -= delta;
 
             ChargeForDeliveries();
             ChooseTarget();
@@ -146,19 +166,52 @@ namespace Tycoon.Upkeep
             else if (_carry.IsEmpty) _headingToDropoff = false;
         }
 
+        /// <summary>
+        /// Where to wait while the player has the target square.
+        ///
+        /// Back down the worker's own route, never off to one side: that is ground it has
+        /// already walked, so it is reachable, and it leaves the square approachable from the
+        /// direction the player uses. Falls back to standing still if the route is half wired.
+        /// </summary>
+        private Vector3 HoldSpotFor(StationBase target)
+        {
+            StationBase other = _headingToDropoff ? pickup : dropoff;
+            if (other == null || other == target) return transform.position;
+
+            Vector3 from = target.transform.position;
+            Vector3 back = other.transform.position - from;
+            back.y = 0f;
+            if (back.sqrMagnitude < 0.01f) return transform.position;
+
+            return from + back.normalized * HoldDistance;
+        }
+
         private void MoveTowardsTarget(float delta)
         {
             StationBase target = _headingToDropoff ? dropoff : pickup;
             if (target == null) return;
 
+            // The player owns the square while they are in it. The worker waits its turn
+            // rather than draining the basket out from under them - see
+            // StationBase.ReservedForPlayer, which is also what stops it working in there.
+            //
+            // Nothing about the worker's own state changes here: same leg, same carried
+            // stack, same target. It is purely where it chooses to stand.
+            if (target.ReservedForPlayer)
+            {
+                if (_yieldHold <= 0f) _holdSpot = HoldSpotFor(target);
+                _yieldHold = HoldAfterPlayerLeaves;
+            }
+
             Vector3 here = transform.position;
-            Vector3 there = target.transform.position;
+            Vector3 there = _yieldHold > 0f ? _holdSpot : target.transform.position;
+            if (_yieldHold > 0f) target = null;
 
             if (_agent != null && _agent.isOnNavMesh)
             {
                 // Only re-path when the destination actually changes; SetDestination every
                 // frame throws away the path it just computed.
-                if (_routedTo != target)
+                if (_routedTo != target || (target == null && _agent.destination != there))
                 {
                     _routedTo = target;
                     _agent.SetDestination(there);

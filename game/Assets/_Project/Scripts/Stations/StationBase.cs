@@ -71,6 +71,14 @@ namespace Tycoon.Stations
         public bool playerCompatible = true;
         public bool workerCompatible = true;
 
+        [Tooltip("While the player is standing here, hired hands stop working and stand off. " +
+                 "Without this the two compete for the same goods: a worker emptying the egg " +
+                 "basket takes an egg every 0.18 s, so a player who walks up to collect finds " +
+                 "the basket drained under them and has to wait for the worker to leave. The " +
+                 "player is meant to be the fastest thing on the farm, not something the staff " +
+                 "queue in front of.")]
+        public bool playerPriority = true;
+
         /// <summary>
         /// Whoever is currently being ticked. Subclasses read this inside
         /// <see cref="TickWithPlayer"/> without caring whether it is the player or a worker.
@@ -91,6 +99,15 @@ namespace Tycoon.Stations
 
         /// <summary>True while at least one compatible actor is standing here.</summary>
         public bool IsOccupied => _occupants.Count > 0;
+
+        /// <summary>
+        /// True while the player is here and this square is theirs alone.
+        ///
+        /// Read by <see cref="Tycoon.Upkeep.WorkerAgent"/>, which stands off rather than
+        /// crowding in. Exposed as a plain property so it works for any station type, present
+        /// or future, without a line of per-station code.
+        /// </summary>
+        public bool ReservedForPlayer => playerPriority && HasPlayer;
 
         /// <summary>True while the player specifically is standing here.</summary>
         public bool HasPlayer
@@ -116,6 +133,24 @@ namespace Tycoon.Stations
 
         /// <summary>Override to drive the ring in Transfer mode. Zero hides it.</summary>
         protected virtual float TransferProgress => 0f;
+
+        /// <summary>
+        /// The arms of whoever is standing here, the player's first. Null when nobody is.
+        ///
+        /// <see cref="Carry"/> only exists for the duration of a tick; this is for the
+        /// stations whose display depends on what the occupant is holding rather than on
+        /// anything the station itself owns.
+        /// </summary>
+        protected CarryStack PrimaryCarry
+        {
+            get
+            {
+                for (int i = 0; i < _occupants.Count; i++)
+                    if (_occupants[i].IsPlayer) return _occupants[i].Carry;
+
+                return _occupants.Count > 0 ? _occupants[0].Carry : null;
+            }
+        }
 
         /// <summary>
         /// What the square says, in three separate pieces rather than one sentence.
@@ -211,6 +246,7 @@ namespace Tycoon.Stations
             // an unclamped delta would drain a whole field into the player's arms instantly.
             float delta = Mathf.Min(Time.deltaTime, 0.1f);
             float bestProgress = 0f;
+            bool playerOnly = ReservedForPlayer;
 
             for (int i = _occupants.Count - 1; i >= 0; i--)
             {
@@ -218,6 +254,17 @@ namespace Tycoon.Stations
                 if (occupant.Carry == null)
                 {
                     _occupants.RemoveAt(i);
+                    continue;
+                }
+
+                // Paused, not ejected. The worker keeps its place, its carried stack and its
+                // timers; it simply does nothing until the player is done. Nothing is created
+                // or destroyed here, so a worker can neither lose goods nor duplicate them by
+                // being interrupted.
+                if (playerOnly && !occupant.IsPlayer)
+                {
+                    occupant.TransferTimer = 0f;
+                    occupant.TaskTimer = 0f;
                     continue;
                 }
 

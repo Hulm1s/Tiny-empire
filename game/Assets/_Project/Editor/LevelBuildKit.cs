@@ -588,31 +588,46 @@ namespace Tycoon.EditorTools
             // because the output is full. Kept low, just clear of the roof: the camera looks
             // across the farm, so a sign hung high is drawn over the ground well behind it.
             var sign = root.AddComponent<CapacitySign>();
+            sign.input = kit.Input;
             sign.output = kit.Output;
             sign.machine = kit.Machine;
             sign.height = 2.65f;
+
+            // Sits above the board, so the two read as one column of information rather than
+            // competing for the same bit of sky. Hidden until the building starts wearing out.
+            var marker = root.AddComponent<AttentionMarker>();
+            marker.durability = kit.Durability;
+            marker.height = 4.35f;
 
             // Squares are arranged along the screen's vertical axis, never side by side. A
             // portrait phone only shows about 7.8 world units across, so a building that puts
             // its input on the left and its output on the right runs off both edges at once.
             // Stacking them also gives the level a single downhill flow: harvest at the top,
             // feed, collect, sell at the bottom.
+            // Wider than the building, and wider than they used to be. These two are the most
+            // walked-into squares in the game, and they sit under a field 5.5 m across - so a
+            // player who harvested the west end of the crop and walked straight down used to
+            // miss the feed square entirely and land in the buy-a-chicken square beside it.
+            // Paying for a chicken by accident, on the main loop, is exactly the kind of tax on
+            // walking that the hire squares were moved off the fields to avoid.
             kit.Feed = Station<DepositStation>($"{id}.feed", "Feed", root.transform, new Vector3(0f, 0f, 2.8f),
-                new Vector2(2.6f, 2.0f), "Feed", new Color(0.42f, 0.72f, 1f));
+                new Vector2(3.4f, 2.0f), "Feed", new Color(0.42f, 0.72f, 1f));
             kit.Feed.target = kit.Input;
 
             kit.Collect = Station<CollectStation>($"{id}.collect", "Collect", root.transform, new Vector3(0f, 0f, -2.8f),
-                new Vector2(2.6f, 2.0f), "Collect", new Color(0.55f, 0.9f, 0.5f));
+                new Vector2(3.4f, 2.0f), "Collect", new Color(0.55f, 0.9f, 0.5f));
             kit.Collect.source = kit.Output;
 
-            // Repair and buy sit together on the west side; the east belongs to the pen.
+            // Repair and buy sit together on the west side; the east belongs to the pen, which
+            // is walkable and is the way round the building. Held a metre clear of the feed and
+            // collect squares so that stepping into one of these is always a decision.
             kit.Repair = Station<RepairStation>($"{id}.repair", "Repair", root.transform,
-                new Vector3(-2.9f, 0f, -1.6f),
+                new Vector3(-3.9f, 0f, -1.6f),
                 new Vector2(1.8f, 1.8f), "Fix", new Color(1f, 0.72f, 0.3f));
             kit.Repair.target = kit.Durability;
 
             kit.Upgrade = Station<UpgradeStation>($"{id}.upgrade", "BuyUnit", root.transform,
-                new Vector3(-2.9f, 0f, 1.6f), new Vector2(1.8f, 1.8f),
+                new Vector3(-3.9f, 0f, 1.6f), new Vector2(1.8f, 1.8f),
                 unitName, new Color(0.55f, 0.85f, 0.45f));
             kit.Upgrade.target = kit.Machine;
             kit.Upgrade.basePrice = unitPrice;
@@ -626,6 +641,70 @@ namespace Tycoon.EditorTools
             kit.Beacon.outputBuffer = kit.Output;
 
             return kit;
+        }
+
+        /// <summary>
+        /// The bin: somewhere to put down goods that have nowhere else to go.
+        ///
+        /// A physical place rather than a button, like everything else here. The player walks
+        /// to it and stands in it, and what they are carrying goes in the rubbish - which is
+        /// the whole safety net for the one piece of state that could otherwise strand them.
+        /// See <see cref="DiscardStation"/> for why that matters.
+        /// </summary>
+        public static DiscardStation BuildBin(string id, string name, Transform parent, Vector3 position)
+        {
+            var root = new GameObject(name);
+            root.transform.SetParent(parent, false);
+            root.transform.localPosition = position;
+
+            // Deliberately not grey. The bin stands at the edge of the road, and a grey bin on a
+            // grey slab beside grey tarmac disappears into it - which is useless for the one
+            // object in the game a player goes looking for when something has gone wrong.
+            var metal = Mat("Bin_Body", new Color(0.27f, 0.52f, 0.45f), smoothness: 0.35f);
+            var rim = Mat("Bin_Rim", new Color(0.19f, 0.38f, 0.34f), smoothness: 0.4f);
+            var pad = Mat("Bin_Pad", new Color(0.78f, 0.77f, 0.73f));
+
+            // Turned with the buildings so it sits in the level like everything else, while
+            // the square underneath stays screen-aligned.
+            var shell = new GameObject("Shell");
+            shell.transform.SetParent(root.transform, false);
+            shell.transform.localRotation = Quaternion.Euler(0f, BuildingYaw, 0f);
+
+            // A slab under the bin AND under the square in front of it, so the two read as one
+            // fixture and the square is painted on paving rather than on grass. Parented to the
+            // unturned root, not the shell, so it stays lined up with the square whatever angle
+            // the bin itself is set at.
+            Box("Pad", root.transform, new Vector3(0f, 0.03f, 1.15f),
+                new Vector3(2.8f, 0.06f, 4.6f), pad, castShadow: false);
+
+            // Deliberately not solid. A bin the player can be stopped by is a bin they can be
+            // wedged against while trying to empty their arms into it.
+            Box("Body", shell.transform, new Vector3(0f, 0.62f, 0f),
+                new Vector3(1.1f, 1.24f, 1.1f), metal);
+            Box("Rim", shell.transform, new Vector3(0f, 1.28f, 0f),
+                new Vector3(1.26f, 0.14f, 1.26f), rim);
+
+            // Lid standing almost upright behind it, not lying flat. Flat it read as a second
+            // slab; upright it is a silhouette that says "open" from right across the farm.
+            Box("Lid", shell.transform, new Vector3(0f, 1.78f, -0.62f),
+                new Vector3(1.26f, 0.14f, 1.26f), rim, rot: new Vector3(72f, 0f, 0f));
+
+            // A dark mouth, so the top reads as a hole rather than a lid left closed.
+            Box("Mouth", shell.transform, new Vector3(0f, 1.3f, 0.02f),
+                new Vector3(1.0f, 0.06f, 1.0f),
+                Mat("Bin_Mouth", new Color(0.09f, 0.14f, 0.13f)), castShadow: false);
+
+            Identify(root, id);
+
+            var station = Station<DiscardStation>($"{id}.discard", "Discard", root.transform,
+                new Vector3(0f, 0f, 1.9f), new Vector2(2.4f, 2.0f), "Bin",
+                new Color(0.72f, 0.76f, 0.82f));
+
+            // Fast. This is a way out of a mistake, not a chore - nobody should stand in the
+            // bin for four seconds paying for having picked up the wrong thing.
+            station.tickInterval = 0.09f;
+
+            return station;
         }
 
         /// <summary>The shared street a market's counters face onto.</summary>

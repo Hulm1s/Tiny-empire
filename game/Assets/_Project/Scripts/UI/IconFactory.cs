@@ -15,7 +15,8 @@ namespace Tycoon.UI
         Buy,
         Unlock,
         Hire,
-        Serve
+        Serve,
+        Discard
     }
 
     /// <summary>
@@ -85,6 +86,7 @@ namespace Tycoon.UI
                 case SquareIcon.Unlock: return Get("unlock", DrawPadlock);
                 case SquareIcon.Hire: return Get("hire", DrawPerson);
                 case SquareIcon.Serve: return Get("serve", DrawCoin);
+                case SquareIcon.Discard: return Get("discard", DrawBin);
                 default: return null;
             }
         }
@@ -99,6 +101,37 @@ namespace Tycoon.UI
             var sprite = painter.ToSprite("Icon_" + key);
             Cache[key] = sprite;
             return sprite;
+        }
+
+        /// <summary>
+        /// The waste bin, for the one square that gives nothing back.
+        ///
+        /// Drawn as an open bin with the lid tipped off rather than a closed one, because a
+        /// closed bin reads as storage - somewhere goods are kept - and this square destroys
+        /// what is put in it.
+        /// </summary>
+        private static void DrawBin(Painter p)
+        {
+            var metalTop = new Color(0.72f, 0.76f, 0.80f);
+            var metalBottom = new Color(0.46f, 0.51f, 0.57f);
+            var rim = new Color(0.58f, 0.63f, 0.69f);
+
+            // Tapered body: wider at the mouth, so it reads as something you drop into.
+            p.Triangle(new Vector2(25f, 62f), new Vector2(71f, 62f), new Vector2(64f, 14f),
+                metalTop, metalBottom, outline: 2.4f);
+            p.Triangle(new Vector2(25f, 62f), new Vector2(64f, 14f), new Vector2(32f, 14f),
+                metalTop, metalBottom, outline: 2.4f);
+
+            // Ribs, which is the detail that stops it reading as a plain bucket.
+            var rib = new Color(0.38f, 0.43f, 0.49f, 0.55f);
+            p.Box(40f, 38f, 2.2f, 21f, 1.6f, rib, rib);
+            p.Box(56f, 38f, 2.2f, 21f, 1.6f, rib, rib);
+
+            // Lid, tipped open and sitting proud of the mouth.
+            p.Box(48f, 68f, 26f, 5f, 3f, rim, metalBottom, outline: 2.4f, angle: -7f);
+            p.Box(52f, 78f, 7f, 3.4f, 2.4f, rim, metalBottom, outline: 2.2f, angle: -7f);
+
+            p.Glow(36f, 48f, 5f, 15f, new Color(1f, 1f, 1f, 0.35f));
         }
 
         // ------------------------------------------------------------------ products
