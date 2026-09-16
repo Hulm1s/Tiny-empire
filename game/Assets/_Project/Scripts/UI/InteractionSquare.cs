@@ -43,14 +43,25 @@ namespace Tycoon.UI
         public float pulseSpeed = 2.1f;
 
         /// <summary>
-        /// The card never shrinks below this, however small the trigger is.
+        /// The card never draws smaller than this, however small the trigger is.
         ///
         /// A 1.8 m repair square would otherwise leave about eleven screen pixels for a line of
-        /// text once the camera's tilt has squashed it. Chosen against the tightest pair on the
-        /// farm - a coop's fix and buy squares, 3.2 m apart - so two cards laid at this size
-        /// still do not touch once turned to face the camera.
+        /// text once the camera's tilt has squashed it. The bin goes the other way and is drawn
+        /// smaller than the default, because being easy to step into is a fault there.
         /// </summary>
-        private static readonly Vector2 MinCard = new Vector2(2.5f, 2.1f);
+        [Tooltip("The card never draws smaller than this, however small the trigger is.\n\n" +
+                 "Raised from the trigger for most squares because a 1.8 m repair square leaves " +
+                 "about eleven screen pixels for a line of text once the camera's tilt has " +
+                 "squashed it. Lowered for the bin, which says one short word and must NOT be " +
+                 "easy to wander into.")]
+        public Vector2 minCard = DefaultMinCard;
+
+        /// <summary>
+        /// What almost every square uses. Chosen against the tightest pair on the farm - a
+        /// coop's fix and buy squares, 3.2 m apart - so two cards laid at this size still do
+        /// not touch once they are turned to face the camera.
+        /// </summary>
+        public static readonly Vector2 DefaultMinCard = new Vector2(2.5f, 2.1f);
 
         /// <summary>
         /// The readable block in the middle of the square: icon, label, value, progress.
@@ -119,11 +130,13 @@ namespace Tycoon.UI
         /// a second copy at runtime. The saved one is left orphaned with nothing updating it,
         /// which shows up as a plain white rectangle sitting on top of the real square.
         /// </summary>
-        public void Configure(StationBase owner, Vector2 squareSize, Color squareColor)
+        public void Configure(StationBase owner, Vector2 squareSize, Color squareColor,
+            Vector2 smallestCard = default)
         {
             station = owner;
             size = squareSize;
             color = squareColor;
+            if (smallestCard.x > 0f && smallestCard.y > 0f) minCard = smallestCard;
         }
 
         /// <summary>
@@ -134,8 +147,8 @@ namespace Tycoon.UI
         /// to triggers too small to draw.
         /// </summary>
         private Vector2 CardSize => new Vector2(
-            Mathf.Max(size.x, MinCard.x),
-            Mathf.Max(size.y, MinCard.y));
+            Mathf.Max(size.x, minCard.x),
+            Mathf.Max(size.y, minCard.y));
 
         private void Build()
         {
@@ -161,9 +174,11 @@ namespace Tycoon.UI
             float cardH = card.y * 100f;
 
             // Content is laid out against its own fixed box, not the outline, so a field
-            // and a repair square carry identically sized text.
-            float w = ContentSize.x * 100f;
-            float h = ContentSize.y * 100f;
+            // and a repair square carry identically sized text. It is clamped to the card,
+            // though: a square deliberately drawn smaller than the usual minimum would
+            // otherwise have its text hanging out over the grass on all four sides.
+            float w = Mathf.Min(card.x, ContentSize.x) * 100f;
+            float h = Mathf.Min(card.y, ContentSize.y) * 100f;
 
             float pad = h * 0.06f;
             float barHeight = h * 0.07f;

@@ -26,9 +26,6 @@ namespace Tycoon.EditorTools
     {
         private const string ScenePath = "Assets/_Project/Scenes/Farm.unity";
 
-        /// <summary>Mirrors InteractionSquare: the drawn outline is never smaller than this.</summary>
-        private static readonly Vector2 MinCard = new Vector2(2.5f, 2.1f);
-
         private class Entry
         {
             public string Name;
@@ -77,9 +74,11 @@ namespace Tycoon.EditorTools
 
                 Vector3 local = root.transform.InverseTransformPoint(station.transform.position);
                 Vector2 triggerSize = new Vector2(box.size.x, box.size.z);
+                // Read off the square rather than mirrored here, so a square deliberately
+                // drawn smaller than the usual minimum - the bin - is measured as it really is.
                 Vector2 cardSize = square != null
-                    ? new Vector2(Mathf.Max(square.size.x, MinCard.x),
-                                  Mathf.Max(square.size.y, MinCard.y))
+                    ? new Vector2(Mathf.Max(square.size.x, square.minCard.x),
+                                  Mathf.Max(square.size.y, square.minCard.y))
                     : triggerSize;
 
                 entries.Add(new Entry

@@ -106,32 +106,43 @@ namespace Tycoon.UI
         /// <summary>
         /// The waste bin, for the one square that gives nothing back.
         ///
-        /// Drawn as an open bin with the lid tipped off rather than a closed one, because a
-        /// closed bin reads as storage - somewhere goods are kept - and this square destroys
-        /// what is put in it.
+        /// A closed charcoal can with a domed lid and a handle, drawn from the reference: lid
+        /// on rather than tipped off. An open bin was meant to say "put things in here", but at
+        /// forty screen pixels the tipped lid read as a second object lying beside the can, and
+        /// the whole thing stopped looking like a bin at all. A closed one is instantly
+        /// recognisable, and the word BIN above it does the explaining.
         /// </summary>
         private static void DrawBin(Painter p)
         {
-            var metalTop = new Color(0.72f, 0.76f, 0.80f);
-            var metalBottom = new Color(0.46f, 0.51f, 0.57f);
-            var rim = new Color(0.58f, 0.63f, 0.69f);
+            var bodyTop = new Color(0.33f, 0.34f, 0.36f);
+            var bodyBottom = new Color(0.20f, 0.21f, 0.23f);
+            var lidColour = new Color(0.36f, 0.37f, 0.39f);
+            var rib = new Color(0.15f, 0.16f, 0.18f, 0.75f);
 
-            // Tapered body: wider at the mouth, so it reads as something you drop into.
-            p.Triangle(new Vector2(25f, 62f), new Vector2(71f, 62f), new Vector2(64f, 14f),
-                metalTop, metalBottom, outline: 2.4f);
-            p.Triangle(new Vector2(25f, 62f), new Vector2(64f, 14f), new Vector2(32f, 14f),
-                metalTop, metalBottom, outline: 2.4f);
+            // Tapered body, a touch narrower at the foot. Drawn as two triangles because the
+            // painter has no trapezoid and a rounded box cannot taper.
+            p.Quad(new Vector2(17f, 64f), new Vector2(79f, 64f),
+                   new Vector2(71f, 8f), new Vector2(25f, 8f),
+                   bodyTop, bodyBottom, outline: 2.6f);
 
-            // Ribs, which is the detail that stops it reading as a plain bucket.
-            var rib = new Color(0.38f, 0.43f, 0.49f, 0.55f);
-            p.Box(40f, 38f, 2.2f, 21f, 1.6f, rib, rib);
-            p.Box(56f, 38f, 2.2f, 21f, 1.6f, rib, rib);
+            // The ribs down the front: upright, evenly spaced, and stopping short of the foot
+            // so the taper still reads. Angling them to follow the sides looked like scratches.
+            for (int i = 0; i < 4; i++)
+            {
+                float x = Mathf.Lerp(32f, 64f, i / 3f);
+                p.Box(x, 35f, 3.2f, 24f, 2.6f, rib, rib);
+            }
 
-            // Lid, tipped open and sitting proud of the mouth.
-            p.Box(48f, 68f, 26f, 5f, 3f, rim, metalBottom, outline: 2.4f, angle: -7f);
-            p.Box(52f, 78f, 7f, 3.4f, 2.4f, rim, metalBottom, outline: 2.2f, angle: -7f);
+            // Lid: a shallow dome sitting on a flat skirt that overhangs the body.
+            p.Box(48f, 70f, 35f, 6f, 4.5f, lidColour, bodyTop, outline: 2.6f);
+            p.Ellipse(48f, 74f, 29f, 9f, lidColour, bodyTop, outline: 2.6f);
 
-            p.Glow(36f, 48f, 5f, 15f, new Color(1f, 1f, 1f, 0.35f));
+            // Handle, drawn as a ring with its lower half bitten off so it reads as an arch.
+            p.Ring(48f, 84f, 11f, 6.5f, lidColour, bodyTop, outline: 2.4f);
+            p.Erase(48f, 78f, 14f, 6f);
+            p.Box(48f, 82f, 11f, 2.6f, 2f, lidColour, bodyTop, outline: 2.4f);
+
+            p.Glow(31f, 45f, 4f, 16f, new Color(1f, 1f, 1f, 0.16f));
         }
 
         // ------------------------------------------------------------------ products
@@ -390,8 +401,15 @@ namespace Tycoon.UI
                 float outline = 0f)
             {
                 // Consistent winding, so "inside" is the same sign for all three edges.
+                //
+                // The sign is the opposite way round from the obvious one, and getting it wrong
+                // cost every triangle in the project: Edge returns a LEFT-positive distance, so
+                // a counter-clockwise triangle is the one that needs negating. With it the
+                // wrong way up the inside tested as outside and nothing drew at all - which is
+                // why the feed and collect arrows were plain rectangles with no heads on them,
+                // and why the bin was a lid floating over four stripes.
                 float area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
-                float flip = area < 0f ? -1f : 1f;
+                float flip = area < 0f ? 1f : -1f;
 
                 Paint((x, y) =>
                 {
@@ -399,6 +417,29 @@ namespace Tycoon.UI
                     float e1 = Edge(b, c, x, y) * flip;
                     float e2 = Edge(c, a, x, y) * flip;
                     return Mathf.Min(e0, Mathf.Min(e1, e2));
+                }, top, bottom, outline);
+            }
+
+            /// <summary>
+            /// A convex four-sided shape, in order around the outline.
+            ///
+            /// Exists because a tapered can drawn as two outlined triangles gets its shared
+            /// diagonal outlined too, which puts a dark slash straight across the middle of the
+            /// bin. One shape has one outline, around the outside, where it belongs.
+            /// </summary>
+            public void Quad(Vector2 a, Vector2 b, Vector2 c, Vector2 d, Color top, Color bottom,
+                float outline = 0f)
+            {
+                float area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+                float flip = area < 0f ? 1f : -1f;
+
+                Paint((x, y) =>
+                {
+                    float e0 = Edge(a, b, x, y) * flip;
+                    float e1 = Edge(b, c, x, y) * flip;
+                    float e2 = Edge(c, d, x, y) * flip;
+                    float e3 = Edge(d, a, x, y) * flip;
+                    return Mathf.Min(Mathf.Min(e0, e1), Mathf.Min(e2, e3));
                 }, top, bottom, outline);
             }
 

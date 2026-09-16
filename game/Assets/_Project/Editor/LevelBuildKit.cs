@@ -420,7 +420,8 @@ namespace Tycoon.EditorTools
         /// This is the single call every interaction in the game is built from.
         /// </summary>
         public static T Station<T>(string id, string name, Transform parent, Vector3 position,
-            Vector2 size, string label, Color color) where T : StationBase
+            Vector2 size, string label, Color color, Vector2 smallestCard = default)
+            where T : StationBase
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
@@ -448,7 +449,7 @@ namespace Tycoon.EditorTools
             // the player, so it carries the label, the "you are standing here" state and the
             // progress ring all in one.
             var square = go.AddComponent<InteractionSquare>();
-            square.Configure(station, size, color);
+            square.Configure(station, size, color, smallestCard);
 
             // No floating sign here on purpose: the square itself now carries the label and
             // the numbers. Two labels for one action was clutter, and putting the text on the
@@ -822,8 +823,8 @@ namespace Tycoon.EditorTools
             // fixture and the square is painted on paving rather than on grass. Parented to the
             // unturned root, not the shell, so it stays lined up with the square whatever angle
             // the bin itself is set at.
-            Box("Pad", root.transform, new Vector3(0f, 0.03f, 1.15f),
-                new Vector3(2.6f, 0.06f, 4.4f), pad, castShadow: false);
+            Box("Pad", root.transform, new Vector3(0f, 0.03f, 0.9f),
+                new Vector3(2.0f, 0.06f, 3.3f), pad, castShadow: false);
 
             // A proper tapered can rather than a stack of boxes: narrow at the foot, wide at
             // the mouth, lid leaning against the back. Eight sided, so the facets themselves
@@ -841,12 +842,24 @@ namespace Tycoon.EditorTools
 
             Identify(root, id);
 
-            var station = Station<DiscardStation>($"{id}.discard", "Discard", root.transform,
-                new Vector3(0f, 0f, 1.9f), new Vector2(2.4f, 2.0f), "Bin",
-                new Color(0.72f, 0.76f, 0.82f));
+            // Smaller than any other square on the farm, and smaller than the minimum the rest
+            // are drawn at - the one place where being easy to step into is a fault rather than
+            // a feature. Everything else here gives something back; this one destroys what you
+            // are carrying, so brushing past it on the way to the till has to be impossible
+            // rather than merely unlikely. The player has to mean it.
+            //
+            // The drawn card is pulled down to match, so the dashes are still exactly the
+            // ground the bin works from. "BIN" is one short word and needs no number, which is
+            // what lets this square afford to be small.
+            var zone = new Vector2(1.7f, 1.5f);
 
-            // Fast. This is a way out of a mistake, not a chore - nobody should stand in the
-            // bin for four seconds paying for having picked up the wrong thing.
+            var station = Station<DiscardStation>($"{id}.discard", "Discard", root.transform,
+                new Vector3(0f, 0f, 1.7f), zone, "Bin",
+                new Color(0.72f, 0.76f, 0.82f), smallestCard: zone);
+
+            // Fast, once you are actually in it. This is a way out of a mistake, not a chore -
+            // nobody should stand in the bin for four seconds paying for having picked up the
+            // wrong thing.
             station.tickInterval = 0.09f;
 
             return station;
