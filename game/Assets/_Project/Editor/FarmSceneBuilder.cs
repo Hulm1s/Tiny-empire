@@ -34,6 +34,19 @@ namespace Tycoon.EditorTools
         // It is purely a look; the layout numbers below do not change.
         private const float LevelYaw = 45f;
 
+        // ---- TESTING ONLY ----------------------------------------------------------
+        // Above zero, this replaces EVERY purchase price on the farm - locked plots, hires
+        // and livestock alike - so the whole progression can be walked end to end in a couple
+        // of minutes instead of an hour. It is the only thing that has to be changed back:
+        // set it to 0 and every real price below takes effect again.
+        //
+        // Deliberately one constant rather than edited numbers, so reverting cannot miss one.
+        private const double TestPriceOverride = 10d;
+
+        /// <summary>The real price, or the test override while one is set.</summary>
+        private static double Price(double real) =>
+            TestPriceOverride > 0d ? TestPriceOverride : real;
+
         [MenuItem("Tycoon/Rebuild Farm Scene")]
         public static void Build()
         {
@@ -252,7 +265,7 @@ namespace Tycoon.EditorTools
                 // 10 - visibly short, which is what makes the second chicken worth buying.
                 secondsPerOutput: 6f, inputCapacity: 10, outputCapacity: 12,
                 bodyColor: new Color(0.86f, 0.42f, 0.34f), wearPerOutput: 1.5f,
-                startUnits: 1, maxUnits: 3, unitPrice: 120d,
+                startUnits: 1, maxUnits: 3, unitPrice: Price(120d),
                 unitName: "Chicken", livestock: LevelBuildKit.Livestock.Chicken);
             coopA.Repair.costPerPoint = 0.25d;
 
@@ -261,7 +274,7 @@ namespace Tycoon.EditorTools
                 input: items.Corn, output: items.Egg,
                 secondsPerOutput: 6f, inputCapacity: 10, outputCapacity: 12,
                 bodyColor: new Color(0.62f, 0.5f, 0.85f), wearPerOutput: 1.5f,
-                startUnits: 1, maxUnits: 3, unitPrice: 150d,
+                startUnits: 1, maxUnits: 3, unitPrice: Price(150d),
                 unitName: "Chicken", livestock: LevelBuildKit.Livestock.Chicken);
             coopB.Repair.costPerPoint = 0.25d;
 
@@ -282,7 +295,7 @@ namespace Tycoon.EditorTools
                 // Much slower than a chicken, and worth more than twice as much per unit.
                 secondsPerOutput: 10f, inputCapacity: 10, outputCapacity: 10,
                 bodyColor: new Color(0.75f, 0.72f, 0.66f), wearPerOutput: 2f,
-                startUnits: 1, maxUnits: 3, unitPrice: 400d,
+                startUnits: 1, maxUnits: 3, unitPrice: Price(400d),
                 unitName: "Cow", livestock: LevelBuildKit.Livestock.Cow);
             cowA.Repair.costPerPoint = 0.35d;
 
@@ -291,7 +304,7 @@ namespace Tycoon.EditorTools
                 input: items.Hay, output: items.Milk,
                 secondsPerOutput: 10f, inputCapacity: 10, outputCapacity: 10,
                 bodyColor: new Color(0.6f, 0.66f, 0.72f), wearPerOutput: 2f,
-                startUnits: 1, maxUnits: 3, unitPrice: 450d,
+                startUnits: 1, maxUnits: 3, unitPrice: Price(450d),
                 unitName: "Cow", livestock: LevelBuildKit.Livestock.Cow);
             cowB.Repair.costPerPoint = 0.35d;
 
@@ -473,8 +486,8 @@ namespace Tycoon.EditorTools
         {
             var gate = LevelBuildKit.Station<UnlockStation>(id, name, root, position, size,
                 label, new Color(1f, 0.85f, 0.35f));
-            gate.price = price;
-            gate.payPerTick = Mathf.Max(4f, (float)(price / 40d));
+            gate.price = Price(price);
+            gate.payPerTick = Mathf.Max(4f, (float)(gate.price / 40d));
             gate.revealOnUnlock = reveal;
 
             foreach (var go in reveal)
@@ -504,8 +517,8 @@ namespace Tycoon.EditorTools
             // A person rather than the padlock every other purchase gets: same station type,
             // very different thing being bought.
             hire.icon = Tycoon.UI.SquareIcon.Hire;
-            hire.price = price;
-            hire.payPerTick = Mathf.Max(6f, (float)(price / 40d));
+            hire.price = Price(price);
+            hire.payPerTick = Mathf.Max(6f, (float)(hire.price / 40d));
             hire.revealOnUnlock = new[] { worker.gameObject };
 
             // The alert beacon should complain about an unpaid worker at this building.
