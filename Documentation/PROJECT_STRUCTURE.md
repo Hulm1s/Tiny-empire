@@ -349,7 +349,7 @@ The constant exists precisely so reverting cannot miss one (`FarmSceneBuilder.cs
 | Branch | State |
 |---|---|
 | `main` | at `c4b128a`. The last published source. |
-| `layout-bin-priority-polish` | **current working branch**, 5 commits ahead of `main`. |
+| `layout-bin-priority-polish` | **current working branch**, pushed to `origin`, not yet merged into `main`. |
 | `gh-pages` | the live site. One parentless commit, force-pushed by `publish.sh`. Currently `e788012 "Publish 2026.09.15.2040"`. |
 | `perf-and-hire-placement`, `feat/farm-expansion` | older feature branches. |
 

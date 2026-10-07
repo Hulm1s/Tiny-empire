@@ -135,7 +135,7 @@ D:\iosGame\game\         <- the UNITY PROJECT (what Unity Hub opens)
 | | |
 |---|---|
 | **Test pricing is ON** | `FarmSceneBuilder.cs:44` — `TestPriceOverride = 10d`. **Every** price in the game is $10. Set to `0d` before any release. |
-| **Branch** | `layout-bin-priority-polish`, 5 commits ahead of `main`, **not pushed**. |
+| **Branch** | `layout-bin-priority-polish`, pushed to `origin`, **not yet merged into `main`**. |
 | **The live site is older than `main`** | `gh-pages` carries `Publish 2026.09.15.2040` — before the four-column farm, the split tills, the three bins and the icon fixes. |
 | **Layout audit** | Passing. 39 squares, 13 building footprints, 0 overlaps, 0 progression faults. Verified this session. |
 | **Character avatars** | Three of four role FBX `.meta` files have `avatarSetup: 0` (NoAvatar) committed. Whether this breaks animation in the shipped build is **UNKNOWN** — see `CHARACTERS_AND_MODELS.md` §6. |
