@@ -376,6 +376,14 @@ namespace Tycoon.UI
         {
             if (_root == null || station == null) return;
 
+            // A station that has switched itself off - a gate that has been paid for - must take
+            // its square with it, or the old outline is left lying under whatever it revealed.
+            if (!station.enabled)
+            {
+                SetVisible(false);
+                return;
+            }
+
             _visibilityTimer -= Time.deltaTime;
             if (_visibilityTimer <= 0f)
             {

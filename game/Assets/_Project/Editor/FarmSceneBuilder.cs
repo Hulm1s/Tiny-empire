@@ -376,7 +376,7 @@ namespace Tycoon.EditorTools
             //
             // Workers take a cut of every unit they deliver, so automation is a running cost
             // that scales with throughput.
-            var hireFarmerA = BuildHire(root, "Farmer", "HarvesterA", NorthOfField(root, cornA),
+            var hireFarmerA = BuildHire(root, "Farmer", "HarvesterA", BesideField(root, cornA, -1),
                 price: 250d, pickup: cornA, dropoff: coopA.Feed,
                 color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopA.Beacon);
 
@@ -384,28 +384,28 @@ namespace Tycoon.EditorTools
                 price: 400d, pickup: coopA.Collect, dropoff: counterA.Register,
                 color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopA.Beacon);
 
-            var hireFarmerB = BuildHire(root, "Farmer 2", "HarvesterB", NorthOfField(root, cornB),
+            var hireFarmerB = BuildHire(root, "Farmer 2", "HarvesterB", BesideField(root, cornB, 1),
                 price: 700d, pickup: cornB, dropoff: coopB.Feed,
                 color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopB.Beacon);
 
-            var hireCashierB = BuildHire(root, "Cashier 2", "SellerB", AtTill(root, counterA, -2),
+            var hireCashierB = BuildHire(root, "Cashier 2", "SellerB", AtTill(root, counterA, 1),
                 price: 800d, pickup: coopB.Collect, dropoff: counterA.Register,
                 color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopB.Beacon);
 
             // Each hay hand is hired at the meadow it actually cuts, the same as the farmers.
-            var hireHayA = BuildHire(root, "Hay Hand", "HayHandA", NorthOfField(root, hayA),
+            var hireHayA = BuildHire(root, "Hay Hand", "HayHandA", BesideField(root, hayA, -1),
                 price: 1500d, pickup: hayA, dropoff: cowA.Feed,
                 color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0.6d, beacon: cowA.Beacon);
 
-            var hireMilkA = BuildHire(root, "Milk Run", "MilkRunA", AtTill(root, counterB, 1),
+            var hireMilkA = BuildHire(root, "Milk Run", "MilkRunA", AtTill(root, counterB, -1),
                 price: 1700d, pickup: cowA.Collect, dropoff: counterB.Register,
                 color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowA.Beacon);
 
-            var hireHayB = BuildHire(root, "Hay Hand 2", "HayHandB", NorthOfField(root, hayB),
+            var hireHayB = BuildHire(root, "Hay Hand 2", "HayHandB", BesideField(root, hayB, 1),
                 price: 2200d, pickup: hayB, dropoff: cowB.Feed,
                 color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0.6d, beacon: cowB.Beacon);
 
-            var hireMilkB = BuildHire(root, "Milk Run 2", "MilkRunB", AtTill(root, counterB, 2),
+            var hireMilkB = BuildHire(root, "Milk Run 2", "MilkRunB", AtTill(root, counterB, 1),
                 price: 2400d, pickup: cowB.Collect, dropoff: counterB.Register,
                 color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowB.Beacon);
 
@@ -494,58 +494,39 @@ namespace Tycoon.EditorTools
             root.InverseTransformPoint(thing.transform.position);
 
         /// <summary>
-        /// A hire square directly behind a field, on the far side from everything else.
-        ///
-        /// It used to sit out to one side, which put it either on the walking line between two
-        /// columns or overlapping the neighbouring field - and standing in a hire square spends
-        /// money, so anything on a route the player walks dozens of times a session is a tax on
-        /// walking past. North of the field is the one direction nothing else uses: the chain
-        /// runs south from there, so the player has no reason to be up there unless they went
-        /// deliberately, which is exactly the right amount of friction for a purchase.
-        ///
-        /// <paramref name="alongX"/> offsets a second hire square sideways, for the meadow that
-        /// two hands are taken on at.
+        /// A hire square level with a field, on the side given by <paramref name="side"/>
+        /// (-1 west, +1 east), so the farm hand is visibly taken on at the crop they cut.
         /// </summary>
-        private static Vector3 NorthOfField(Transform root, Component field, float alongX = 0f)
+        private static Vector3 BesideField(Transform root, Component field, int side)
         {
             Vector3 local = LevelLocal(root, field);
 
-            // Measured off the field's own trigger rather than assumed, so resizing a field
-            // cannot quietly leave its hire square sitting on the crop.
+            // Measured off the field's own trigger, so resizing a field cannot leave its hire
+            // square sitting on the crop.
             var trigger = field.GetComponent<BoxCollider>();
-            float fieldHalf = trigger != null ? trigger.size.z * 0.5f : 1.75f;
+            float fieldHalf = trigger != null ? trigger.size.x * 0.5f : 2.25f;
 
-            // Against the drawn outline, not the trigger: a hire trigger is 1.8 m but its card
-            // is never drawn smaller than 2.1 deep, so clearing the trigger is not enough.
-            const float hireHalf = 1.05f;
-            const float gap = 0.85f;
+            // Against the drawn card, not the trigger: a hire card is never narrower than 2.5 m.
+            // The gap is small because two of these share the 6 m between corn B and meadow A.
+            const float hireHalf = 1.25f;
+            const float gap = 0.3f;
 
-            return new Vector3(local.x + alongX, 0f, local.z + fieldHalf + hireHalf + gap);
+            return new Vector3(local.x + Mathf.Sign(side) * (fieldHalf + hireHalf + gap), 0f, local.z);
         }
 
         /// <summary>
-        /// A hire square on the till's row, out beyond the columns that feed it.
+        /// A hire square on the till's row, directly beside the serve square.
         ///
-        /// Both of a half's chains sell at the same till, so its two cashiers are hired side by
-        /// side next to that counter - close enough to read as "these two work here", and on
-        /// the same row so the market is one legible strip.
-        ///
-        /// What decides the distance is where the player walks. Standing in a hire square
-        /// spends money, and the route from a coop's collect square down to the till is walked
-        /// dozens of times a session. Tucked in tight beside the counter, the first hire square
-        /// sat directly underneath the first coop and quietly ate the takings on the way past -
-        /// which is the same fault that moved the farm hands off the fields. Out here, both
-        /// squares are on the far side of the till from every chain that uses it, so nothing
-        /// can be paid for by accident.
-        ///
-        /// <paramref name="slot"/> counts outwards; its sign picks the side.
+        /// A till's two cashiers flank it, one each side, so they read as "these two work
+        /// here". <paramref name="slot"/> counts outwards; its sign picks the side.
         /// </summary>
         private static Vector3 AtTill(Transform root, LevelBuildKit.Counter till, int slot)
         {
             Vector3 local = LevelLocal(root, till.Register);
 
             float sign = slot < 0 ? -1f : 1f;
-            float offset = 6.0f + (Mathf.Abs(slot) - 1) * 2.9f;
+            // Directly beside the serve square: its card is 3.6 wide, a hire card 2.5.
+            float offset = 1.8f + 0.5f + 1.25f + (Mathf.Abs(slot) - 1) * 3.0f;
 
             return new Vector3(local.x + sign * offset, 0f, local.z);
         }
