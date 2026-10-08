@@ -41,10 +41,10 @@ namespace Tycoon.EditorTools
         // set it to 0 and every real price below takes effect again.
         //
         // Deliberately one constant rather than edited numbers, so reverting cannot miss one.
-        private const double TestPriceOverride = 10d;
+        private const double TestPriceOverride = 0d;
 
         /// <summary>The real price, or the test override while one is set.</summary>
-        private static double Price(double real) =>
+        internal static double Price(double real) =>
             TestPriceOverride > 0d ? TestPriceOverride : real;
 
         [MenuItem("Tycoon/Rebuild Farm Scene")]
@@ -56,10 +56,14 @@ namespace Tycoon.EditorTools
             BuildEnvironment();
             var root = CreateLevelRoot();
 
-            BuildFarm(root, items);
+            var parts = BuildFarm(root, items);
             BuildGroundCover(root);
             BuildBoundary(root);
             BuildFence(root);
+
+            // The second location, and the road that joins it to this one. Built after the
+            // farm so the gate that sells it can watch every purchase the farm has.
+            BuildMarketLink(root, items, parts);
             BuildNavigation();
             // Between the first coop's collect square and the egg till, so the opening shot
             // shows a complete chain - birds above, counter below - without the player having
@@ -114,12 +118,19 @@ namespace Tycoon.EditorTools
             }
         }
 
-        private class Items
+        internal class Items
         {
             public ItemDefinition Corn;
             public ItemDefinition Egg;
             public ItemDefinition Hay;
             public ItemDefinition Milk;
+            public ItemDefinition Trash;
+
+            // The supermarket's second storage room: bread, then apples, then yogurt. Sold
+            // only there, never in a farm till's list, and nothing on the farm makes them.
+            public ItemDefinition Bread;
+            public ItemDefinition Apples;
+            public ItemDefinition Yogurt;
         }
 
         private static Items CreateItems()
@@ -144,7 +155,28 @@ namespace Tycoon.EditorTools
                 // genuine step up rather than a reskin of the chickens.
                 Milk = LevelBuildKit.Item(
                     "milk", "Milk", new Color(0.95f, 0.96f, 0.98f),
-                    price: 12d, perishable: true, spoilSeconds: 120f, stackHeight: 0.3f)
+                    price: 12d, perishable: true, spoilSeconds: 120f, stackHeight: 0.3f),
+
+                // The market's rubbish. Worth nothing and nothing buys it - it exists only to
+                // be carried out of the derelict shop to the bin. Never in any sell list.
+                Trash = LevelBuildKit.Item(
+                    "trash", "Trash", new Color(0.2f, 0.23f, 0.22f),
+                    price: 0d, perishable: false, stackHeight: 0.28f),
+
+                // The market's new lines. The price is what the farm-style till multiplies by
+                // 1.5, so the shelf price is that number: bread sells for about 10, apples 6,
+                // yogurt 15 (dearer than milk and rots faster than eggs, like the real thing).
+                Bread = LevelBuildKit.Item(
+                    "bread", "Bread", new Color(0.86f, 0.6f, 0.3f),
+                    price: 7d, perishable: true, spoilSeconds: 150f, stackHeight: 0.3f),
+
+                Apples = LevelBuildKit.Item(
+                    "apples", "Apples", new Color(0.82f, 0.2f, 0.18f),
+                    price: 4d, perishable: false, stackHeight: 0.28f),
+
+                Yogurt = LevelBuildKit.Item(
+                    "yogurt", "Yogurt", new Color(0.93f, 0.78f, 0.86f),
+                    price: 10d, perishable: true, spoilSeconds: 120f, stackHeight: 0.28f)
             };
         }
 
@@ -152,6 +184,12 @@ namespace Tycoon.EditorTools
         {
             var go = new GameObject("Farm");
             go.transform.rotation = Quaternion.Euler(0f, LevelYaw, 0f);
+
+            // Which place this root is. The layout audit walks every Location, so a second
+            // business is audited the moment it has one of these.
+            var location = go.AddComponent<Location>();
+            location.locationId = "farm";
+            location.displayName = "Tiny Farm";
             return go.transform;
         }
 
@@ -240,8 +278,19 @@ namespace Tycoon.EditorTools
         private const float DemandPerCapacity = 0.35f;
         private const float MaxDemand = 3f;
 
-        private static void BuildFarm(Transform root, Items items)
+        /// <summary>
+        /// Every purchase the farm contains, collected as it is built so the supermarket gate
+        /// can ask "has the player bought all of it?" without re-deriving the list.
+        /// </summary>
+        private class FarmParts
         {
+            public readonly List<UnlockStation> Unlocks = new List<UnlockStation>();
+            public readonly List<UpgradeStation> Upgrades = new List<UpgradeStation>();
+        }
+
+        private static FarmParts BuildFarm(Transform root, Items items)
+        {
+            var parts = new FarmParts();
             // ---- the market ----------------------------------------------------------
             // The tarmac runs far past the farm; the shoppers only use the middle of it.
             //
@@ -409,23 +458,30 @@ namespace Tycoon.EditorTools
                 price: 2400d, pickup: cowB.Collect, dropoff: counterB.Register,
                 color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowB.Beacon);
 
+            parts.Unlocks.AddRange(new[]
+            {
+                hireFarmerA, hireCashierA, hireFarmerB, hireCashierB,
+                hireHayA, hireMilkA, hireHayB, hireMilkB
+            });
+            parts.Upgrades.AddRange(new[] { coopA.Upgrade, coopB.Upgrade, cowA.Upgrade, cowB.Upgrade });
+
             // ---- what has to be bought ------------------------------------------------
             // A gate reveals its building and BOTH hire squares whose workers end their round
             // trip at it. A worker delivering into a building that does not exist yet walks to
             // where it will be, finds no trigger, and stands there full for ever - so a hire is
             // only ever offered once its destination is standing. The farm hand who carries
             // corn to coop B is therefore sold with coop B, not with the field he cuts.
-            Gate(root, "farm.unlock.cornB", "UnlockCornB", new Vector3(ColumnB, 0f, FieldRow),
+            parts.Unlocks.Add(Gate(root, "farm.unlock.cornB", "UnlockCornB", new Vector3(ColumnB, 0f, FieldRow),
                 FieldSize, "Field", 600d,
-                cornB.gameObject);
+                cornB.gameObject));
 
-            Gate(root, "farm.unlock.coopB", "UnlockCoopB", new Vector3(ColumnB, 0f, BuildingRow),
+            parts.Unlocks.Add(Gate(root, "farm.unlock.coopB", "UnlockCoopB", new Vector3(ColumnB, 0f, BuildingRow),
                 new Vector2(3.4f, 2.6f), "Coop", 900d,
-                coopB.Root, hireFarmerB.gameObject, hireCashierB.gameObject);
+                coopB.Root, hireFarmerB.gameObject, hireCashierB.gameObject));
 
-            Gate(root, "farm.unlock.counterB", "UnlockCounterB", new Vector3(MilkTill, 0f, MarketRow),
+            parts.Unlocks.Add(Gate(root, "farm.unlock.counterB", "UnlockCounterB", new Vector3(MilkTill, 0f, MarketRow),
                 new Vector2(3.4f, 2.2f), "Dairy Till", 1400d,
-                counterB.Root);
+                counterB.Root));
 
             // The meadow comes with the cow shed, deliberately, and this is a softlock fix
             // rather than a tidy-up.
@@ -439,9 +495,9 @@ namespace Tycoon.EditorTools
             //
             // Priced under the sum of the two it replaces, because it now has to be saved for
             // in one go rather than in two steps.
-            Gate(root, "farm.unlock.cowA", "UnlockCowA", new Vector3(ColumnC, 0f, BuildingRow),
+            parts.Unlocks.Add(Gate(root, "farm.unlock.cowA", "UnlockCowA", new Vector3(ColumnC, 0f, BuildingRow),
                 new Vector2(3.4f, 2.6f), "Dairy", 3200d,
-                cowA.Root, hayA.gameObject, hireHayA.gameObject, hireMilkA.gameObject);
+                cowA.Root, hayA.gameObject, hireHayA.gameObject, hireMilkA.gameObject));
 
             // The second meadow, bought on its own before the shed that will need it - exactly
             // the shape the corn side already has, where the second field is the cheaper step
@@ -451,13 +507,15 @@ namespace Tycoon.EditorTools
             // one shed of three cows fed, so until this is standing a second shed would spend
             // its life waiting. Buying it also immediately doubles what the player can cut in
             // one trip for the shed they already own.
-            Gate(root, "farm.unlock.hayB", "UnlockHayB", new Vector3(ColumnD, 0f, FieldRow),
+            parts.Unlocks.Add(Gate(root, "farm.unlock.hayB", "UnlockHayB", new Vector3(ColumnD, 0f, FieldRow),
                 FieldSize, "Meadow", 4500d,
-                hayB.gameObject);
+                hayB.gameObject));
 
-            Gate(root, "farm.unlock.cowB", "UnlockCowB", new Vector3(ColumnD, 0f, BuildingRow),
+            parts.Unlocks.Add(Gate(root, "farm.unlock.cowB", "UnlockCowB", new Vector3(ColumnD, 0f, BuildingRow),
                 new Vector2(3.4f, 2.6f), "Cow Shed", 6000d,
-                cowB.Root, hireHayB.gameObject, hireMilkB.gameObject);
+                cowB.Root, hireHayB.gameObject, hireMilkB.gameObject));
+
+            return parts;
         }
 
         /// <summary>
@@ -490,7 +548,7 @@ namespace Tycoon.EditorTools
         }
 
         /// <summary>Anything's position expressed in the level's own grid.</summary>
-        private static Vector3 LevelLocal(Transform root, Component thing) =>
+        internal static Vector3 LevelLocal(Transform root, Component thing) =>
             root.InverseTransformPoint(thing.transform.position);
 
         /// <summary>
@@ -536,7 +594,7 @@ namespace Tycoon.EditorTools
         /// scene, so nothing inside a locked plot ticks, saves or can be walked into before it
         /// has actually been bought.
         /// </summary>
-        private static void Gate(Transform root, string id, string name, Vector3 position,
+        internal static UnlockStation Gate(Transform root, string id, string name, Vector3 position,
             Vector2 size, string label, double price, params GameObject[] reveal)
         {
             var gate = LevelBuildKit.Station<UnlockStation>(id, name, root, position, size,
@@ -547,15 +605,18 @@ namespace Tycoon.EditorTools
 
             foreach (var go in reveal)
                 if (go != null) go.SetActive(false);
+
+            return gate;
         }
 
         /// <summary>
         /// Creates a worker plus the square that hires them. The worker is inactive until the
         /// square is paid off, so an unhired worker draws no wages and runs no code.
         /// </summary>
-        private static UnlockStation BuildHire(Transform root, string role, string id, Vector3 position,
+        internal static UnlockStation BuildHire(Transform root, string role, string id, Vector3 position,
             double price, Tycoon.Stations.StationBase pickup, Tycoon.Stations.StationBase dropoff,
-            Color color, double feePerDelivery, Tycoon.Upkeep.AlertBeacon beacon)
+            Color color, double feePerDelivery, Tycoon.Upkeep.AlertBeacon beacon,
+            string idPrefix = "farm.hire.")
         {
             // Field hands wear the straw hat, till staff the cap. Derived from the role
             // name so adding a hire does not mean remembering to pass a model as well.
@@ -567,7 +628,7 @@ namespace Tycoon.EditorTools
                 color, feePerDelivery, role: model);
             WarnIfRouteBroken(id, pickup, dropoff);
 
-            var hire = LevelBuildKit.Station<UnlockStation>($"farm.hire.{id}", $"Hire{id}", root, position,
+            var hire = LevelBuildKit.Station<UnlockStation>($"{idPrefix}{id}", $"Hire{id}", root, position,
                 new Vector2(1.8f, 1.8f), role, new Color(0.55f, 0.8f, 1f));
             // A person rather than the padlock every other purchase gets: same station type,
             // very different thing being bought.
@@ -634,68 +695,78 @@ namespace Tycoon.EditorTools
             // The wall lines up with the fence exactly, so the thing that stops the player is
             // the thing they can see. A wall standing anywhere else is either an invisible
             // barrier in open grass or a fence you can walk through.
-            const float thickness = 2f;
-            const float height = 6f;
-
-            float midZ = (EdgeNorth + EdgeSouth) * 0.5f;
-            float midX = (EdgeEast + EdgeWest) * 0.5f;
-            float depth = EdgeNorth - EdgeSouth;
-            float width = EdgeEast - EdgeWest;
-
-            var boundary = new GameObject("Boundary");
-            boundary.transform.SetParent(root, false);
-
-            AddWall(boundary.transform, "North", new Vector3(midX, height * 0.5f, EdgeNorth),
-                new Vector3(width, height, thickness));
-            AddWall(boundary.transform, "South", new Vector3(midX, height * 0.5f, EdgeSouth),
-                new Vector3(width, height, thickness));
-            AddWall(boundary.transform, "East", new Vector3(EdgeEast, height * 0.5f, midZ),
-                new Vector3(thickness, height, depth));
-            AddWall(boundary.transform, "West", new Vector3(EdgeWest, height * 0.5f, midZ),
-                new Vector3(thickness, height, depth));
+            LevelBuildKit.BuildBoundary(root, EdgeWest, EdgeEast, EdgeSouth, EdgeNorth);
         }
 
         /// <summary>
         /// The fence that makes the boundary something the player can see.
         ///
-        /// Run along exactly the same lines as the invisible walls, with one deliberate break
+        /// Runs along exactly the same lines as the invisible walls, with one deliberate break
         /// on each side where the road passes through - so the tarmac leaves the farm the way
         /// a road should, through a gap, rather than stopping at a plank or running under it.
         /// </summary>
         private static void BuildFence(Transform root)
         {
-            // The road box is 2.8 m deep, centred on RoadZ. A little clearance either side so
-            // the last post does not sit half on the tarmac.
-            const float roadHalfDepth = 1.4f;
-            const float clearance = 0.35f;
-            float gapNorth = RoadZ + roadHalfDepth + clearance;
-            float gapSouth = RoadZ - roadHalfDepth - clearance;
-
-            var runs = new[]
-            {
-                new LevelBuildKit.FenceRun(EdgeWest, EdgeNorth, EdgeEast, EdgeNorth),
-                new LevelBuildKit.FenceRun(EdgeWest, EdgeSouth, EdgeEast, EdgeSouth),
-
-                new LevelBuildKit.FenceRun(EdgeWest, EdgeNorth, EdgeWest, gapNorth),
-                new LevelBuildKit.FenceRun(EdgeWest, gapSouth, EdgeWest, EdgeSouth),
-
-                new LevelBuildKit.FenceRun(EdgeEast, EdgeNorth, EdgeEast, gapNorth),
-                new LevelBuildKit.FenceRun(EdgeEast, gapSouth, EdgeEast, EdgeSouth),
-            };
-
-            LevelBuildKit.BuildFence(root, runs);
+            LevelBuildKit.BuildFenceAround(root, EdgeWest, EdgeEast, EdgeSouth, EdgeNorth, RoadZ);
         }
 
-        private static void AddWall(Transform parent, string name, Vector3 position, Vector3 size)
-        {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent, false);
-            go.transform.localPosition = position;
+        // ---- the road to town ------------------------------------------------------
+        // The supermarket is a second location a long way off across the grass, reached only by
+        // the travel squares at the two ends of this link. Its entry in the farm is two things
+        // on the same patch of road, at the east end where the tarmac leaves through the fence:
+        // the gate that sells it, and the square that takes the player there once it is bought.
+        //
+        // Both sit on the road itself rather than inside the farm proper. The shoppers who use
+        // the east end of the road spawn at x = 19 and walk west, so x = 23 is behind them, and
+        // the east bin and the dairy hire square are well clear (the audit measures it).
+        private const float TownSquareX = 23f;
+        private static readonly Vector3 TownSquarePosition = new Vector3(TownSquareX, 0f, RoadZ);
 
-            var box = go.AddComponent<BoxCollider>();
-            box.size = size;
-            // Solid, not a trigger: the CharacterController must actually be stopped by it.
-            box.isTrigger = false;
+        /// <summary>
+        /// Where the player lands coming back from town. Clear of the travel square - landing
+        /// inside it would be a loop - and of the east bin and the shoppers' lane.
+        /// </summary>
+        private static readonly Vector3 ReturnFromTown = new Vector3(19.8f, 0f, -15.8f);
+
+        /// <summary>How far along the farm's own road axis the market stands.</summary>
+        internal const float MarketOffsetX = 75f;
+
+        /// <summary>Price of the supermarket itself, before the test override.</summary>
+        private const double MarketPrice = 10000d;
+
+        private static void BuildMarketLink(Transform farmRoot, Items items, FarmParts parts)
+        {
+            var farmLocation = farmRoot.GetComponent<Location>();
+
+            var spawn = new GameObject("Spawn");
+            spawn.transform.SetParent(farmRoot, false);
+            spawn.transform.localPosition = ReturnFromTown;
+            farmLocation.spawnPoint = spawn.transform;
+
+            var market = MarketBuilder.Build(farmRoot, items, farmLocation, MarketOffsetX);
+
+            var toTown = LevelBuildKit.Station<TravelStation>("farm.travel.town", "TravelToTown",
+                farmRoot, TownSquarePosition, new Vector2(2.5f, 2.1f), "Town",
+                new Color(0.55f, 0.8f, 1f));
+            toTown.destination = market.Location;
+            toTown.taskDuration = 1.2f;
+
+            // The gate sits exactly where the travel square will be, the way every other gate
+            // sits on what it sells. Paying the last of it leaves the player standing in the
+            // square, which is the right moment to go: the ring fills, and they are on their way.
+            var gate = Gate(farmRoot, "farm.unlock.market", "UnlockMarket", TownSquarePosition,
+                new Vector2(3.0f, 2.4f), "Supermarket", MarketPrice,
+                market.Root, toTown.gameObject);
+
+            // Offered only when the whole farm is owned: every gate, every hire, every
+            // building at its maximum. Until then there is nothing at the end of the road.
+            var watcher = new GameObject("MarketUnlock");
+            watcher.transform.SetParent(farmRoot, false);
+            var reveal = watcher.AddComponent<RevealWhenAll>();
+            reveal.unlocks = parts.Unlocks.ToArray();
+            reveal.maxed = parts.Upgrades.ToArray();
+            reveal.reveal = new[] { gate.gameObject };
+            gate.gameObject.SetActive(false);
         }
 
         /// <summary>
@@ -728,6 +799,19 @@ namespace Tycoon.EditorTools
             // trusting it. The plane is a single quad, so the size costs nothing at all.
             ground.transform.localScale = new Vector3(16f, 1f, 16f);
             ground.GetComponent<Renderer>().sharedMaterial =
+                LevelBuildKit.Mat("Ground", new Color(0.42f, 0.62f, 0.33f));
+
+            // The same grass, drawn much further out and with no collider. The ground above
+            // is the only thing anyone can stand on (and the only thing the navmesh bakes), but
+            // the second location sits seventy-odd metres out and the camera sees well past
+            // wherever the player is standing. Without this the edge of the world is visible
+            // from the supermarket, and the audit says so.
+            var horizon = GameObject.CreatePrimitive(PrimitiveType.Plane);
+            horizon.name = "GroundHorizon";
+            horizon.transform.position = new Vector3(0f, -0.02f, 0f);
+            horizon.transform.localScale = new Vector3(40f, 1f, 40f);
+            UnityEngine.Object.DestroyImmediate(horizon.GetComponent<Collider>());
+            horizon.GetComponent<Renderer>().sharedMaterial =
                 LevelBuildKit.Mat("Ground", new Color(0.42f, 0.62f, 0.33f));
 
             // --- light ----------------------------------------------------------------

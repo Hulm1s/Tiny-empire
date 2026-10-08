@@ -174,7 +174,8 @@ namespace Tycoon.EditorTools
         /// shadow either - a tuft's shadow is invisible and the shadow pass is not.
         /// </summary>
         public static GameObject BuildGrass(Transform parent, Rect area, Rect[] keepClear,
-            int tufts = 900, int seed = 20260915)
+            int tufts = 900, int seed = 20260915, string meshName = "GrassCover",
+            string objectName = "Grass")
         {
             var random = new System.Random(seed);
             var vertices = new System.Collections.Generic.List<Vector3>();
@@ -229,7 +230,7 @@ namespace Tycoon.EditorTools
                 }
             }
 
-            var mesh = new Mesh { name = "GrassCover" };
+            var mesh = new Mesh { name = meshName };
             mesh.indexFormat = vertices.Count > 65000
                 ? UnityEngine.Rendering.IndexFormat.UInt32
                 : UnityEngine.Rendering.IndexFormat.UInt16;
@@ -250,11 +251,13 @@ namespace Tycoon.EditorTools
             mesh.RecalculateBounds();
 
             EnsureFolder("Assets/_Project/Meshes");
-            const string meshPath = "Assets/_Project/Meshes/GrassCover.asset";
+            // One asset per location: they all share this builder, and a second call that
+            // reused the first one's path would delete the mesh the first scene object holds.
+            string meshPath = $"Assets/_Project/Meshes/{meshName}.asset";
             AssetDatabase.DeleteAsset(meshPath);
             AssetDatabase.CreateAsset(mesh, meshPath);
 
-            var go = new GameObject("Grass");
+            var go = new GameObject(objectName);
             go.transform.SetParent(parent, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
 
@@ -293,7 +296,7 @@ namespace Tycoon.EditorTools
         /// to draw something nobody looks at directly.
         /// </summary>
         public static GameObject BuildFence(Transform parent, FenceRun[] runs,
-            float postSpacing = 2.6f)
+            float postSpacing = 2.6f, string meshName = "FenceLine", string objectName = "Fence")
         {
             var vertices = new System.Collections.Generic.List<Vector3>();
             var triangles = new System.Collections.Generic.List<int>();
@@ -346,7 +349,7 @@ namespace Tycoon.EditorTools
                 }
             }
 
-            var mesh = new Mesh { name = "FenceLine" };
+            var mesh = new Mesh { name = meshName };
             mesh.indexFormat = vertices.Count > 65000
                 ? UnityEngine.Rendering.IndexFormat.UInt32
                 : UnityEngine.Rendering.IndexFormat.UInt16;
@@ -357,11 +360,11 @@ namespace Tycoon.EditorTools
             mesh.RecalculateBounds();
 
             EnsureFolder("Assets/_Project/Meshes");
-            const string meshPath = "Assets/_Project/Meshes/FenceLine.asset";
+            string meshPath = $"Assets/_Project/Meshes/{meshName}.asset";
             AssetDatabase.DeleteAsset(meshPath);
             AssetDatabase.CreateAsset(mesh, meshPath);
 
-            var go = new GameObject("Fence");
+            var go = new GameObject(objectName);
             go.transform.SetParent(parent, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
 
@@ -411,6 +414,82 @@ namespace Tycoon.EditorTools
             };
 
             for (int i = 0; i < faces.Length; i++) triangles.Add(b + faces[i]);
+        }
+
+        // ---------------------------------------------------------------- location edges
+
+        /// <summary>
+        /// Invisible walls round a location's playable area, in that location's own grid.
+        ///
+        /// Shared by the farm and the market so the edge of the world is built one way. The
+        /// walls line up with the fence exactly: the thing that stops the player is the thing
+        /// they can see, never an invisible barrier in open grass or a fence you can walk
+        /// through. The layout audit reads the child called "Boundary" to measure how close the
+        /// camera can get to the edge of the ground.
+        /// </summary>
+        public static void BuildBoundary(Transform root, float west, float east, float south, float north)
+        {
+            const float thickness = 2f;
+            const float height = 6f;
+
+            float midZ = (north + south) * 0.5f;
+            float midX = (east + west) * 0.5f;
+            float depth = north - south;
+            float width = east - west;
+
+            var boundary = new GameObject("Boundary");
+            boundary.transform.SetParent(root, false);
+
+            AddWall(boundary.transform, "North", new Vector3(midX, height * 0.5f, north),
+                new Vector3(width, height, thickness));
+            AddWall(boundary.transform, "South", new Vector3(midX, height * 0.5f, south),
+                new Vector3(width, height, thickness));
+            AddWall(boundary.transform, "East", new Vector3(east, height * 0.5f, midZ),
+                new Vector3(thickness, height, depth));
+            AddWall(boundary.transform, "West", new Vector3(west, height * 0.5f, midZ),
+                new Vector3(thickness, height, depth));
+        }
+
+        private static void AddWall(Transform parent, string name, Vector3 position, Vector3 size)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = position;
+
+            var box = go.AddComponent<BoxCollider>();
+            box.size = size;
+            // Solid, not a trigger: the CharacterController must actually be stopped by it.
+            box.isTrigger = false;
+        }
+
+        /// <summary>
+        /// A post-and-rail fence along the same four edges as <see cref="BuildBoundary"/>, with
+        /// one break on each of the west and east sides where the road at <paramref name="roadZ"/>
+        /// passes through.
+        /// </summary>
+        public static GameObject BuildFenceAround(Transform root, float west, float east,
+            float south, float north, float roadZ, string meshName = "FenceLine")
+        {
+            // The road box is 2.8 m deep, centred on roadZ. A little clearance either side so
+            // the last post does not sit half on the tarmac.
+            const float roadHalfDepth = 1.4f;
+            const float clearance = 0.35f;
+            float gapNorth = roadZ + roadHalfDepth + clearance;
+            float gapSouth = roadZ - roadHalfDepth - clearance;
+
+            var runs = new[]
+            {
+                new FenceRun(west, north, east, north),
+                new FenceRun(west, south, east, south),
+
+                new FenceRun(west, north, west, gapNorth),
+                new FenceRun(west, gapSouth, west, south),
+
+                new FenceRun(east, north, east, gapNorth),
+                new FenceRun(east, gapSouth, east, south),
+            };
+
+            return BuildFence(root, runs, meshName: meshName);
         }
 
         // ---------------------------------------------------------------- stations
@@ -805,8 +884,15 @@ namespace Tycoon.EditorTools
         /// the whole safety net for the one piece of state that could otherwise strand them.
         /// See <see cref="DiscardStation"/> for why that matters.
         /// </summary>
-        public static DiscardStation BuildBin(string id, string name, Transform parent, Vector3 position)
+        public static DiscardStation BuildBin(string id, string name, Transform parent, Vector3 position,
+            bool squareToSouth = false)
         {
+            // The square normally lies on the north side of the can, which is the far side from
+            // the camera. A bin that has to stand NORTH of the ground its square needs (the
+            // market's, on the forecourt outside the shop wall) mirrors itself instead: the
+            // can, its lid and its pad turn round and the square goes to the south.
+            float side = squareToSouth ? -1f : 1f;
+
             var root = new GameObject(name);
             root.transform.SetParent(parent, false);
             root.transform.localPosition = position;
@@ -817,13 +903,13 @@ namespace Tycoon.EditorTools
             // the square underneath stays screen-aligned.
             var shell = new GameObject("Shell");
             shell.transform.SetParent(root.transform, false);
-            shell.transform.localRotation = Quaternion.Euler(0f, BuildingYaw, 0f);
+            shell.transform.localRotation = Quaternion.Euler(0f, BuildingYaw + (squareToSouth ? 180f : 0f), 0f);
 
             // A slab under the bin AND under the square in front of it, so the two read as one
             // fixture and the square is painted on paving rather than on grass. Parented to the
             // unturned root, not the shell, so it stays lined up with the square whatever angle
             // the bin itself is set at.
-            Box("Pad", root.transform, new Vector3(0f, 0.03f, 0.9f),
+            Box("Pad", root.transform, new Vector3(0f, 0.03f, 0.9f * side),
                 new Vector3(2.0f, 0.06f, 3.3f), pad, castShadow: false);
 
             // A proper tapered can rather than a stack of boxes: narrow at the foot, wide at
@@ -854,7 +940,7 @@ namespace Tycoon.EditorTools
             var zone = new Vector2(1.7f, 1.5f);
 
             var station = Station<DiscardStation>($"{id}.discard", "Discard", root.transform,
-                new Vector3(0f, 0f, 1.7f), zone, "Bin",
+                new Vector3(0f, 0f, 1.7f * side), zone, "Bin",
                 new Color(0.72f, 0.76f, 0.82f), smallestCard: zone);
 
             // Fast, once you are actually in it. This is a way out of a mistake, not a chore -
@@ -1154,7 +1240,7 @@ namespace Tycoon.EditorTools
         /// The shopper the queue clones. Kept inactive in the scene so its materials are real
         /// asset references - a customer built from scratch at runtime would render magenta.
         /// </summary>
-        private static GameObject BuildCustomerTemplate(Transform parent)
+        public static GameObject BuildCustomerTemplate(Transform parent)
         {
             var go = new GameObject("CustomerTemplate");
             go.transform.SetParent(parent, false);

@@ -266,3 +266,56 @@ resized or added anything.
 | Cheap build smoke test | `-executeMethod Tycoon.EditorTools.TycoonBuild.Validate` |
 | On-screen fps / position / carry | add `?debug=1` to the URL — no rebuild |
 | Wipe a save | pause menu → `DELETE SAVE` (two taps) |
+
+---
+
+## The supermarket (Tiny Market)
+
+**MB** = `game/Assets/_Project/Editor/MarketBuilder.cs`. All constants are at the top of the file
+with the reason beside them. (Line numbers for FSB elsewhere in this file were measured before the
+supermarket was added and may have drifted by a few dozen lines; search by name.)
+
+| I want to change… | Go to | Current |
+|---|---|---|
+| **Supermarket price** | FSB `MarketPrice` | $10,000 (test override applies) |
+| What must be owned before it appears | FSB `BuildMarketLink` → `RevealWhenAll` | all 6 gates, 8 hires, 4 BuyUnit at max |
+| Where the market stands | FSB `MarketOffsetX` | 75 m along the road axis |
+| Farm-side To Town square / gate | FSB `TownSquareX`, `TownSquarePosition` | x = 23 on the road |
+| Where the player lands back at the farm | FSB `ReturnFromTown` | (19.8, -15.8) |
+| Where the player lands in town | MB `ArrivalPoint` | (8, -6.3) |
+| Travel hold time / fade | `TravelStation` `taskDuration`, `fadeOutSeconds`, `fadeInSeconds` | 1.2 s / 0.25 / 0.3 |
+| Repair price | MB `RepairPrice` | $1,500 |
+| First paint job / repaint | MB `FirstPaintPrice`, `RepaintPrice` | $1,000 / $200 |
+| Rubbish piles and bags | MB `TrashPositions`, `BagsPerPile` | 4 piles x 4 bags |
+| Where the bin is | MB `BinPosition` (outside, `squareToSouth`) | (10.5, -6.4) |
+| Repair / Paint / OPEN squares | MB `RepairPosition`, `PaintPosition`, `OpenPosition` | (-4,1.2) (9.6,-1.55) SE corner, (0,1.2) |
+| Patterns, floors, default look | `UI/PatternFactory.cs`, `DecorLook.Default` | 10 patterns |
+| Paint menu layout | `UI/PaintMenu.cs` constants and `Build*` | 960 x 1780 card |
+| Storage rooms: walls and doors | MB `RoomWest`, `RoomMid`, `RoomSouth`, `Door1From/To`, `Door2From/To` | x 5, z 7.8 / 0, doors z 10.4-13.0 and 4.8-7.6 |
+| Crates and their squares | MB `CrateX`, `CollectX`, `Crate<Product>Z` | 11.1 / 9.1; sklad1 corn 11.6 milk 9.2 egg 14.0, sklad2 bread 6.3 apples 3.9 yogurt 1.5 |
+| Stocking square / shopper stand, from the shelf's z | MB `StockOffset`, `StockSquareDepth`, `BrowseOffset` | 2.0 / 1.8 / 0.75 |
+| Supply rate | MB `SupplySecondsPerUnit` | 4 s per unit per product |
+| Shelf / crate capacity | MB `ShelfCapacity`, `StorageCapacity` | 12 / 20 |
+| Shelf positions | MB `ShelfX`, `Row1Z`, `Row2Z` | x -7.2 / -2.4 / 2.4, rows z 14.9 and 9.6 |
+| COMING SOON bay | MB `ComingSoonPosition` | (5.2, -3.2) |
+| Counters, serving squares, hires, queues | MB `CounterZ`, `Counter1X`/`Counter2X`, `ServeDX`, `ServeZ`, `HireZ`, `QueueDX`, `QueuePitch`, `ExitLaneZ` | counters x -8.5 / -3.9 z -2.3; serve at counter -1.9, z -3.55; hire z -1.3; queue counter +0.85 running north every 1.35; exit lane z -4.7 |
+| Shopper arrival rate | MB `ShopperIntervalSeconds` | 6 s |
+| Queue length (each) / people in shop | MB `QueueSlots`, `MaxShoppers` | 3 / 8 |
+| Demand per extra product line / cap | `CustomerQueue.demandPerExtraLine`, `maxLineDemand`, `baselineLines` | +25 % / 2x / 3 |
+| Shopper aisle nodes | MB `HubPoint`, `HallAisleZ`, `NorthAisleZ` and the `via` chains in `BuildCheckout` | hub (0,5), aisles z 5 and 10.95 |
+| Basket size | `CustomerQueue` `maxProducts`, `maxUnitsPerProduct` | 2 products x 3 units |
+| How long a shopper waits at an empty shelf | `CustomerAgent.maxWaitAtShelf` | 8 s |
+| Reputation lost per skipped item | `CustomerQueue.reputationPerSkip` | 0.04 |
+| Market sell price multiplier | `CheckoutStation.priceMultiplier` | 1.5 |
+| Stocker price / fee (two per room) | MB `StockerPrice`, `StockerFee` | $800 / $0.40 |
+| Stocker hire squares | MB `Stocker1Hires`, `Stocker2Hires` | beside each doorway |
+| Growth: shelf / order / 2nd checkout prices | MB `GrowthShelfPrices`, `GrowthOrderPrices`, `Checkout2Price` | 1,000 1,500 2,000 / 1,500 2,500 3,500 / 3,000 |
+| New products | FSB `CreateItems` (Bread, Apples, Yogurt) | base 7 / 4 / 10 |
+| Product order and what each step reveals | MB `BuildGrowth` | bread -> apples -> yogurt |
+| Cashier price / fee | MB `CashierPrice`, `CashierFee` | $1,500 / $0.50 |
+| Shop walls / door | MB `Shop*`, `DoorHalf`, `TallWall`, `LowWall` | 24 x 21 m, door 3.6 m |
+| Market boundary / fence | MB `EdgeWest/East/North/South` | -17 / 17 / 18.6 / -13 |
+| Shopper waypoints | MB `EntryRoute`, `ExitRoute`, `QueueApproach` | through the door at x = 0 |
+| Which squares appear at OPEN | MB `Shop.Opening` (filled in `BuildStock`, `BuildCheckout`, `BuildStaff`) | |
+| How a stocker picks a shelf | `WorkerAgent.routes`, `ChooseRoute`, `RouteUsable` | emptiest usable, unclaimed |
+| Icons for the new squares | `UI/IconFactory.cs` `DrawSignpost/Broom/Door/Shelf` | Travel, Clean, Open, Stock |

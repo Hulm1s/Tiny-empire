@@ -48,6 +48,13 @@ namespace Tycoon.Stations
 
         public bool SoldOut => target == null || target.IsAtMaxUnits;
 
+        /// <summary>
+        /// True once the building has every unit it can hold. Unlike <see cref="SoldOut"/> this
+        /// is false for an unwired square, so a milestone that waits on "everything maxed"
+        /// cannot be satisfied by a broken one.
+        /// </summary>
+        public bool IsMaxed => target != null && target.IsAtMaxUnits;
+
         public string SaveKey => SaveKeys.For(this);
 
         protected override void Awake()

@@ -16,11 +16,15 @@ namespace Tycoon.Stations
         public override string StatusValue =>
             target == null ? string.Empty : $"{target.Count} / {target.capacity}";
 
+        [Header("Presentation")]
+        [Tooltip("An arrow for a feed hopper; a shop shelf uses the stocking icon instead.")]
+        public Tycoon.UI.SquareIcon icon = Tycoon.UI.SquareIcon.Feed;
+
         /// <summary>
         /// An arrow rather than the goods: what matters here is the direction goods travel,
         /// and the collect square opposite already shows what the building makes.
         /// </summary>
-        public override Tycoon.UI.SquareIcon Icon => Tycoon.UI.SquareIcon.Feed;
+        public override Tycoon.UI.SquareIcon Icon => icon;
 
         /// <summary>The ring shows how full the hopper is getting.</summary>
         protected override float TransferProgress => target != null ? target.Fill : 0f;

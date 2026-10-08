@@ -526,11 +526,13 @@ icon carries the verb so the text only has to carry the noun.
 assets, because the legacy font has no emoji glyphs and TextMeshPro cannot be used in a headless
 build.
 
-### The 13 icons
+### The 17 icons
 
 Products (by `ItemDefinition.id`): `egg`, `milk`, `corn`, `hay`.
 Actions (`SquareIcon`): `Feed`, `Collect`, `Harvest`, `Fix`, `Buy`, `Unlock`, `Hire`, `Serve`,
-`Discard`. (`None` draws nothing.)
+`Discard`, and - added with the supermarket - `Travel`, `Clean`, `Open`, `Stock`. (`None` draws
+nothing.) New enum values are **appended**: the value is serialised in the saved scene, so
+renumbering would change every square.
 
 ### The Painter primitives
 
@@ -857,3 +859,98 @@ Before you commit any change, check it against these:
 6. **A resource never exists before something that consumes it.**
 7. **Run the layout audit after anything that moves, resizes or adds an object**, and read
    `[Audit] Nothing overlaps.`, not `AUDIT_OK`.
+
+---
+
+## 25. Change the supermarket
+
+The market is the second `Location`, built by `Editor/MarketBuilder.cs` (see `GAMEPLAY_SYSTEMS.md`
+section 19 for how it plays and `CHANGE_MAP.md` for every constant). The loop is the same as
+section 0: edit, rebuild the scene, run the audit.
+
+### ⚠ The rules specific to the market
+
+1. **A hire may only be on sale once its FIRST route exists.** Sklad1's stocker hires and the
+   first cashier are in `Shop.Opening` with the crates, collect squares, stocking squares and the
+   checkout; sklad2's stockers and cashier 2 are revealed by the bread order and the second
+   checkout (`BuildGrowth`). If you reveal a hire earlier than something on its first route, the
+   audit prints `ROUTE ... is on sale from stage N but ... only exists from stage M`. A
+   stocker's other routes (`WorkerAgent.routes`) may appear later; the audit's `STOCKER` lines check
+   each is reachable and carries one product from its own crate to its own shelf.
+2. **Never size a station's collider before adding its component** - use `LevelBuildKit.Station<T>`
+   (same trap as everywhere, see section 13).
+3. **Walls are two things.** The collision (`WallColliders`) is built once and never swapped; the
+   look is two sets (`Grubby`, `Painted`). Only name a piece `Wall` if it should count as a
+   footprint in the audit - the grubby set is `DirtyWall` so it is not counted twice. Likewise only
+   *working* fittings are named `Shell`/`Stall`; wrecks are not.
+4. **Shoppers walk straight lines.** Any new fitting on the floor must not sit on a leg between the
+   door, the aisle nodes (`StoreShelf.via`), the stand points, `queueApproach`, the queue slots and
+   the exit. The audit's `SHOPPER ... goes through ...` checks every one, walking shelf to shelf
+   through the same `StoreShelf.Connect` the shopper uses; if it fires, move the fitting or add a
+   waypoint (a `Transform` on `CustomerQueue.entryRoute/queueApproach/exitRoute` or a shelf's
+   `via`), do not add a navmesh.
+5. **Every new saveable object gets `LevelBuildKit.Identify(go, "market.…")`** with a new id. The
+   audit's `save ids` line counts them and fails on a missing or duplicate id.
+6. **A product on a market shelf must be an `ItemDefinition`** (`FarmSceneBuilder.CreateItems`).
+   The shelf cubes use its `carryMaterial`; never create a material at runtime. A new product also
+   needs its icon in `IconFactory.For()` AND `HasArtwork()` AND the `IconSheet.cs` list - keep the
+   three in step - or it shows as a plain disc.
+7. **Walls and floor are painted through `MaterialPropertyBlock`s** (`MarketDecor`). A new wall
+   piece must be added to `Shop.Surfaces` (kind, real length and height in metres, origin) or it
+   will not take the pattern. Never create a Material for it.
+8. **Rubbish is carried:** a new pile is a `Trash` buffer + COLLECT square + `ClearablePile`, and
+   goes in the `emptied` list of the first `RevealWhenAll`. The audit treats those squares as
+   disappearing.
+9. **The storage rooms' doorways** (`Door1From/To`, `Door2From/To`) must stay at least 1.2 m wide
+   (NavMeshAgent radius 0.3 plus 0.3 carved off each side of the opening), and a stocker's hire
+   square goes BESIDE a doorway, never in it.
+10. **Growth is ordered by reveal lists.** A new product is a shelf gate that reveals its order gate,
+   an order gate that reveals its crate, collect and stocking squares and the NEXT shelf gate. Never
+   reveal a crate before its shelf: the audit's `PRODUCT-BEFORE-SHELF` and `ORDERS` lines check it.
+11. **A second till is a second `CustomerQueue`** in the first's `alternates`, with
+   `sharesReputationWith` set; it spawns nothing and has no shelves.
+
+### Patterns and the paint menu
+
+Patterns live in `UI/PatternFactory.cs`: a `Sample...` function per pattern, in metres, returning the
+weights of the three colours. A repeat must divide `TileMeters` (1.6 m) exactly or it will show a
+seam. Add new ones on the END of the lists (indices are saved), then `Tycoon > Export Pattern Sheet`
+and look at `pattern-sheet.png`. Menu layout is in reference pixels in `UI/PaintMenu.cs`.
+
+### Common changes
+
+- **Prices / rates:** the constants in the table in `CHANGE_MAP.md`. All purchase prices pass
+  through `FarmSceneBuilder.Price()`, so `TestPriceOverride` flattens them.
+- **Add a product line:** add an entry to the `lines` array in `MarketBuilder.BuildStock` (shelf
+  id, `X`/`Z`, `CrateZ`, `Growth`), the item in `CreateItems` with its icon, and for a growth line
+  its two prices in `GrowthShelfPrices`/`GrowthOrderPrices` plus a `via` chain in `BuildCheckout`
+  and a place in its `tour`. The stockers' routes are built from the room's lines
+  (`BuildStaff`). A third row or a third room needs new geometry: read the layout note in
+  `GAMEPLAY_SYSTEMS.md` section 19 first and let the audit measure it.
+- **Make the shop busier:** `ShopperIntervalSeconds` down, `MaxShoppers` up,
+  `CustomerQueue.demandPerExtraLine` up. A longer queue needs more `QueueSlots` *and* room along
+  the counter: slots run north from the serving square's z along the counter's east side at `QueuePitch`
+  (1.35 m); the last slot must stay clear of the repair square and the aisles above.
+- **Add another location (a third business):** a new `<Name>Builder.cs` like `MarketBuilder`, a
+  root with a `Location` and a spawn point, saved inactive, revealed by a `Gate` or a
+  `RevealWhenAll`, with travel squares each way. Call it from `FarmSceneBuilder.Build()`. The audit
+  picks it up by itself; place it further down the road axis than the market (the audit reports the
+  gap between every pair of locations) and keep `GroundHorizon` large enough to cover it.
+
+### The audit, now
+
+`SquareAudit` runs once per `Location`, each in its own grid, then once for the whole scene. Per
+location: day-one and fully-built overlaps (as before), **staged overlaps** (the progression
+replayed in rounds: every live square checked each round, then everything completable completed -
+gates paid, chores done, upgrades maxed, `RevealWhenAll`s fired - and anything that is never
+switched on is reported `UNREACHABLE`), buildings and squares-on-buildings, **arrival point**
+(clear of every square, wall and fitting, and inside the boundary), **shopper paths** (every leg,
+door to shelf to shelf to either queue to the exit, through the aisle nodes), camera edge,
+hire-route cost and stage, and **growth rules** (a crate or its order never before its shelf, one
+order on offer at a time, every stocker route reachable and one product per pair, an alternate
+till shares the shop's reputation). Whole scene: locations stand apart, every travel square leads to
+another location, every location that is saved off is revealed by something, and every saveable
+has a unique `SaveIdentity`.
+
+Read for success: `[Audit] Nothing overlaps. (farm)`, `[Audit] Nothing overlaps. (market)` and the
+final `[Audit] Nothing overlaps.` Any other final line is a failure; `AUDIT_OK` prints regardless.

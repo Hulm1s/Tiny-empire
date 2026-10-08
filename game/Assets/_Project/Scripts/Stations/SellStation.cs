@@ -41,6 +41,10 @@ namespace Tycoon.Stations
 
             ItemDefinition item = Carry.Peek();
             if (item == null) return false;
+
+            // Rubbish and anything else worth nothing is not for sale: a till that swallowed it
+            // for $0 would be a second bin, and one that blocks the stack behind it.
+            if (item.basePrice <= 0d) return false;
             if (accepted != null && item != accepted) return false;
 
             if (!Carry.TryRemove(item)) return false;

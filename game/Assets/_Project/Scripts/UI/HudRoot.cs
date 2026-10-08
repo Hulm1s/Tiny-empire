@@ -77,6 +77,15 @@ namespace Tycoon.UI
             // Built last so the panel sits above the joystick area and swallows its taps.
             PauseMenu.Create(_safeArea, joystick.gameObject);
 
+            // The paint menu opens from a square in the supermarket and is not built until it
+            // does. Above the pause panel's button, below the fade.
+            PaintMenu.Create(_safeArea, joystick.gameObject);
+
+            // Last, so it covers the whole screen including the pause panel. It is the full
+            // canvas rather than the safe area: a fade that stopped short of the notch would
+            // leave a strip of the old location showing.
+            ScreenFade.Create((RectTransform)_canvas.transform);
+
             var wallet = GameRoot.Money;
             if (wallet != null)
             {

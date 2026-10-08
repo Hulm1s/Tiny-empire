@@ -1,9 +1,22 @@
+using System.Collections.Generic;
 using Tycoon.Config;
 using Tycoon.UI;
 using UnityEngine;
 
 namespace Tycoon.Customers
 {
+    /// <summary>
+    /// One thing on a supermarket shopper's list: take up to <see cref="wanted"/> units of an
+    /// item from a shelf. <see cref="taken"/> is how many they actually got.
+    /// </summary>
+    public class ShoppingStop
+    {
+        public StoreShelf shelf;
+        public ItemDefinition item;
+        public int wanted;
+        public int taken;
+    }
+
     /// <summary>
     /// One shopper. Walks in off the road, stands at the counter holding up an order, and
     /// either leaves happy once it is filled or stomps off when they run out of patience.
@@ -14,7 +27,9 @@ namespace Tycoon.Customers
     /// </summary>
     public class CustomerAgent : MonoBehaviour
     {
-        public enum Phase { Arriving, Waiting, Leaving }
+        // Shopping is last on purpose: the values are never saved, but nothing that already
+        // reads Arriving, Waiting or Leaving should have to care that browsing exists.
+        public enum Phase { Arriving, Waiting, Leaving, Shopping }
 
         [Header("Movement")]
         public float moveSpeed = 2.7f;
@@ -26,6 +41,15 @@ namespace Tycoon.Customers
                  "purpose: a queue that times out faster than the player can walk the length " +
                  "of the farm punishes them for playing it as designed.")]
         public float patienceSeconds = 75f;
+
+        [Header("Browsing (supermarket shoppers only)")]
+        [Tooltip("Seconds between units lifted off a shelf, so the shelf visibly thins rather " +
+                 "than being emptied in a frame.")]
+        public float takeInterval = 0.35f;
+
+        [Tooltip("Seconds a shopper will stand at an empty shelf hoping for stock before they " +
+                 "give up on that item and move on.")]
+        public float maxWaitAtShelf = 8f;
 
         [Header("Parts")]
         public Transform visual;
@@ -43,6 +67,30 @@ namespace Tycoon.Customers
         private float _patienceLeft;
         private Vector3 _target;
         private float _bobPhase;
+
+        // Browsing. A farm customer never touches any of this: with no stops and no route they
+        // go straight from the road to their slot exactly as they always did.
+        private readonly List<Vector3> _route = new List<Vector3>();
+        private List<ShoppingStop> _stops;
+        private readonly List<BasketLine> _basket = new List<BasketLine>();
+        private int _stopIndex;
+        private float _takeTimer;
+        private float _shelfWait;
+        private bool _hasFacePoint;
+        private Vector3 _facePoint;
+        private bool _approached;
+
+        // The shelf-route nodes this shopper has walked out along (see StoreShelf.via), hub
+        // first. Empty for a farm customer and for any shelf with no waypoints.
+        private readonly List<Transform> _trail = new List<Transform>();
+        private bool _stopPrepared;
+
+        private class BasketLine
+        {
+            public ItemDefinition item;
+            public int count;
+            public int scanned;
+        }
 
         public Phase CurrentPhase { get; private set; } = Phase.Arriving;
         public ItemDefinition Wanted => _wanted;
@@ -63,19 +111,59 @@ namespace Tycoon.Customers
             CurrentPhase = Phase.Arriving;
             _target = slot;
 
-            if (tintTarget != null)
-            {
-                var block = new MaterialPropertyBlock();
-                block.SetColor("_BaseColor", tint);
-                block.SetColor("_Color", tint);
-
-                if (tintMaterialIndex >= 0)
-                    tintTarget.SetPropertyBlock(block, tintMaterialIndex);
-                else
-                    tintTarget.SetPropertyBlock(block);
-            }
+            ApplyTint(tint);
 
             if (bubble != null) bubble.Show(_wanted, Remaining);
+        }
+
+        private void ApplyTint(Color tint)
+        {
+            if (tintTarget == null) return;
+
+            var block = new MaterialPropertyBlock();
+            block.SetColor("_BaseColor", tint);
+            block.SetColor("_Color", tint);
+
+            if (tintMaterialIndex >= 0)
+                tintTarget.SetPropertyBlock(block, tintMaterialIndex);
+            else
+                tintTarget.SetPropertyBlock(block);
+        }
+
+        /// <summary>
+        /// Starts a supermarket shopper: walk the entry route, visit each shelf on the list and
+        /// take what they came for, then queue at the checkout with the basket.
+        ///
+        /// Nothing about the checkout is decided yet - the basket is whatever the shelves
+        /// actually gave them. Shelves that were empty cost the shop reputation; a shopper who
+        /// got nothing at all never queues.
+        /// </summary>
+        public void BeginShopping(CustomerQueue queue, List<ShoppingStop> stops,
+            IList<Vector3> entryRoute, Color tint)
+        {
+            _queue = queue;
+            _stops = stops;
+            _stopIndex = 0;
+            _takeTimer = 0f;
+            _shelfWait = 0f;
+            _basket.Clear();
+            _hasFacePoint = false;
+            _approached = false;
+            _trail.Clear();
+            _stopPrepared = false;
+            _requested = 0;
+            _delivered = 0;
+            _wanted = null;
+            _patienceLeft = patienceSeconds;
+
+            _route.Clear();
+            if (entryRoute != null) _route.AddRange(entryRoute);
+
+            CurrentPhase = Phase.Shopping;
+            _target = transform.position;
+
+            ApplyTint(tint);
+            if (bubble != null) bubble.SetVisible(false);
         }
 
         /// <summary>Called when the queue shuffles forward.</summary>
@@ -84,6 +172,45 @@ namespace Tycoon.Customers
             if (CurrentPhase == Phase.Leaving) return;
             _target = slot;
             if (CurrentPhase == Phase.Waiting) CurrentPhase = Phase.Arriving;
+        }
+
+        /// <summary>
+        /// Rings up one unit of the basket. The supermarket's counterpart to
+        /// <see cref="Deliver"/>: there the player hands goods over; here the goods are already in
+        /// the basket and the checkout just scans them, one per tick.
+        /// </summary>
+        public bool ScanNext(out ItemDefinition scanned)
+        {
+            scanned = null;
+            if (!IsWaiting || IsSatisfied) return false;
+
+            for (int i = 0; i < _basket.Count; i++)
+            {
+                if (_basket[i].scanned >= _basket[i].count) continue;
+                _basket[i].scanned++;
+                scanned = _basket[i].item;
+                break;
+            }
+
+            if (scanned == null) return false;
+
+            _delivered++;
+            RefreshWanted();
+            if (bubble != null) bubble.Show(_wanted, Remaining);
+
+            if (IsSatisfied) Leave(true);
+            return true;
+        }
+
+        /// <summary>The next line of the basket still to be scanned, for the bubble and the till icon.</summary>
+        private void RefreshWanted()
+        {
+            for (int i = 0; i < _basket.Count; i++)
+            {
+                if (_basket[i].scanned >= _basket[i].count) continue;
+                _wanted = _basket[i].item;
+                return;
+            }
         }
 
         /// <summary>Hands over one unit. Returns false if this customer does not want it.</summary>
@@ -104,8 +231,20 @@ namespace Tycoon.Customers
 
             switch (CurrentPhase)
             {
+                case Phase.Shopping:
+                    UpdateShopping(delta);
+                    break;
+
                 case Phase.Arriving:
-                    if (StepTowards(_target, delta)) CurrentPhase = Phase.Waiting;
+                    // A shopper first walks the joined till's approach, round its counter.
+                    if (_route.Count > 0)
+                    {
+                        if (StepTowards(_route[0], delta)) _route.RemoveAt(0);
+                    }
+                    else if (StepTowards(_target, delta))
+                    {
+                        CurrentPhase = Phase.Waiting;
+                    }
                     break;
 
                 case Phase.Waiting:
@@ -116,13 +255,149 @@ namespace Tycoon.Customers
                     break;
 
                 case Phase.Leaving:
-                    if (StepTowards(_target, delta)) Destroy(gameObject);
+                    // Waypoints first (out through the door), then the exit itself. A farm
+                    // customer has none and heads straight there.
+                    if (_route.Count > 0)
+                    {
+                        if (StepTowards(_route[0], delta)) _route.RemoveAt(0);
+                    }
+                    else if (StepTowards(_target, delta))
+                    {
+                        Destroy(gameObject);
+                    }
                     break;
             }
         }
 
+        /// <summary>Walk in, visit each shelf in turn, then go and queue.</summary>
+        private void UpdateShopping(float delta)
+        {
+            if (_route.Count > 0)
+            {
+                if (StepTowards(_route[0], delta)) _route.RemoveAt(0);
+                return;
+            }
+
+            if (_stops != null && _stopIndex < _stops.Count)
+            {
+                // Before walking up to a shelf, walk its aisle: back out of the aisle the last
+                // one was in and in along this one's, as far as they differ.
+                if (!_stopPrepared)
+                {
+                    _stopPrepared = true;
+                    StoreShelf.Connect(_trail, _stops[_stopIndex].shelf.via, _route);
+                    if (_route.Count > 0) return;
+                }
+
+                BrowseShelf(_stops[_stopIndex], delta);
+                return;
+            }
+
+            FinishShopping(delta);
+        }
+
+        private void BrowseShelf(ShoppingStop stop, float delta)
+        {
+            var buffer = stop.shelf.buffer;
+            if (stop.shelf.standPoint != null)
+            {
+                _hasFacePoint = true;
+                _facePoint = buffer != null ? buffer.transform.position : stop.shelf.standPoint.position;
+                if (!StepTowards(stop.shelf.standPoint.position, delta)) return;
+            }
+
+            bool done = stop.taken >= stop.wanted;
+
+            if (!done)
+            {
+                _takeTimer -= delta;
+
+                if (buffer != null && !buffer.IsEmpty)
+                {
+                    _shelfWait = 0f;
+                    if (_takeTimer <= 0f && buffer.Remove(1) > 0)
+                    {
+                        stop.taken++;
+                        _takeTimer = takeInterval;
+                    }
+                }
+                else
+                {
+                    // Nothing there. Wait a while - somebody may be restocking - and then give
+                    // up on this item. The shop pays for the empty shelf, not the shopper.
+                    _shelfWait += delta;
+                    if (_shelfWait >= maxWaitAtShelf)
+                    {
+                        if (_queue != null) _queue.OnItemSkipped();
+                        done = true;
+                    }
+                }
+
+                if (stop.taken >= stop.wanted) done = true;
+            }
+
+            Bob(delta, false);
+            if (!done) return;
+
+            if (stop.taken > 0)
+                _basket.Add(new BasketLine { item = stop.item, count = stop.taken });
+
+            _stopIndex++;
+            _stopPrepared = false;
+            _takeTimer = 0f;
+            _shelfWait = 0f;
+        }
+
+        private void FinishShopping(float delta)
+        {
+            _hasFacePoint = false;
+
+            if (_basket.Count == 0)
+            {
+                // Came for something and found nothing. Out of the door without queueing.
+                Leave(false);
+                return;
+            }
+
+            if (_requested == 0)
+            {
+                for (int i = 0; i < _basket.Count; i++) _requested += _basket[i].count;
+                _delivered = 0;
+                RefreshWanted();
+            }
+
+            // Out of the aisle first. The approach to a till is added only once a place in one
+            // is taken: with two tills the shopper may join the other one, and each till's
+            // approach rounds its own counter - the other's would lead across a counter.
+            if (!_approached)
+            {
+                _approached = true;
+                StoreShelf.Unwind(_trail, _route);
+                if (_route.Count > 0) return;
+            }
+
+            // The queue may be full of people who are still being served. Wait where we stand
+            // until a place opens up, rather than piling onto the last one.
+            if (_queue != null && _queue.TryJoinQueue(this, out Vector3 slot, out CustomerQueue joined))
+            {
+                // From here on this is the till they actually joined, which matters when a
+                // shop has two: it is the one they face, leave from and are counted by.
+                _queue = joined;
+                _route.Clear();
+                joined.AppendQueueApproach(_route);
+                _target = slot;
+                _patienceLeft = patienceSeconds;
+                CurrentPhase = Phase.Arriving;
+                if (bubble != null) bubble.Show(_wanted, Remaining);
+                return;
+            }
+
+            Bob(delta, false);
+        }
+
         private void Leave(bool happy)
         {
+            bool fromQueue = CurrentPhase == Phase.Arriving || CurrentPhase == Phase.Waiting;
             CurrentPhase = Phase.Leaving;
             if (bubble != null) bubble.SetVisible(false);
 
@@ -134,6 +409,11 @@ namespace Tycoon.Customers
             if (_queue != null)
             {
                 _target = _queue.ExitPosition;
+                _route.Clear();
+                // Out of the aisle first, if they are still in one (empty-handed, or timed out).
+                StoreShelf.Unwind(_trail, _route);
+                if (fromQueue) _queue.AppendQueueExit(_route);
+                _queue.AppendExitRoute(_route);
                 _queue.OnCustomerLeft(this, happy);
             }
         }
@@ -162,7 +442,8 @@ namespace Tycoon.Customers
         private void FaceCounter(float delta)
         {
             if (_queue == null) return;
-            Vector3 toCounter = _queue.CounterPosition - transform.position;
+            // A browsing shopper looks at the shelf in front of them; everyone else at the till.
+            Vector3 toCounter = (_hasFacePoint ? _facePoint : _queue.CounterPosition) - transform.position;
             toCounter.y = 0f;
             if (toCounter.sqrMagnitude < 0.01f) return;
 

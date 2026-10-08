@@ -80,6 +80,20 @@ namespace Tycoon.Core
                 _camera.orthographicSize = orthographicSize;
         }
 
+        /// <summary>
+        /// Jumps straight to the target with no smoothing. Used after the player is moved a
+        /// long way (travelling between locations), so the camera does not sweep across the
+        /// whole map to catch up.
+        /// </summary>
+        public void SnapToTarget()
+        {
+            if (target == null) return;
+
+            _currentFocus = target.position + lookOffset;
+            _focusVelocity = Vector3.zero;
+            SnapToFocus();
+        }
+
         private void SnapToFocus()
         {
             var rotation = Quaternion.Euler(pitchYaw.x, pitchYaw.y, 0f);

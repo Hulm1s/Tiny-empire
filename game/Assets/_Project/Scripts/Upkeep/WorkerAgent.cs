@@ -17,15 +17,49 @@ namespace Tycoon.Upkeep
     /// automating the farm is a running cost that scales with throughput. That is what stops a
     /// finished business running itself forever, and it is why the player still has to come back.
     /// </summary>
+    /// <summary>One leg a multi-route worker may run: a crate's collect square to a shelf's stocking square.</summary>
+    [System.Serializable]
+    public class StockRoute
+    {
+        public StationBase pickup;
+        public StationBase dropoff;
+    }
+
     [RequireComponent(typeof(CarryStack))]
     public class WorkerAgent : MonoBehaviour, IStationUser
     {
+        // Which shelf each multi-route worker is currently restocking, so two stockers in one
+        // room never both go for the same one. Static because the workers know nothing of each
+        // other; cleared on every start so an editor play session never inherits a stale claim.
+        private static readonly System.Collections.Generic.Dictionary<ItemBuffer, WorkerAgent> Claims =
+            new System.Collections.Generic.Dictionary<ItemBuffer, WorkerAgent>();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetClaims() => Claims.Clear();
+
+        private ItemBuffer _claimed;
+
+        // A multi-route worker with nothing worth doing: every shelf full, empty-crated, not
+        // open yet, or already taken by the other stocker. It stands where it is rather than
+        // walking to a crate to fetch goods for a shelf somebody else is filling.
+        private bool _idle;
+
         [Header("Route")]
         [Tooltip("Square where the worker fills up - a field, or a machine's output.")]
         public StationBase pickup;
 
         [Tooltip("Square where the worker empties out - a machine's input, or a sell counter.")]
         public StationBase dropoff;
+
+        [Header("Several routes (market stockers only)")]
+        [Tooltip("Leave empty for an ordinary one-route worker, which is every farm hand and " +
+                 "every cashier. When filled, the worker serves a whole storage room: each " +
+                 "time it is empty-handed it picks the route whose shelf needs stock most, " +
+                 "skipping shelves that are not open yet, are full, have nothing waiting in " +
+                 "their crate, or are already being worked by another stocker. The chosen " +
+                 "route simply becomes `pickup` and `dropoff`, so everything below - " +
+                 "walking, standing off for the player, piece-rate pay - is unchanged.")]
+        public StockRoute[] routes;
 
         [Header("Movement")]
         public float moveSpeed = 3.1f;
@@ -82,7 +116,14 @@ namespace Tycoon.Upkeep
         public string RouteName =>
             pickup != null && dropoff != null ? $"{pickup.label} to {dropoff.label}" : name;
 
-        /// <summary>Only the two squares on this worker's route; see IStationUser.</summary>
+        /// <summary>
+        /// Only the two squares on this worker's CURRENT route; see IStationUser.
+        ///
+        /// For a multi-route worker that is deliberately just the route it chose this trip, not
+        /// every route it owns: a stocker walking to the bread crate passes the apple crate's
+        /// square on the way, and if that counted it would fill its arms with apples and carry
+        /// a mixed stack to a shelf that wants one thing.
+        /// </summary>
         public bool WillUse(StationBase station) => station == pickup || station == dropoff;
 
         /// <summary>True while this worker is waiting for the player to finish at its target.</summary>
@@ -143,6 +184,9 @@ namespace Tycoon.Upkeep
             int delivered = _lastCarryCount - count;
             _lastCarryCount = count;
 
+            // Arms empty after a delivery: this trip is over, so the shelf is free for anyone.
+            if (delivered > 0 && count == 0) ReleaseClaim();
+
             if (delivered <= 0 || !_headingToDropoff || feePerDelivery <= 0d) return;
 
             var wallet = GameRoot.Money;
@@ -156,9 +200,91 @@ namespace Tycoon.Upkeep
             if (paid < due * 0.999d) _underpaidTimer = 3f;
         }
 
+        private void OnDisable() => ReleaseClaim();
+
+        private void ReleaseClaim()
+        {
+            if (_claimed == null) return;
+            if (Claims.TryGetValue(_claimed, out var owner) && owner == this) Claims.Remove(_claimed);
+            _claimed = null;
+        }
+
+        /// <summary>
+        /// Open for business, not full, with something waiting to carry, and nobody else on it.
+        /// A route whose crate or shelf has not been bought yet is simply not offered.
+        /// </summary>
+        private bool RouteUsable(StationBase from, StationBase to)
+        {
+            if (from == null || to == null) return false;
+            if (!from.isActiveAndEnabled || !to.isActiveAndEnabled) return false;
+
+            var crate = (from as CollectStation)?.source;
+            var shelf = (to as DepositStation)?.target;
+            if (crate != null && crate.IsEmpty) return false;
+            if (shelf == null) return true;
+            if (shelf.IsFull) return false;
+
+            return !Claims.TryGetValue(shelf, out var owner) || owner == this ||
+                   owner == null || !owner.isActiveAndEnabled;
+        }
+
+        /// <summary>
+        /// Picks this trip's route when the arms are empty: the emptiest usable shelf. Kept for
+        /// the whole trip once chosen (so a worker never dithers between two shelves as their
+        /// fill levels cross), and dropped only when it stops being usable or the load is
+        /// delivered.
+        /// </summary>
+        private void ChooseRoute()
+        {
+            if (routes == null || routes.Length == 0 || !_carry.IsEmpty) return;
+
+            if (_claimed != null)
+            {
+                if (RouteUsable(pickup, dropoff)) return;
+                ReleaseClaim();
+            }
+
+            StockRoute best = null;
+            float bestFill = float.MaxValue;
+            foreach (var route in routes)
+            {
+                if (route == null || !RouteUsable(route.pickup, route.dropoff)) continue;
+
+                var shelf = (route.dropoff as DepositStation)?.target;
+                float fill = shelf != null ? shelf.Fill : 0f;
+                if (fill >= bestFill) continue;
+
+                best = route;
+                bestFill = fill;
+            }
+
+            // Nothing needs anything, or the only thing that does is somebody else's: wait.
+            if (best == null)
+            {
+                _idle = true;
+                _routedTo = null;
+                if (_agent != null && _agent.isOnNavMesh) _agent.ResetPath();
+                return;
+            }
+
+            _idle = false;
+            pickup = best.pickup;
+            dropoff = best.dropoff;
+            _routedTo = null;
+
+            var target = (best.dropoff as DepositStation)?.target;
+            if (target != null)
+            {
+                _claimed = target;
+                Claims[target] = this;
+            }
+        }
+
         private void ChooseTarget()
         {
             if (_carry == null) return;
+
+            ChooseRoute();
 
             // Self-correcting: full means deliver, empty means go and fetch, anything in
             // between means carry on with whatever leg is already underway.
@@ -188,6 +314,13 @@ namespace Tycoon.Upkeep
 
         private void MoveTowardsTarget(float delta)
         {
+            // Empty-handed with no job: stand still. (Loaded workers always finish their trip.)
+            if (_idle && _carry != null && _carry.IsEmpty)
+            {
+                Bob(delta, false);
+                return;
+            }
+
             StationBase target = _headingToDropoff ? dropoff : pickup;
             if (target == null) return;
 

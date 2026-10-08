@@ -158,6 +158,44 @@ of them destroys that object's saved progress for every existing player.**
 | `farm.unlock.cowB` | `FarmSceneBuilder.cs:458` | Cow Shed purchase progress |
 | `farm.hire.<Id>` | `FarmSceneBuilder.cs:589` | one per worker: `farm.hire.HarvesterA`, `.SellerA`, `.HarvesterB`, `.SellerB`, `.HayHandA`, `.MilkRunA`, `.HayHandB`, `.MilkRunB` |
 
+
+### The supermarket's ids (all `market.` or `farm.` additions)
+
+Written in `MarketBuilder.cs` (and `FarmSceneBuilder.BuildMarketLink` for the two `farm.` ones).
+**Same rule: never change them once anyone has progress.**
+
+| Save id | Carries |
+|---|---|
+| `farm.unlock.market` | the $10,000 supermarket purchase (`UnlockStation`) |
+| `farm.travel.town` | the farm-side travel square (not saveable, but identified) |
+| `market.travel.farm` | the market-side travel square (not saveable, but identified) |
+| `market.trash.1` … `market.trash.4` | the four rubbish piles: an `ItemBuffer` of `Trash` (4 bags each); a half-cleared pile restores with the bags it had left. `ClearablePile` keeps no state |
+| `market.trashcollect.1` … `.4` | the piles' collect squares (identified, not saveable) |
+| `market.unlock.repair` | the repair step (`UnlockStation`) |
+| `market.decor` | the shop's look (`MarketDecor`): `painted` flag + `DecorLook` (pattern index, three colours, floor kind, floor colour, wood shade). Pattern and floor-kind numbers are stored by index - new ones go on the end of `PatternFactory`'s lists |
+| `market.paint` | the PAINT square (identified, not saveable) |
+| *(removed)* `market.clean.1-4`, `market.unlock.paint` | replaced by the trash piles and the paint menu. Saves from the first market build keep these as dead entries; a player who had already paid for paint pays the first paint job again |
+| `market.open` | the OPEN square (`ChoreStation`) |
+| `market.storage.egg/milk/corn`, `market.storage.bread/apples/yogurt` | crate: `ItemBuffer` **and** `SupplyFeed` on one object (`#ItemBuffer`, `#SupplyFeed`). The bread/apples/yogurt crates are new (round 3) and are revealed by their orders |
+| `market.shelf.egg/milk/corn`, `market.shelf.s21/s22/s23` | shelf `ItemBuffer` (s21 bread, s22 apples, s23 yogurt: named for their place on the plan, not the product) |
+| `market.stock.<product>`, `market.collect.<product>` | the squares, all six products (identified, not saveable) |
+| `market.checkout` | shopper queue: reputation (`CustomerQueue`), the shop's one reputation |
+| `market.checkout.serve` | the checkout square (identified, not saveable) |
+| `market.checkout2` | the second till's queue (`CustomerQueue`): `sharesReputationWith` the first, so it restores nothing of its own |
+| `market.checkout2.serve` | the second checkout square (identified, not saveable) |
+| `market.hire.cashier`, `market.hire.cashier2` | the two cashier hires (`UnlockStation`) |
+| `market.hire.stock1a/stock1b` | sklad1's two stocker hires (`UnlockStation`) |
+| `market.hire.stock2a/stock2b` | sklad2's two stocker hires (`UnlockStation`), on sale from the bread order |
+| *(removed)* `market.hire.stocker.egg/milk/corn` | the three single-shelf stockers of the last build; a player who had hired one must hire again (approved) |
+| `market.unlock.shelf.s21/s22/s23` | the three shelf purchases (`UnlockStation`) |
+| `market.order.bread/apples/yogurt` | the three goods orders (`UnlockStation`) |
+| `market.unlock.checkout2` | the second checkout purchase (`UnlockStation`) |
+| `market.comingsoon` | the locked COMING SOON square (`LockedStation`; identified, nothing to save) |
+| `market.bin`, `market.bin.discard` | the market bin |
+
+`RevealWhenAll` has **no entry and needs none**: it stores nothing and re-derives its answer from
+the saved components it watches on every load.
+
 ### Child ids derived from a parent
 
 `LevelBuildKit` suffixes the parent's id for the parts of a building. For a workshop built with
@@ -263,17 +301,55 @@ private struct State
 }
 ```
 
+### `MarketDecor` — `Stations/MarketDecor.cs`
+```csharp
+private struct State
+{
+    public bool painted;     // false until the first paint job is confirmed
+    public DecorLook look;   // pattern, primary/secondary/tertiary, floorKind, floorColor, woodShade
+}
+```
+On restore it shows the painted coat and re-applies the look through MaterialPropertyBlocks.
+The look is only saved when committed; a menu preview is never saved.
+
+### `ChoreStation` — `Stations/ChoreStation.cs`
+```csharp
+private struct State
+{
+    public int completed;   // rings done so far
+    public bool done;
+}
+```
+A finished chore re-applies silently on restore (hides the rubbish, reveals what it unlocks), the
+same pattern as `UnlockStation`.
+
+### `SupplyFeed` — `Stations/SupplyFeed.cs`
+```csharp
+private struct State
+{
+    public float clock;      // seconds toward the next unit
+    public double lastUnix;
+}
+```
+On restore the offline gap (`GameClock.ClampOffline`) is held and turned into units on the first
+`Start()`, after the crate's own `ItemBuffer` has restored (and rotted what it held), so the
+buffer's load cannot overwrite it. Capped by the buffer's capacity.
+
 ### `Durability` — `Upkeep/Durability.cs:65`
 ```csharp
 private struct State { public float current; }
 ```
 Clamped to `max` on load.
 
-### `CustomerQueue` — `Customers/CustomerQueue.cs:243`
+### `CustomerQueue` — `Customers/CustomerQueue.cs`
 ```csharp
 private struct State { public float reputation; }
 ```
-Clamped to `[minReputation, 1]`.
+Clamped to `[minReputation, 1]`. The supermarket's queue (`market.checkout`) uses the same
+component and the same single field; browsing shoppers themselves are never saved. The second
+till (`market.checkout2`) has `sharesReputationWith` set: it reads and moves the first till's
+number and ignores its own saved value on restore. Stocker claims (`WorkerAgent`) and stocker
+routes are runtime-only and never saved; a stocker re-chooses its shelf the moment it loads.
 
 ### Money
 Money is **not** an `ISaveable`. It is a top-level field on the blob (`SaveSystem.cs:134`) and

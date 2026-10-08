@@ -37,6 +37,10 @@ namespace Tycoon.UI
 
         public ProducerMachine machine;
 
+        [Tooltip("What the line under the headline says when the buffer is empty. A feed hopper " +
+                 "needs feeding; a shop shelf needs stocking.")]
+        public string starvedMessage = "NEEDS FEED";
+
         [Header("Placement")]
         [Tooltip("Height above the building's origin. Kept low: the camera looks across the " +
                  "farm, so a sign hung high is drawn over the ground well behind it.")]
@@ -241,7 +245,7 @@ namespace Tycoon.UI
                 }
                 else if (starved && input != null)
                 {
-                    _footnote.text = "NEEDS FEED";
+                    _footnote.text = starvedMessage;
                     _footnote.color = Empty;
                 }
                 else

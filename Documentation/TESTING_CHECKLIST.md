@@ -214,6 +214,69 @@ See `SAVE_SYSTEM.md` §14 for the detail. Minimum:
 
 ---
 
+## SUPERMARKET (after any change to the market, travel, chores, shoppers or the audit)
+
+With `TestPriceOverride` at 10 the whole progression takes a few minutes. Use a fresh tab at
+375x812, and delete the save first for the locked-state checks.
+
+- [ ] **Locked:** on a new save there is nothing at the east end of the road. Own everything on
+      the farm (6 gates, all 8 hire squares, every building at max animals) and the
+      **Supermarket** gate appears there - not before, and not with one building a unit short.
+- [ ] **Travel:** pay it and stand in the square: the screen fades, you appear inside the market's
+      east end, the camera is already on you (no pan across the map), the fade clears, and you do
+      not bounce back. Walk onto **Farm** and do the reverse. You cannot walk between them on foot.
+- [ ] **Renovation:** four trash piles of 4 bags each. Collect from a pile (the carry stack fills,
+      8 max), walk out of the door to the **bin on the forecourt** and empty the arms; the pile
+      shrinks as you take bags and its square disappears when empty. Only when all four are gone do
+      **Repair** and the **Paint** square appear. Trash cannot be put on a shelf. Repair swaps the
+      wrecked shelves and desk for working ones; **OPEN** appears only after Repair AND a confirmed
+      first paint job. OPEN lights the sign.
+- [ ] **Paint menu (phone):** standing in PAINT fills a short ring, then the menu opens, the joystick
+      is gone and the shop behind freezes. Drag the colour squares and hue strips with a thumb
+      (all three); the cube and the real walls change at once. Try every pattern - no seams, same
+      scale on every wall. Floor: tiles/solid take a colour, wood offers six browns. Cancel puts the
+      old look (or the derelict) back and costs nothing; Confirm charges $1,000 the first time and
+      $200 after; with less money Confirm is greyed and says NOT ENOUGH MONEY. Step out and in to
+      reopen. Reload: the look is restored.
+- [ ] **Storage rooms:** after OPEN, sklad1 (north-east) holds the egg, milk and corn crates in a
+      walled room with a doorway in its west wall; sklad2 below it is empty until bread is
+      ordered. Walk in and out of each door several times: you never step into a hire square by
+      accident (they are beside the door), and stockers pass the doorway without snagging.
+- [ ] **Supply:** the opening crates fill by themselves, one unit every 4 s each, with cubes on top.
+      Collect from one and stock its shelf: cubes appear on the shelf board.
+- [ ] **Shoppers:** they walk in through the door, stand at a shelf, take goods one at a time (the
+      shelf visibly thins), go round the end of the counter to the queue, and are scanned at the
+      checkout for 1.5x the farm price (egg 7.5, milk 18, corn 1.5). They leave through the door.
+- [ ] **Empty shelf:** leave a shelf empty - shoppers wait about 8 s, skip it, and the shop's
+      reputation (and so its prices) drops a little; a shopper who got nothing leaves angry
+      without queueing.
+- [ ] **Staff:** both sklad1 stockers refill shelves from the crates with you away, and they
+      split the work: never both on the same shelf, the emptiest shelf first, none carrying
+      another room's goods. With only one shelf needing stock the second stocker stands still.
+      The cashier scans with you away and steps aside when you stand in the checkout.
+- [ ] **Growth, in order:** hire the cashier and both sklad1 stockers: only then does the **S21**
+      shelf purchase appear (south row, west). Buy it: **Order Bread** appears in sklad2 (and no
+      other order, and no crate yet). Order it: the bread crate, collect and stocking squares,
+      sklad2's two stockers, the **second checkout** and **S22** all appear. Bread sells; stockers
+      carry it. Buy checkout 2 (a second north-south counter beside the first, queue on its east side) and cashier 2. Then
+      S22 -> Apples -> S23 -> Yogurt, one at a time. **COMING SOON** (a padlock square just inside
+      the front door, east side) appears only after all of those, and standing in it does nothing.
+- [ ] **Two checkouts (phone):** with both open shoppers choose the shorter queue and neither
+      queue ever blocks the door lane; shoppers walk round the island shelves along the aisles (no
+      walking through shelves), come back along the same aisle, and leave through the door.
+- [ ] **Demand:** shoppers arrive visibly faster with each added product line (up to double).
+- [ ] **Paint corner:** PAINT is in the south-east corner under sklad2, clear of every route.
+- [ ] **Save:** save mid-renovation and with stocked shelves, reload: you start at the farm, the
+      market is still bought, every chore/gate/OPEN state and every shelf count is restored, the
+      hired staff are working, and the crates have topped up (clamped). Save mid-growth (say, S22
+      bought, apples not ordered) and reload: exactly that step is on offer. A save from the
+      previous market build restores, but its three single-shelf stockers must be hired again
+      (their ids are gone). Delete the save: the market is locked again.
+- [ ] **Farm regression:** farm shoppers, tills, workers and prices behave as before; frame time
+      with `?debug=1` is in line with the farm-only build.
+
+---
+
 ## Release blockers
 
 Do not publish if any of these is true:

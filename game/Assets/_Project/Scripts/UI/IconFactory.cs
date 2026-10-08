@@ -16,7 +16,17 @@ namespace Tycoon.UI
         Unlock,
         Hire,
         Serve,
-        Discard
+        Discard,
+
+        // Added with the supermarket. Appended rather than slotted in, because the value is
+        // stored in the saved scene and renumbering would silently change every square.
+        Travel,
+        Clean,
+        Open,
+        Stock,
+
+        // Added with the paint menu, appended for the same reason.
+        Paint
     }
 
     /// <summary>
@@ -63,6 +73,10 @@ namespace Tycoon.UI
                 case "milk": return Get("milk", DrawMilk);
                 case "corn": return Get("corn", DrawCorn);
                 case "hay": return Get("hay", DrawHay);
+                case "trash": return Get("trash", DrawTrash);
+                case "bread": return Get("bread", DrawBread);
+                case "apples": return Get("apples", DrawApple);
+                case "yogurt": return Get("yogurt", DrawYogurt);
             }
 
             // Unknown product: the old behaviour, a plain disc the caller tints.
@@ -72,7 +86,9 @@ namespace Tycoon.UI
         /// <summary>True when <see cref="For"/> returns something better than a plain disc.</summary>
         public static bool HasArtwork(ItemDefinition item) =>
             item != null && (item.icon != null ||
-                item.id == "egg" || item.id == "milk" || item.id == "corn" || item.id == "hay");
+                item.id == "egg" || item.id == "milk" || item.id == "corn" || item.id == "hay" ||
+                item.id == "trash" || item.id == "bread" || item.id == "apples" ||
+                item.id == "yogurt");
 
         public static Sprite Action(SquareIcon kind)
         {
@@ -87,6 +103,11 @@ namespace Tycoon.UI
                 case SquareIcon.Hire: return Get("hire", DrawPerson);
                 case SquareIcon.Serve: return Get("serve", DrawCoin);
                 case SquareIcon.Discard: return Get("discard", DrawBin);
+                case SquareIcon.Travel: return Get("travel", DrawSignpost);
+                case SquareIcon.Clean: return Get("clean", DrawBroom);
+                case SquareIcon.Open: return Get("open", DrawDoor);
+                case SquareIcon.Stock: return Get("stock", DrawShelf);
+                case SquareIcon.Paint: return Get("paint", DrawRoller);
                 default: return null;
             }
         }
@@ -221,6 +242,119 @@ namespace Tycoon.UI
             p.Glow(36f, 62f, 8f, 5f, Highlight);
         }
 
+        /// <summary>A loaf: a domed golden crust with three slashes, on a darker base.</summary>
+        private static void DrawBread(Painter p)
+        {
+            var crustTop = new Color(0.97f, 0.76f, 0.4f);
+            var crustBottom = new Color(0.74f, 0.45f, 0.18f);
+
+            // The loaf is a wide low dome over a slightly narrower base, so it reads as bread
+            // and not as a bun or a sausage.
+            p.Box(48f, 30f, 34f, 14f, 10f, crustBottom, crustBottom, outline: 2.6f);
+            p.Ellipse(48f, 44f, 36f, 26f, crustTop, crustBottom, outline: 2.6f);
+
+            // Three diagonal slashes across the top, the thing that says "baked".
+            var slash = new Color(0.62f, 0.34f, 0.12f, 0.8f);
+            for (int i = -1; i <= 1; i++)
+                p.Box(48f + i * 17f, 54f, 2.4f, 9f, 1.2f, slash, slash, angle: -28f);
+
+            p.Glow(34f, 60f, 10f, 5f, Highlight);
+        }
+
+        /// <summary>A red apple with a short stem and one leaf.</summary>
+        private static void DrawApple(Painter p)
+        {
+            var skinTop = new Color(0.96f, 0.36f, 0.3f);
+            var skinBottom = new Color(0.7f, 0.12f, 0.14f);
+
+            // Two overlapping lobes make the shoulders and the dip at the stem.
+            p.Ellipse(36f, 38f, 24f, 28f, skinTop, skinBottom, outline: 2.6f);
+            p.Ellipse(60f, 38f, 24f, 28f, skinTop, skinBottom, outline: 2.6f);
+            p.Ellipse(48f, 36f, 26f, 27f, skinTop, skinBottom);
+
+            // Stem, and a leaf made of a tilted ellipse-ish box.
+            var stem = new Color(0.4f, 0.27f, 0.14f);
+            p.Box(48f, 72f, 2.6f, 8f, 1.2f, stem, stem, outline: 1.8f, angle: 10f);
+            p.Box(63f, 76f, 11f, 5f, 4.5f,
+                new Color(0.55f, 0.82f, 0.36f), new Color(0.3f, 0.58f, 0.22f), outline: 2f, angle: 24f);
+
+            p.Glow(32f, 50f, 6f, 10f, Highlight);
+        }
+
+        /// <summary>A yogurt pot: a tapered cup with a foil lid and a pink label band.</summary>
+        private static void DrawYogurt(Painter p)
+        {
+            var cupTop = new Color(1f, 1f, 1f);
+            var cupBottom = new Color(0.86f, 0.9f, 0.95f);
+
+            // Tapered cup, narrower at the foot (the painter has no trapezoid, so a quad).
+            p.Quad(new Vector2(20f, 66f), new Vector2(76f, 66f),
+                   new Vector2(66f, 10f), new Vector2(30f, 10f),
+                   cupTop, cupBottom, outline: 2.6f);
+
+            // Label band with a little fruit dot on it.
+            var bandTop = new Color(0.98f, 0.58f, 0.72f);
+            var bandBottom = new Color(0.86f, 0.36f, 0.56f);
+            p.Box(48f, 36f, 24f, 11f, 4f, bandTop, bandBottom, outline: 2.2f);
+            p.Ellipse(48f, 36f, 5.5f, 5.5f, new Color(1f, 0.92f, 0.95f), new Color(0.96f, 0.78f, 0.86f));
+
+            // Foil lid, a rim wider than the cup.
+            p.Box(48f, 70f, 31f, 5f, 3f,
+                new Color(0.88f, 0.9f, 0.94f), new Color(0.6f, 0.65f, 0.72f), outline: 2.4f);
+
+            p.Glow(30f, 46f, 3.5f, 14f, Highlight);
+        }
+
+        /// <summary>
+        /// A tied-up rubbish bag: lumpy dark body, a pinched neck with two ears, a bit of
+        /// something poking out. Dark grey on the pale square, so it reads as mess.
+        /// </summary>
+        private static void DrawTrash(Painter p)
+        {
+            var bagTop = new Color(0.46f, 0.5f, 0.52f);
+            var bagBottom = new Color(0.18f, 0.2f, 0.22f);
+
+            p.Ellipse(48f, 36f, 30f, 28f, bagTop, bagBottom, outline: 2.6f);
+            // Shoulders narrowing into the knot.
+            p.Triangle(new Vector2(24f, 50f), new Vector2(72f, 50f), new Vector2(48f, 76f),
+                bagTop, bagBottom, outline: 2.4f);
+            // The two ears of the tie.
+            p.Triangle(new Vector2(48f, 72f), new Vector2(30f, 90f), new Vector2(42f, 66f),
+                bagTop, bagBottom, outline: 2.2f);
+            p.Triangle(new Vector2(48f, 72f), new Vector2(66f, 90f), new Vector2(54f, 66f),
+                bagTop, bagBottom, outline: 2.2f);
+
+            // Creases, so the bag is not a smooth balloon.
+            var crease = new Color(0.08f, 0.09f, 0.1f, 0.55f);
+            p.Box(38f, 36f, 1.6f, 14f, 1f, crease, crease, angle: 12f);
+            p.Box(57f, 33f, 1.6f, 12f, 1f, crease, crease, angle: -14f);
+
+            p.Glow(36f, 48f, 6f, 10f, Highlight);
+        }
+
+        /// <summary>A paint roller on its frame, with a stripe of fresh colour under it.</summary>
+        private static void DrawRoller(Painter p)
+        {
+            var sleeveTop = new Color(0.95f, 0.5f, 0.45f);
+            var sleeveBottom = new Color(0.8f, 0.28f, 0.28f);
+            var metalTop = new Color(0.86f, 0.89f, 0.93f);
+            var metalBottom = new Color(0.55f, 0.6f, 0.68f);
+            var gripTop = new Color(0.62f, 0.85f, 1f);
+            var gripBottom = new Color(0.25f, 0.55f, 0.9f);
+
+            // Stripe of paint on the wall, then the roller above it.
+            p.Box(48f, 14f, 34f, 5f, 2.5f, sleeveTop, sleeveBottom, outline: 2.2f);
+            p.Box(46f, 62f, 32f, 13f, 6f, sleeveTop, sleeveBottom, outline: 2.6f);
+
+            // The frame: out of the roller's end, down, then the handle.
+            p.Box(82f, 54f, 3f, 12f, 1.5f, metalTop, metalBottom, outline: 2f);
+            p.Box(60f, 41f, 22f, 3f, 1.5f, metalTop, metalBottom, outline: 2f);
+            p.Box(60f, 30f, 3f, 11f, 1.5f, metalTop, metalBottom, outline: 2f);
+            p.Box(60f, 23f, 6f, 10f, 3f, gripTop, gripBottom, outline: 2.2f);
+
+            p.Glow(32f, 68f, 14f, 4f, Highlight);
+        }
+
         // ------------------------------------------------------------------ actions
 
         private static void DrawArrow(Painter p, bool down)
@@ -325,6 +459,92 @@ namespace Tycoon.UI
                 new Color(0.75f, 0.53f, 0.1f, 0.55f), new Color(0.65f, 0.44f, 0.07f, 0.55f));
 
             p.Glow(36f, 62f, 6f, 8f, Highlight);
+        }
+
+        /// <summary>
+        /// A wooden signpost with one board pointing right: "this way, down the road".
+        /// The arrow head is a Triangle, whose winding the painter sorts out itself.
+        /// </summary>
+        private static void DrawSignpost(Painter p)
+        {
+            var woodTop = new Color(0.82f, 0.62f, 0.38f);
+            var woodBottom = new Color(0.58f, 0.4f, 0.22f);
+            var boardTop = new Color(0.62f, 0.85f, 1f);
+            var boardBottom = new Color(0.25f, 0.55f, 0.9f);
+
+            p.Box(40f, 38f, 5f, 34f, 2f, woodTop, woodBottom, outline: 2.4f);
+            p.Box(40f, 66f, 25f, 13f, 4f, boardTop, boardBottom, outline: 2.4f);
+            p.Triangle(new Vector2(80f, 66f), new Vector2(62f, 82f), new Vector2(62f, 50f),
+                boardTop, boardBottom, outline: 2.4f);
+
+            // A white bar on the board, so it reads as a direction and not a plank.
+            p.Box(38f, 66f, 10f, 3f, 1.5f, Color.white, Color.white);
+
+            p.Glow(28f, 72f, 5f, 4f, Highlight);
+        }
+
+        /// <summary>A broom, bristles down-left, with a couple of sparkles for "clean".</summary>
+        private static void DrawBroom(Painter p)
+        {
+            var handleTop = new Color(0.86f, 0.66f, 0.4f);
+            var handleBottom = new Color(0.6f, 0.42f, 0.24f);
+            var strawTop = new Color(1f, 0.9f, 0.5f);
+            var strawBottom = new Color(0.82f, 0.62f, 0.2f);
+
+            p.Box(56f, 58f, 3.6f, 32f, 1.6f, handleTop, handleBottom, outline: 2.2f, angle: 38f);
+            p.Box(33f, 30f, 14f, 12f, 3f, strawTop, strawBottom, outline: 2.4f, angle: 38f);
+
+            // Binding where the bristles meet the handle.
+            var binding = new Color(0.5f, 0.36f, 0.2f);
+            p.Box(41f, 41f, 11f, 2.6f, 1f, binding, binding, angle: 38f);
+
+            var spark = new Color(1f, 1f, 0.8f, 0.95f);
+            p.Glow(72f, 30f, 7f, 7f, spark);
+            p.Glow(80f, 44f, 4f, 4f, spark);
+            p.Glow(22f, 66f, 5f, 5f, spark);
+        }
+
+        /// <summary>A door standing ajar: the shop is open.</summary>
+        private static void DrawDoor(Painter p)
+        {
+            var frameTop = new Color(0.95f, 0.88f, 0.7f);
+            var frameBottom = new Color(0.75f, 0.62f, 0.42f);
+            var inside = new Color(0.28f, 0.24f, 0.2f);
+            var leafTop = new Color(0.55f, 0.82f, 0.5f);
+            var leafBottom = new Color(0.27f, 0.58f, 0.3f);
+
+            p.Box(48f, 48f, 26f, 38f, 4f, frameTop, frameBottom, outline: 2.4f);
+            p.Box(48f, 46f, 19f, 31f, 2f, inside, inside);
+
+            // The leaf swung open towards the viewer: a quad narrower on its free edge.
+            p.Quad(new Vector2(29f, 15f), new Vector2(29f, 77f),
+                   new Vector2(50f, 70f), new Vector2(50f, 22f),
+                   leafTop, leafBottom, outline: 2.4f);
+
+            p.Glow(45f, 46f, 3f, 3f, new Color(1f, 0.95f, 0.6f, 0.95f));
+        }
+
+        /// <summary>A shelf board with two crates on it and an arrow dropping goods onto it.</summary>
+        private static void DrawShelf(Painter p)
+        {
+            var boardTop = new Color(0.82f, 0.62f, 0.38f);
+            var boardBottom = new Color(0.58f, 0.4f, 0.22f);
+            var crateTop = new Color(0.98f, 0.86f, 0.55f);
+            var crateBottom = new Color(0.78f, 0.58f, 0.25f);
+
+            // Uprights, then the board across them.
+            p.Box(18f, 30f, 3f, 22f, 1.5f, boardTop, boardBottom, outline: 2f);
+            p.Box(78f, 30f, 3f, 22f, 1.5f, boardTop, boardBottom, outline: 2f);
+            p.Box(48f, 24f, 36f, 4.5f, 2f, boardTop, boardBottom, outline: 2.4f);
+
+            p.Box(34f, 38f, 11f, 10f, 2f, crateTop, crateBottom, outline: 2.2f);
+            p.Box(60f, 36f, 9f, 8f, 2f, crateTop, crateBottom, outline: 2.2f);
+
+            var arrowTop = new Color(0.55f, 0.79f, 1f);
+            var arrowBottom = new Color(0.24f, 0.53f, 0.9f);
+            p.Box(48f, 80f, 5f, 8f, 2f, arrowTop, arrowBottom, outline: 2f);
+            p.Triangle(new Vector2(48f, 52f), new Vector2(34f, 68f), new Vector2(62f, 68f),
+                arrowTop, arrowBottom, outline: 2.2f);
         }
 
         // ------------------------------------------------------------------ rasteriser

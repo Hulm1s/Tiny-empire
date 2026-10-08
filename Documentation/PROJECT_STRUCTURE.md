@@ -103,7 +103,8 @@ All code is under the `Tycoon.*` namespaces.
 | `ISaveable.cs` | The save contract + `SaveKeys.For()`, which builds `<id>#<ComponentType>`. |
 | `SaveIdentity.cs` | A stable, builder-assigned id on a GameObject. The reason renaming things does not wipe progress. |
 | `ProductRegistry.cs` | What the farm can currently produce. Gates which products customers are allowed to ask for. |
-| `IsometricCameraRig.cs` | The orthographic camera that follows the player. Pitch/yaw/zoom live here. |
+| `IsometricCameraRig.cs` | The orthographic camera that follows the player. Pitch/yaw/zoom live here. `SnapToTarget()` jumps it after a teleport. |
+| `Location.cs` | Marks the root of a place (the farm, the supermarket): id, name, arrival `spawnPoint`. The audit walks every one. |
 | `NavigationBaker.cs` | Bakes the NavMesh at runtime so workers can path. |
 
 ### `Stations/` — the interaction system (namespace `Tycoon.Stations`)
@@ -125,6 +126,15 @@ no HUD action buttons anywhere in the project, deliberately.
 | `UpgradeStation.cs` | Buys another animal for a building. Remembers partial payment. Saveable. |
 | `UnlockStation.cs` | Drains money to reveal new content. **Also used for every worker hire.** Saveable. |
 | `DiscardStation.cs` | The bin. Throws carried goods away, gives nothing back. |
+| `TravelStation.cs` | Stand 1.2 s to be faded across to another `Location`. Player only. |
+| `RevealWhenAll.cs` | Reveals objects once ALL of a list of gates / upgrades / chores / empty rubbish piles / first paint job are complete. Stateless. |
+| `ClearablePile.cs` | A rubbish pile: shrinks as its trash buffer empties, removes its COLLECT square when gone. |
+| `PaintStation.cs` | The PAINT square: opens the paint menu; first job $1,000, repaint $200. |
+| `MarketDecor.cs` | The shop's look (pattern, 3 colours, floor): applies it with MaterialPropertyBlocks, previews, saves as `market.decor`. |
+| `ChoreStation.cs` | A free Task-mode job (sweep, OPEN) that hides a mess and reveals the next step. Saveable. |
+| `SupplyFeed.cs` | Adds a unit to a buffer every few seconds for free (the market's storage). Saveable, with offline catch-up. |
+| `CheckoutStation.cs` | The supermarket till: scans the front shopper's basket one unit per tick. Sibling of `RegisterStation`. |
+| `LockedStation.cs` | A square that is labelled and measured like any other but never operational and not for sale: the market's COMING SOON bay. |
 
 The key abstraction, from `README.md` and confirmed in the code:
 
@@ -159,7 +169,7 @@ workers need no parallel gameplay logic anywhere in the project.
 | File | What it is |
 |---|---|
 | `CustomerQueue.cs` | Spawns shoppers, manages queue slots, owns **reputation**. Saveable. |
-| `CustomerAgent.cs` | Walks the route, holds an order, runs down its patience. |
+| `CustomerAgent.cs` | Walks the route, holds an order, runs down its patience. Also the supermarket `Shopping` phase: browse shelves, take goods, queue with a basket. |
 
 ### `UI/` (namespace `Tycoon.UI`)
 
@@ -176,7 +186,11 @@ Almost all of the UI is **world-space**, not screen-space, because of the no-HUD
 | `AttentionMarker.cs` | The warning marker over a building that needs attention. |
 | `WorldFeedback.cs` | Floating `+$5` style popups. |
 | `WorldUi.cs` | Shared visibility/culling for world-space UI. |
-| `HudRoot.cs` | The only screen-space canvas. Bootstraps itself. Money readout, safe area, joystick. |
+| `HudRoot.cs` | The only screen-space canvas. Bootstraps itself. Money readout, safe area, joystick, and the `ScreenFade` overlay. |
+| `ScreenFade.cs` | Full-screen black alpha overlay used when travelling between locations. State display, not a button. |
+| `PaintMenu.cs` | The paint & decorate menu (colour pickers, patterns, floor, cube preview). |
+| `PatternFactory.cs` | Draws the wall patterns, floors and cube preview in code. Export: `Tycoon > Export Pattern Sheet`. |
+| `ShelfDisplay.cs` | One pooled greybox cube per unit on a shelf or crate, toggled by `ItemBuffer.Changed`. |
 | `PauseMenu.cs` | Top-right pause button; contains the delete-save option. |
 | `VirtualJoystick.cs` | The floating touch joystick. |
 
@@ -195,9 +209,10 @@ Editor-only. Not compiled into the player.
 
 | File | Lines | What it is |
 |---|---|---|
-| `FarmSceneBuilder.cs` | 835 | **The level.** Layout, economy, progression, camera, player spawn. Menu: `Tycoon → Rebuild Farm Scene`. Headless: `FarmSceneBuilder.Build`. |
-| `LevelBuildKit.cs` | 1294 | The parts catalogue. `BuildWorkshop`, `BuildField`, `AddCounter`, `BuildWorker`, `BuildBin`, `Station<T>`, `Item`, `Mat`, fences, grass. |
-| `SquareAudit.cs` | 545 | **The main safety net.** Measures every interaction square and building footprint and reports overlaps, unreachable hires and camera-edge problems. `SquareAudit.Run`. |
+| `FarmSceneBuilder.cs` | ~900 | **The level.** Farm layout, economy, progression, camera, player spawn, and the link to the second location. Menu: `Tycoon → Rebuild Farm Scene`. Headless: `FarmSceneBuilder.Build`. Calls `MarketBuilder`. |
+| `MarketBuilder.cs` | ~1000 | **The supermarket** ("Tiny Market"), the second `Location`: walls, renovation stages, shelves, crates, checkout, shoppers' routes, hires. Same style as `FarmSceneBuilder`: commented constants. |
+| `LevelBuildKit.cs` | ~1380 | The parts catalogue. `BuildWorkshop`, `BuildField`, `AddCounter`, `BuildWorker`, `BuildBin`, `Station<T>`, `Item`, `Mat`, fences, grass, and `BuildBoundary`/`BuildFenceAround` (a location's edges). |
+| `SquareAudit.cs` | ~900 | **The main safety net.** For every `Location`: overlaps (day one, fully built, and each stage of the progression), building footprints, arrival points, shopper paths, unreachable squares, hire routes, camera edge. Whole scene: locations apart, travel links, save ids. `SquareAudit.Run`. |
 | `TycoonBuild.cs` | 190 | The WebGL build entry point. `Tycoon → Build Web`, headless `TycoonBuild.BuildWeb`. |
 | `WebPlatformSetup.cs` | 100 | Platform/player settings applied for the web build. |
 | `IconSheet.cs` | 121 | Renders every generated icon to `icon-sheet.png` so you can actually see them. `IconSheet.Export`. |
