@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using System;
 using Tycoon.Config;
 using Tycoon.Core;
@@ -85,6 +86,8 @@ namespace Tycoon.Stations
 
             _ready--;
             RefreshVisuals();
+
+            SoundFx.PlayAt(Sfx.Pop, Carry.transform.position);
 
             Tycoon.UI.WorldFeedback.Add($"harvest{GetInstanceID()}",
                 Carry.transform.position + Vector3.up * 2.2f, 1, crop.displayName, crop.color);

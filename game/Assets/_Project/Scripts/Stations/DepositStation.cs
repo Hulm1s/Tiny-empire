@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using UnityEngine;
 
 namespace Tycoon.Stations
@@ -43,6 +44,7 @@ namespace Tycoon.Stations
                 return false;
             }
 
+            SoundFx.PlayAt(Sfx.Drop, target.transform.position);
             return true;
         }
     }

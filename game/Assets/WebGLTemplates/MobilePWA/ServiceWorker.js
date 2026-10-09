@@ -15,6 +15,7 @@ const PRECACHE = [
   "index.html",
   "manifest.webmanifest",
   "TemplateData/style.css",
+  "TemplateData/logo.png",
   "TemplateData/icons/icon-180.png",
   "TemplateData/icons/icon-192.png",
   "TemplateData/icons/icon-512.png",

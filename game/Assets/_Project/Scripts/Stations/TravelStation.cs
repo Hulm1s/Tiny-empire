@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using System.Collections;
 using Tycoon.Core;
 using Tycoon.UI;
@@ -62,6 +63,7 @@ namespace Tycoon.Stations
         private IEnumerator Travel(Transform player)
         {
             _travelling = true;
+            SoundFx.Play(Sfx.Whoosh);
 
             var fade = ScreenFade.Instance;
             if (fade != null) yield return fade.FadeTo(1f, fadeOutSeconds);

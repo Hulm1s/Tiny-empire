@@ -195,6 +195,14 @@ resized or added anything.
 | HUD reference resolution | `UI/HudRoot.cs:115-117` (1080 × 1920, match 0.35) |
 | Pause menu rows | `UI/PauseMenu.cs:60-100` |
 | Pause button | `UI/PauseMenu.cs:42-49` |
+| Safe area / notch handling | `UI/HudRoot.cs` `SafeRect()` / `RefreshSafeArea()`; browser side `Plugins/WebGL/SafeArea.jslib` + the `safe-area-probe` div in `WebGLTemplates/MobilePWA/index.html` |
+| **Which recorded sound plays for what** | `Audio/SoundFx.cs` `RecordedName` - pickup for anything into your arms; lip pop for feeding, stocking, selling and the bin. Everything else is silent until it gets a recording |
+| **Replace / add a recorded sound** | put the source in `Assets/_Project/Audio/Source/`, add a line to `Cuts` in `Editor/SoundTrim.cs`, run `Tycoon → Sounds → Trim To Game Clips` → writes `Resources/Sfx/<name>.wav` + `<name>_0..7.wav`. **Send the result to Filip to listen before it goes in.** |
+| Sound length / loudness | `Editor/SoundTrim.cs` `Cuts`: `MaxSeconds` (0.12), `FadeSeconds` (0.03), `Peak` (0.7) |
+| The rising pitch run | `Editor/SoundTrim.cs` `GameLadder` (= ladder B: +1 semitone per item, up to a fifth); `SoundFx.Spec` `rippleSteps`, `RippleWindow` (0.5 s pause resets it). Preview first: `Tycoon → Sounds → Preview Rising Runs` |
+| Repeat gap per sound | `Audio/SoundFx.cs` `Spec` `minGap` |
+| Where a sound plays | one `SoundFx.PlayAt(Sfx.X, position)` beside the `WorldFeedback` call in each station; `SoundFx.Play` for UI. Every `UIFactory.CreateButton` clicks by itself |
+| SOUND on/off | `UI/PauseMenu.cs` (`AudioListener.volume`, pref `tycoon.sound`) - nothing in `SoundFx` needs to know |
 
 > ⚠ **No HUD action buttons.** State readouts, the joystick and the pause/settings panel only.
 
@@ -238,6 +246,8 @@ resized or added anything.
 
 | I want to change… | Go to |
 |---|---|
+| **The loading screen** (logo, money-roll bar, tips) | `WebGLTemplates/MobilePWA/index.html` (markup + the `tips` list) and `TemplateData/style.css` (`#loading-logo`, `#money-bar`, `#money-roll`, `#loading-tip`). Logo image: `TemplateData/logo.png`. Background matches the logo's own: `#0f111b` → `#24363e` |
+| Tip rotation speed | `index.html`, `setInterval(showTip, 3500)` |
 | Web build output path | `Editor/TycoonBuild.cs:31-32` (→ `D:\iosGame\docs`) |
 | Compression / exception support / stripping | `Editor/TycoonBuild.cs:148-167` |
 | Orientation | `Editor/TycoonBuild.cs:136-141` (portrait only) |
@@ -261,6 +271,7 @@ resized or added anything.
 |---|---|
 | Check the layout | `Tycoon → Audit Interaction Squares` → read `[Audit] Nothing overlaps.` |
 | See what the icons actually look like | `Tycoon → Export Icon Sheet` → `D:\iosGame\icon-sheet.png` |
+| Hear / inspect the sounds | `Tycoon → Export Sound Clips` → `D:\iosGame\sound-clips\*.wav`, levels in the console |
 | Check the character rigs | `Tycoon → Verify Character Models` |
 | Debug the animator | `Tycoon → Diagnose Character Animation` |
 | Cheap build smoke test | `-executeMethod Tycoon.EditorTools.TycoonBuild.Validate` |

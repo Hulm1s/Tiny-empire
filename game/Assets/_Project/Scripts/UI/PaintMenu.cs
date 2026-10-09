@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using System;
 using System.Collections;
 using Tycoon.Core;
@@ -183,6 +184,7 @@ namespace Tycoon.UI
             Vector3 at = _station.transform.position + Vector3.up * 2f;
             Close(keepLook: true);
 
+            SoundFx.Play(Sfx.Unlock);
             WorldFeedback.Show(at, "PAINTED!", new Color(1f, 0.85f, 0.35f));
             GameRoot.Instance?.Save();
         }

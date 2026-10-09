@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -230,6 +231,9 @@ namespace Tycoon.UI
 
             var button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = image;
+
+            // Every button in the game clicks. Added here so no menu has to remember to.
+            button.onClick.AddListener(() => SoundFx.Play(Sfx.Click));
 
             label = CreateText("Label", rect, content, fontSize);
             label.rectTransform.anchorMin = Vector2.zero;

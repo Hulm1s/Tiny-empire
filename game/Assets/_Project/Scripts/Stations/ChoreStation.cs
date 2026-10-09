@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using System;
 using Tycoon.Core;
 using UnityEngine;
@@ -74,6 +75,7 @@ namespace Tycoon.Stations
                 return;
             }
 
+            SoundFx.PlayAt(Sfx.Fix, transform.position);
             Tycoon.UI.WorldFeedback.Show(transform.position + Vector3.up * 1.4f,
                 $"{_completed}/{completionsNeeded}", new Color(0.6f, 0.9f, 1f));
         }
@@ -99,6 +101,7 @@ namespace Tycoon.Stations
             // Only celebrate a job finished now, not one being restored from a save.
             if (Application.isPlaying && _announce)
             {
+                SoundFx.PlayAt(Sfx.Unlock, transform.position);
                 Tycoon.UI.WorldFeedback.Show(transform.position + Vector3.up * 1.8f,
                     doneMessage, new Color(0.6f, 0.95f, 0.65f));
             }

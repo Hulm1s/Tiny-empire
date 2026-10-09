@@ -42,6 +42,7 @@ All are menu items under `Tycoon/` in the editor **and** headless `-executeMetho
 | `Tycoon.EditorTools.SquareAudit.Run` | `Tycoon → Audit Interaction Squares` | `AUDIT_OK` ⚠ see §6 | nothing |
 | `Tycoon.EditorTools.TycoonBuild.BuildWeb` | `Tycoon → Build Web` (`Ctrl+Shift+B`) | `[TycoonBuild] BUILD_OK` | `docs/` |
 | `Tycoon.EditorTools.IconSheet.Export` | `Tycoon → Export Icon Sheet` | `ICONS_OK` | `icon-sheet.png` |
+| `Tycoon.EditorTools.SoundExport.Run` (`-soundOut <dir>`) | `Tycoon → Export Sound Clips` | `SOUNDS_OK` | one WAV per sound and pitch, plus a level report in the log |
 
 Two constraints that apply to all of them:
 
@@ -195,8 +196,26 @@ Combined with the 0.8 render scale, an iPhone renders at **1.6× CSS pixels**.
 > of one alongside a freshly downloaded copy of another. That combination does not merely look
 > stale - it fails outright, with the wasm demanding an import the older framework never defined.
 
-**Viewport** — `viewport-fit=cover` lets the game draw behind the notch; the safe-area insets are
-then honoured inside Unity by `HudRoot`.
+**Viewport and the safe-area bridge** — `viewport-fit=cover` lets the game draw behind the notch
+(and `black-translucent` the status bar). Unity's WebGL player cannot see the browser's safe
+area: `Screen.safeArea` is always the whole screen there, so the HUD used to sit under the notch
+on iPhone X and newer. The bridge that fixes it has three parts:
+
+- `<div id="safe-area-probe">` in `index.html` - hidden, `position:fixed`, with
+  `padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)`.
+  Its computed padding *is* the insets, readable as numbers.
+- `Assets/_Project/Plugins/WebGL/SafeArea.jslib` - `Tycoon_GetSafeInsets(float[4])` reads that
+  padding and writes top/right/bottom/left in **canvas pixels**: CSS px x `canvas.width /
+  canvas.clientWidth` (not `devicePixelRatio`, because the template caps the ratio at 2 and Unity
+  may render below native). Returns 0 if the probe is missing.
+- `UI/HudRoot.cs` `SafeRect()` - on `UNITY_WEBGL && !UNITY_EDITOR` builds the rect from those
+  insets; everywhere else it is `Screen.safeArea`. Re-read every 0.5 s and whenever the screen
+  size changes, so rotation and toolbar changes apply. The `?debug=1` readout shows the insets in
+  use (`safe L.. B.. R.. T..`).
+
+The money readout, alerts, pause button and panel, joystick and paint menu are all children of the
+HUD's `SafeArea` rect, so they move together; `ScreenFade` is deliberately the full canvas. A
+build whose jslib is missing fails at load with an unresolved import, not silently.
 
 **Touch suppression** — rubber-band scrolling, double-tap zoom, text selection and tap highlights
 are all disabled, *"to stop mobile Safari doing something helpful that ruins a game."*

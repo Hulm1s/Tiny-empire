@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using System;
 using Tycoon.Core;
 using UnityEngine;
@@ -95,6 +96,7 @@ namespace Tycoon.Stations
 
             _paid += spent;
             if (_paid >= price) Apply(true);
+            else SoundFx.PlayAt(Sfx.Tick, transform.position);
             return true;
         }
 
@@ -118,6 +120,7 @@ namespace Tycoon.Stations
             // Only celebrate a purchase happening now, not one being restored from a save.
             if (Application.isPlaying && _announceUnlock)
             {
+                SoundFx.PlayAt(Sfx.Unlock, transform.position);
                 Tycoon.UI.WorldFeedback.Show(transform.position + Vector3.up * 2f,
                     "UNLOCKED!", new Color(1f, 0.85f, 0.35f));
             }

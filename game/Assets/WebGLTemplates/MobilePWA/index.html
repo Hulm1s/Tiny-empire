@@ -13,7 +13,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="{{{ PRODUCT_NAME }}}">
-    <meta name="theme-color" content="#78b5dd">
+    <meta name="theme-color" content="#0f111b">
 
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
@@ -32,9 +32,14 @@
     </div>
 
     <div id="loading-screen">
-      <div id="loading-title">{{{ PRODUCT_NAME }}}</div>
-      <div id="progress-track"><div id="progress-fill"></div></div>
-      <div id="loading-hint">Loading&hellip;</div>
+      <img id="loading-logo" src="TemplateData/logo.png" alt="{{{ PRODUCT_NAME }}}">
+      <div id="money-bar">
+        <div id="progress-fill"></div>
+        <div id="money-roll"></div>
+        <div id="money-label">loading</div>
+      </div>
+      <div id="loading-tip"></div>
+      <div id="loading-hint"></div>
     </div>
 
     <div id="start-screen" class="hidden">
@@ -43,6 +48,11 @@
     </div>
 
     <div id="unity-warning"></div>
+
+    <!-- Never shown. Its padding is the browser's safe-area insets, which is the only way to
+         read them as numbers: Unity's WebGL player cannot see them, so SafeArea.jslib reads
+         this element's computed padding and HudRoot keeps the HUD clear of the notch. -->
+    <div id="safe-area-probe" style="position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;box-sizing:content-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)"></div>
 
     <script>
       var container = document.querySelector("#unity-container");
@@ -123,6 +133,29 @@
       // Driving it from JS pixel values fights the browser's own viewport handling and
       // overflows the canvas whenever the reported viewport and the layout viewport differ.
 
+      var tips = [
+        "TIP: Only 1% of players can pass this loading screen.",
+        "TIP: If you reach the Supermarket, you are legally skilled.",
+        "TIP: My mom vs. My dad playing this loading screen.",
+        "TIP: We spent 99% of our budget on fake ads, please play this.",
+        "TIP: Touching grass is recommended, but not required.",
+        "TIP: Do not forget to breathe while making millions.",
+        "TIP: Pressing the screen harder will not make it load faster."
+      ];
+      var tipEl = document.querySelector("#loading-tip");
+      var tipIndex = Math.floor(Math.random() * tips.length);
+      function showTip() {
+        tipEl.classList.add("fading");
+        setTimeout(function () {
+          tipEl.textContent = tips[tipIndex];
+          tipIndex = (tipIndex + 1) % tips.length;
+          tipEl.classList.remove("fading");
+        }, 250);
+      }
+      tipEl.textContent = tips[tipIndex];
+      tipIndex = (tipIndex + 1) % tips.length;
+      var tipTimer = setInterval(showTip, 3500);
+
       var script = document.createElement("script");
       script.src = loaderUrl;
       script.onload = function () {
@@ -130,6 +163,7 @@
           progressFill.style.width = (100 * progress) + "%";
         }).then(function (unityInstance) {
           unityInstanceRef = unityInstance;
+          clearInterval(tipTimer);
           loadingScreen.classList.add("hidden");
 
           // Unity fixes its render target to whatever the canvas measured at start-up. If the

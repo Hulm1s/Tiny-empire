@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using System;
 using Tycoon.Config;
 using Tycoon.Core;
@@ -80,6 +81,8 @@ namespace Tycoon.Stations
             double price = item.basePrice * priceMultiplier * queue.PriceMultiplier;
             GameRoot.Money?.Add(price);
             Sold?.Invoke(price);
+
+            SoundFx.PlayAt(Sfx.Coin, transform.position);
 
             Tycoon.UI.WorldFeedback.AddMoney($"sale{GetInstanceID()}",
                 transform.position + Vector3.up * 1.8f, Mathf.RoundToInt((float)price));

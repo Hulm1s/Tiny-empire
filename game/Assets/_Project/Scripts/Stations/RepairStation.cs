@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using Tycoon.Core;
 using Tycoon.UI;
 using Tycoon.Upkeep;
@@ -76,11 +77,14 @@ namespace Tycoon.Stations
 
             if (!target.Repair(points)) return;
 
+            SoundFx.PlayAt(Sfx.Fix, transform.position);
+
             WorldFeedback.Show(transform.position + Vector3.up * 1.2f,
                 $"+{Mathf.RoundToInt(points)}%", new Color(0.55f, 0.9f, 0.5f));
 
             if (target.Fraction >= 1f)
             {
+                SoundFx.PlayAt(Sfx.Unlock, transform.position);
                 WorldFeedback.Show(target.transform.position + Vector3.up * 2.6f,
                     "FIXED", new Color(0.6f, 0.95f, 0.6f));
             }

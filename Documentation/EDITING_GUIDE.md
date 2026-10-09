@@ -598,6 +598,28 @@ Renders every icon at 96 px onto `D:\iosGame\icon-sheet.png`. It exists because:
 
 ---
 
+## 15b. Change or add a sound effect
+
+All sounds are drawn in code in `Scripts/Audio/SoundFx.cs` - no audio files, no music. Each is a
+few sine partials under a soft envelope, built the first time it is heard.
+
+- **Change how one sounds:** edit its case in `Render` (notes are `Tone(buffer, start, length,
+  fromHz, toHz, glideSeconds, attack, decay, partials)`). **Level and repeat behaviour:** its row
+  in `Spec` - `peak` (keep it under about 0.5), `minGap` (calls closer than this are dropped) and
+  `rippleSteps` (above 0 the sound climbs a pentatonic scale while it keeps repeating, 0 = a
+  small random pitch instead).
+- **Add one:** append to the `Sfx` enum (never renumber), add a `Spec` row and a `Render` case,
+  then call `SoundFx.PlayAt(Sfx.Thing, position)` next to the `WorldFeedback` popup it goes with
+  (`SoundFx.Play` for something that is not in the world). World sounds are silent beyond about
+  20 m of the player, so a hired worker in another location is not heard.
+- **Muting** is the pause menu's SOUND toggle (`AudioListener.volume`); nothing in a call site
+  needs to check it.
+- **Check what you made:** `Tycoon → Export Sound Clips` writes every sound and pitch to WAV in
+  `D:\iosGame\sound-clips` and logs peak, DC offset, RMS and first/last sample (both must be
+  zero, or the sound clicks). Anything at 0.99 is flagged `CLIPPING`.
+
+---
+
 ## 16. Change the order bubble, capacity board or warning marker
 
 ### Order bubble (`Scripts/UI/OrderBubble.cs`)

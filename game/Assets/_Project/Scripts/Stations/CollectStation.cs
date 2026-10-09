@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using UnityEngine;
 
 namespace Tycoon.Stations
@@ -41,6 +42,8 @@ namespace Tycoon.Stations
                 source.Add(1);
                 return false;
             }
+
+            SoundFx.PlayAt(Sfx.Pop, Carry.transform.position);
 
             Tycoon.UI.WorldFeedback.Add($"collect{GetInstanceID()}",
                 Carry.transform.position + Vector3.up * 2.2f, 1,

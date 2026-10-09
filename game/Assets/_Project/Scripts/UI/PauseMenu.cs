@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using Tycoon.Core;
 using Tycoon.Player;
 using UnityEngine;
@@ -116,7 +117,14 @@ namespace Tycoon.UI
             if (open) GameRoot.Instance?.Save();
         }
 
-        private void ToggleSound() => ApplySound(!(AudioListener.volume > 0.5f));
+        private void ToggleSound()
+        {
+            bool on = !(AudioListener.volume > 0.5f);
+            ApplySound(on);
+
+            // The button's own click fired while the sound was still off, so it was silent.
+            if (on) SoundFx.Play(Sfx.Click);
+        }
 
         private void ApplySound(bool on)
         {

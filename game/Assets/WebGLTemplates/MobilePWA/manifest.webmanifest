@@ -5,8 +5,8 @@
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#78b5dd",
-  "theme_color": "#78b5dd",
+  "background_color": "#0f111b",
+  "theme_color": "#0f111b",
   "description": {{{ JSON.stringify(PRODUCT_DESCRIPTION) }}},
   "icons": [
     {

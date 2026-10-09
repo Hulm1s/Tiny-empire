@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using System.Collections.Generic;
 using Tycoon.Config;
 using Tycoon.UI;
@@ -400,6 +401,8 @@ namespace Tycoon.Customers
             bool fromQueue = CurrentPhase == Phase.Arriving || CurrentPhase == Phase.Waiting;
             CurrentPhase = Phase.Leaving;
             if (bubble != null) bubble.SetVisible(false);
+
+            SoundFx.PlayAt(happy ? Sfx.Happy : Sfx.Grumble, transform.position);
 
             Tycoon.UI.WorldFeedback.Show(
                 transform.position + Vector3.up * 2.1f,

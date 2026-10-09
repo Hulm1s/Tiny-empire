@@ -9,7 +9,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   position: fixed;
-  background: #78b5dd;
+  background: #0f111b;
   overscroll-behavior: none;
   touch-action: none;
   -webkit-user-select: none;
@@ -33,7 +33,7 @@ html, body {
   width: 100%;
   height: 100%;
   display: block;
-  background: #78b5dd;
+  background: #0f111b;
   outline: none;
 }
 
@@ -51,7 +51,8 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 22px;
-  background: linear-gradient(180deg, #78b5dd 0%, #4f8fbd 100%);
+  /* Matches the logo's own backdrop so the artwork sits on the screen, not in a box. */
+  background: radial-gradient(ellipse 120% 80% at 50% 38%, #24363e 0%, #19242c 38%, #0f111b 78%);
   color: #fff;
   z-index: 10;
   transition: opacity 0.28s ease;
@@ -68,33 +69,137 @@ html, body {
   pointer-events: none;
 }
 
-#loading-title {
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+#loading-logo {
+  width: min(94vw, 560px);
+  height: auto;
+  /* Soft edges: the artwork's backdrop fades into the screen's instead of ending in a line. */
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 72%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 72%, transparent 100%);
+  pointer-events: none;
 }
 
-#progress-track {
-  width: 62%;
-  max-width: 320px;
-  height: 10px;
+/* ---- the money roll: a banknote unrolling from the roll on the left */
+
+#money-bar {
+  --h: 34px;
+  position: relative;
+  width: min(80vw, 340px);
+  height: var(--h);
+  margin-left: calc(var(--h) * 0.6);   /* room for the roll overhanging the start */
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.25);
-  overflow: hidden;
+  background: #1d4a22;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 3px #10200f, 0 8px 16px rgba(0, 0, 0, 0.45);
+  overflow: visible;
 }
 
 #progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
   width: 0%;
-  height: 100%;
   border-radius: 999px;
-  background: #ffe08a;
-  transition: width 0.15s ease;
+  /* The note: light green paper with the pale ovals of a banknote printed on it. */
+  background:
+    radial-gradient(ellipse 9px 7px at 26px 50%, rgba(30, 95, 35, 0.55) 60%, transparent 66%),
+    radial-gradient(ellipse 5px 4px at 62px 30%, rgba(30, 95, 35, 0.35) 60%, transparent 66%),
+    linear-gradient(180deg, #8fe06a 0%, #5fbf45 55%, #4aa437 100%);
+  background-size: 84px 100%, 84px 100%, 100% 100%;
+  background-repeat: repeat-x, repeat-x, no-repeat;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35);
+  transition: width 0.25s ease;
+}
+
+#money-roll {
+  position: absolute;
+  left: calc(var(--h) * -0.75);
+  top: 50%;
+  width: calc(var(--h) * 1.35);
+  height: calc(var(--h) * 1.35);
+  transform: translateY(-50%);
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 3px #10200f, 0 6px 12px rgba(0, 0, 0, 0.4);
+  /* The rolled-up end: concentric turns of the note. */
+  background: repeating-radial-gradient(circle at 50% 50%,
+    #6fd04f 0px, #6fd04f 3px, #3f9a31 3px, #3f9a31 5px);
+  animation: money-roll-spin 1.1s linear infinite;
+}
+
+#money-roll::after {
+  /* A highlight that turns with the roll, so the spin is visible on concentric rings. */
+  content: "";
+  position: absolute;
+  inset: 18% 46% 52% 18%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+@keyframes money-roll-spin {
+  to { transform: translateY(-50%) rotate(360deg); }
+}
+
+#money-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: calc(var(--h) * 0.4);
+  font-family: "Arial Rounded MT Bold", "Trebuchet MS", -apple-system, sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff;
+  /* A thick cartoon outline, drawn as shadows so Safari and Chrome render it the same. */
+  text-shadow:
+    2px 0px 0 #10200f,
+    -2px 0px 0 #10200f,
+    0px 2px 0 #10200f,
+    0px -2px 0 #10200f,
+    2px 2px 0 #10200f,
+    -2px 2px 0 #10200f,
+    2px -2px 0 #10200f,
+    -2px -2px 0 #10200f,
+    1.4px 2.6px 0 #10200f,
+    0px 3.2px 0 #10200f;
+  letter-spacing: 0.02em;
+}
+
+#loading-tip {
+  min-height: 3.2em;
+  max-width: min(86vw, 380px);
+  text-align: center;
+  font-family: "Arial Rounded MT Bold", "Trebuchet MS", -apple-system, sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #fff;
+  text-shadow:
+    2px 0px 0 #1a1410,
+    -2px 0px 0 #1a1410,
+    0px 2px 0 #1a1410,
+    0px -2px 0 #1a1410,
+    2px 2px 0 #1a1410,
+    -2px 2px 0 #1a1410,
+    2px -2px 0 #1a1410,
+    -2px -2px 0 #1a1410,
+    1.4px 2.6px 0 #1a1410,
+    0px 3.2px 0 #1a1410;
+  transition: opacity 0.25s ease;
+}
+
+#loading-tip.fading {
+  opacity: 0;
 }
 
 #loading-hint {
   font-size: 14px;
   opacity: 0.85;
+}
+
+#loading-hint:empty {
+  display: none;
 }
 
 /* ---------------------------------------------------------------- start gate */

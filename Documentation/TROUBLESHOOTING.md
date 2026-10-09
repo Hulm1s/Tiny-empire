@@ -309,6 +309,18 @@ A touch that ends outside the canvas, or is cancelled by the browser, never deli
 `OnPointerUp`. `VirtualJoystick.Update()` re-asserts the hidden state every frame when no pointer
 is tracked. If this recurs, that guard was removed.
 
+### "The money readout / pause button is under the notch (iPhone)"
+
+Only seen when launched fullscreen from the Home Screen. Unity's WebGL player cannot see the
+browser's safe area, so `HudRoot` reads it from the page: the hidden `#safe-area-probe` div in
+`index.html` -> `SafeArea.jslib` -> `HudRoot.SafeRect()` (see BUILD_AND_DEPLOY §4). If the HUD is
+under the notch again:
+- Open the game with `?debug=1`: the last debug line is `safe L.. B.. R.. T..`. All zeros on a
+  notched phone means the probe is not being read (the div was removed from the template, or the
+  browser is not in `viewport-fit=cover`).
+- A stale copy of the page: the service worker serves `index.html` network first, but an old
+  Home Screen install may need to be deleted and re-added once.
+
 ### "I'm softlocked — my arms are full of something useless"
 
 You should not be. Three mechanisms exist to prevent it:

@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using System;
 using Tycoon.Core;
 using Tycoon.UI;
@@ -103,6 +104,7 @@ namespace Tycoon.Stations
 
             _paid += spent;
             if (_paid >= CurrentPrice) Complete();
+            else SoundFx.PlayAt(Sfx.Tick, transform.position);
             return true;
         }
 
@@ -119,6 +121,7 @@ namespace Tycoon.Stations
             _purchases++;
             _paid = 0d;
 
+            SoundFx.PlayAt(Sfx.Unlock, transform.position);
             WorldFeedback.Show(transform.position + Vector3.up * 1.6f,
                 $"+1 {unitName.ToUpperInvariant()}", new Color(1f, 0.85f, 0.35f));
 

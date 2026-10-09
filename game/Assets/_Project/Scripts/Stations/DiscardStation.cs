@@ -1,3 +1,4 @@
+using Tycoon.Audio;
 using Tycoon.Config;
 using UnityEngine;
 
@@ -61,6 +62,8 @@ namespace Tycoon.Stations
             // on. Read before removing, because the stack forgets it immediately afterwards.
             ItemDefinition thrown = Carry.Peek();
             if (!Carry.TryRemove(null)) return false;
+
+            SoundFx.PlayAt(Sfx.Trash, transform.position);
 
             Tycoon.UI.WorldFeedback.Remove($"bin{GetInstanceID()}",
                 transform.position + Vector3.up * 1.6f, 1,

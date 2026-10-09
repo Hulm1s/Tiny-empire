@@ -1,4 +1,7 @@
 using System.Collections.Generic;
+#if UNITY_WEBGL && !UNITY_EDITOR
+using System.Runtime.InteropServices;
+#endif
 using Tycoon.Core;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -24,6 +27,23 @@ namespace Tycoon.UI
         private Canvas _canvas;
         private RectTransform _safeArea;
         private Rect _lastSafeArea;
+        private int _lastScreenW, _lastScreenH;
+        private float _safeAreaTimer;
+
+        /// <summary>
+        /// How often the safe area is re-read. A rotation or a collapsing toolbar can move it at
+        /// any time, but it is a browser query, so it is not asked for every frame.
+        /// </summary>
+        private const float SafeAreaInterval = 0.5f;
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // Implemented in Plugins/WebGL/SafeArea.jslib. Fills top, right, bottom, left in canvas
+        // pixels; returns 0 if the page has no probe element.
+        [DllImport("__Internal")]
+        private static extern int Tycoon_GetSafeInsets(float[] insets);
+
+        private readonly float[] _insets = new float[4];
+#endif
 
         private float _moneyPulse;
         private readonly List<string> _alerts = new List<string>();
@@ -172,7 +192,7 @@ namespace Tycoon.UI
             rect.anchorMax = new Vector2(0f, 0f);
             rect.pivot = new Vector2(0f, 0f);
             rect.anchoredPosition = new Vector2(24f, 24f);
-            rect.sizeDelta = new Vector2(760f, 200f);
+            rect.sizeDelta = new Vector2(760f, 240f);
             _debugLabel.color = new Color(1f, 1f, 1f, 0.75f);
         }
 
@@ -198,7 +218,8 @@ namespace Tycoon.UI
             _debugLabel.text =
                 $"{_fpsSmoothed:0} fps  dt {Time.deltaTime * 1000f:0}ms\n" +
                 $"pos {position}\n" +
-                $"carry {held}   cam {tracking}";
+                $"carry {held}   cam {tracking}\n" +
+                $"safe L{_lastSafeArea.xMin:0} B{_lastSafeArea.yMin:0} R{Screen.width - _lastSafeArea.xMax:0} T{Screen.height - _lastSafeArea.yMax:0}";
         }
 
         private void OnMoneyChanged(double balance, double delta)
@@ -210,7 +231,7 @@ namespace Tycoon.UI
 
         private void Update()
         {
-            if (_safeArea != null && Screen.safeArea != _lastSafeArea) ApplySafeArea();
+            if (_safeArea != null) RefreshSafeArea();
 
             if (_moneyPanel != null && _moneyPulse > 0f)
             {
@@ -230,12 +251,53 @@ namespace Tycoon.UI
         }
 
         /// <summary>
+        /// The part of the screen free of the notch, the status bar and the home indicator, in
+        /// screen pixels with the origin at the bottom left (the same space as Screen.safeArea).
+        ///
+        /// In a WebGL build Screen.safeArea is always the whole screen, because Unity cannot see
+        /// the browser's insets, so they are read from the page instead - see SafeArea.jslib.
+        /// Everywhere else (the editor, a future native build) Screen.safeArea is correct.
+        /// </summary>
+        private Rect SafeRect()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            float w = Screen.width;
+            float h = Screen.height;
+            if (w > 0f && h > 0f && Tycoon_GetSafeInsets(_insets) != 0)
+            {
+                float top = Mathf.Max(0f, _insets[0]);
+                float right = Mathf.Max(0f, _insets[1]);
+                float bottom = Mathf.Max(0f, _insets[2]);
+                float left = Mathf.Max(0f, _insets[3]);
+
+                // Never let a nonsense reading shrink the HUD away to nothing.
+                if (left + right < w * 0.5f && top + bottom < h * 0.5f)
+                    return new Rect(left, bottom, w - left - right, h - top - bottom);
+            }
+#endif
+            return Screen.safeArea;
+        }
+
+        /// <summary>Re-reads the safe area twice a second, or at once if the screen resized.</summary>
+        private void RefreshSafeArea()
+        {
+            _safeAreaTimer -= Time.unscaledDeltaTime;
+            bool resized = Screen.width != _lastScreenW || Screen.height != _lastScreenH;
+            if (_safeAreaTimer > 0f && !resized) return;
+
+            _safeAreaTimer = SafeAreaInterval;
+            if (resized || SafeRect() != _lastSafeArea) ApplySafeArea();
+        }
+
+        /// <summary>
         /// Keeps the HUD clear of the notch and the home indicator. Critical on iPhone, where
         /// a joystick drawn under the home bar is a joystick that swipes the app away.
         /// </summary>
         private void ApplySafeArea()
         {
-            _lastSafeArea = Screen.safeArea;
+            _lastSafeArea = SafeRect();
+            _lastScreenW = Screen.width;
+            _lastScreenH = Screen.height;
 
             float w = Screen.width;
             float h = Screen.height;
