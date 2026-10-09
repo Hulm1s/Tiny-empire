@@ -45,6 +45,7 @@ namespace Tycoon.Stations
             }
 
             SoundFx.PlayAt(Sfx.Drop, target.transform.position);
+            Tycoon.Tasks.TutorialEvents.Raise(Tycoon.Tasks.TutorialEvent.Feed, Carry);
             return true;
         }
     }

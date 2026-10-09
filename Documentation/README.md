@@ -109,7 +109,7 @@ D:\iosGame\game\         <- the UNITY PROJECT (what Unity Hub opens)
 | `Scripts/Stations/RepairStation.cs` | Repair — and `freeRepairFraction`, which must never be zero. |
 | `Scripts/Stations/RegisterStation.cs` | The till. Declares what it `sells`. |
 | `Scripts/Player/CarryStack.cs` | Mixed-goods carry. The thing stations actually look for. |
-| `Scripts/Upkeep/WorkerAgent.cs` | A hired hand: one leg of one chain, paid per delivery. |
+| `Scripts/Upkeep/WorkerAgent.cs` | A hired hand: one leg of one chain, costs only its hire price. |
 | `Scripts/Customers/CustomerQueue.cs` | Spawning, queue slots, reputation. |
 
 ### UI and presentation
@@ -155,7 +155,7 @@ From `CLAUDE.md`, and they govern every change:
    square the player stands in.
 4. **No mechanic may require money to escape a state where you cannot earn money.**
 
-Rule 4 is why repairs work at $0, why workers are paid per delivery rather than per minute, why
+Rule 4 is why repairs work at $0, why workers have no wage or running cost, why
 the carry stack holds mixed goods, and why there are three bins. Each of those exists because the
 alternative produced a real dead end.
 

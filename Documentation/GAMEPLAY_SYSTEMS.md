@@ -492,7 +492,9 @@ Real `NavMeshAgent`: `radius 0.3`, `height 1.3`, `acceleration 24`, `autoBraking
 > stays there. A NavMeshAgent actually routes around buildings, and handles workers avoiding
 > each other for free.
 
-### How workers get paid — a deadlock fix
+### How workers get paid - they don't (hire price only)
+
+Workers now cost nothing to run: every `feePerDelivery` is 0. The mechanism below is kept (inert at 0) and is why a per-minute wage was rejected.
 
 ```csharp
 int delivered = _lastCarryCount - count;
@@ -504,7 +506,7 @@ wallet.TrySpend(feePerDelivery * delivered);
 > carried count drop while on the delivery leg. That keeps stations completely unaware that
 > workers exist.
 
-And why piece rates rather than wages:
+And why piece rates rather than wages (history - fees are now 0, so neither applies):
 
 > Paying by the minute looked reasonable but deadlocks the game: once the wallet empties the
 > workers stop, and if a stopped worker was the one taking goods to the counter then nothing can
@@ -517,14 +519,14 @@ And why piece rates rather than wages:
 
 | Role / id | Pickup | Dropoff | Fee/unit | Real price |
 |---|---|---|---|---|
-| Farmer / `HarvesterA` | CornFieldA | CoopA.Feed | 0.5 | 250 |
-| Cashier / `SellerA` | CoopA.Collect | CounterA | 0.8 | 400 |
-| Farmer 2 / `HarvesterB` | CornFieldB | CoopB.Feed | 0.5 | 700 |
-| Cashier 2 / `SellerB` | CoopB.Collect | CounterA | 0.8 | 800 |
-| Hay Hand / `HayHandA` | HayFieldA | CowShedA.Feed | 0.6 | 1500 |
-| Milk Run / `MilkRunA` | CowShedA.Collect | CounterB | 1.4 | 1700 |
-| Hay Hand 2 / `HayHandB` | HayFieldB | CowShedB.Feed | 0.6 | 2200 |
-| Milk Run 2 / `MilkRunB` | CowShedB.Collect | CounterB | 1.4 | 2400 |
+| Farmer / `HarvesterA` | CornFieldA | CoopA.Feed | 0 | 250 |
+| Cashier / `SellerA` | CoopA.Collect | CounterA | 0 | 400 |
+| Farmer 2 / `HarvesterB` | CornFieldB | CoopB.Feed | 0 | 700 |
+| Cashier 2 / `SellerB` | CoopB.Collect | CounterA | 0 | 800 |
+| Hay Hand / `HayHandA` | HayFieldA | CowShedA.Feed | 0 | 1500 |
+| Milk Run / `MilkRunA` | CowShedA.Collect | CounterB | 0 | 1700 |
+| Hay Hand 2 / `HayHandB` | HayFieldB | CowShedB.Feed | 0 | 2200 |
+| Milk Run 2 / `MilkRunB` | CowShedB.Collect | CounterB | 0 | 2400 |
 
 All defined in `FarmSceneBuilder.cs:370-410`. **All prices currently flattened to $10** — see
 `PROJECT_STRUCTURE.md` §11.
@@ -591,7 +593,7 @@ One line, four correct behaviours.
 `Upkeep/Durability.cs`, `Stations/RepairStation.cs`, `Upkeep/AlertBeacon.cs`,
 `UI/AttentionMarker.cs`.
 
-- A machine loses `wearPerOutput` condition per unit produced (1.5 for coops, 2.0 for sheds).
+- A machine loses `wearPerOutput` condition per unit produced (0.75 for coops, 1.0 for sheds - halved so a coop with 3 hens takes about 4.5 minutes to jam).
 - At zero it **jams**.
 - Repair is a `Task`-mode station: stand in `FIX`, a ring fills, `+N%` popups rise, `FIXED`.
 - `RepairStation.costPerPoint` — 0.25 for coops, 0.35 for sheds.
@@ -604,7 +606,7 @@ Three things exist only because of it:
 
 1. **Repair always works at $0.** `RepairStation.freeRepairFraction` guarantees a fraction of
    the repair rate for free. Money buys *speed*, not permission. **Never set it to zero.**
-2. **Workers are paid per delivery, never per minute** (§10).
+2. **Workers have no running cost** (hire price only; never a per-minute wage - §10).
 3. **The carry stack holds mixed goods**, and there are three bins (§5).
 
 Anything you add that charges the player must be checked against this rule.
@@ -616,7 +618,7 @@ Anything you add that charges the player must be checked against this rule.
 1. **Wear** — machines jam at zero condition.
 2. **Spoilage** — eggs rot in 90 s, milk in 120 s, so stockpiling loses money.
 3. **Reputation** — timed-out customers thin the queue *and* cut the price of everything.
-4. **Piece rates** — automation is a running cost that scales with throughput.
+4. **Hire cost** - automation is paid for once, up front; there is no running cost.
 
 All four apply **offline too**, clamped to 8 hours (`GameClock.MaxOfflineSeconds`).
 
@@ -641,6 +643,29 @@ Covered fully in `EDITING_GUIDE.md`; the architectural points:
   the main thread.
 - The HUD carries **state readouts and the joystick only**. The one menu allowed is the pause
   panel, because sound and delete-save have no physical place in the world.
+  The task card's two tabs (Problems / Goals) are the one other exception: they only choose which
+  list the arrow follows.
+
+### The task list and guide arrow
+
+`Tasks/TaskBoard.cs` sweeps the world every 0.25 s into three lists; `UI/TaskPanel.cs` draws up to
+three lines, `Tasks/GuideArrow.cs` draws one arrow. Nothing here changes game state except the
+`tycoon.arrow` PlayerPrefs key (which tab is followed) and the tutorial step.
+
+- **Tutorial (green):** harvest -> feed -> collect eggs -> sell -> bin, driven by
+  `TutorialEvents.Raise(...)`, one line in each of the five stations (player only, workers ignored).
+  Step saved by `TutorialProgress` as `game.tutorial`. Old saves with money or a purchase skip it.
+  A step that needs goods the player is not holding points at where to get them.
+- **Problems (red):** `AlertBeacon` flags (jammed / worn -> repair square, out of feed -> feed
+  square, output full -> collect square), plus an empty market shelf -> its stocking square.
+  Jams first, then nearest.
+- **Goals (yellow):** the purchases and renovation steps that are live right now (a locked
+  plot's squares are inactive until its gate is paid, so the live set is the next layer of the
+  progression). Free steps first, then cheapest. The second is shown faded.
+- **Arrow:** off-screen target -> pinned to the safe-area edge, avoiding the money readout,
+  pause button and card; on-screen -> bounces above the square. A target in the other location
+  is replaced by the travel square. Hidden while the player stands in the target.
+
 
 ---
 
@@ -916,18 +941,18 @@ unchanged and per queue. Without the second till the single queue fills and shop
 scanning **one basket unit per tick** (`CustomerAgent.ScanNext`), paying
 `basePrice x 1.5 x reputation`: **egg $7.50, milk $18, corn $1.50, bread $10.50, apples $6,
 yogurt $15**. There is nothing to hand over - the goods are already in the basket. If the
-occupant is a worker it charges that worker's `feePerDelivery` per unit scanned (a cashier never
+occupant is a worker it would charge that worker's `feePerDelivery` per unit scanned (now 0; a cashier never
 carries anything, so the usual piece rate in `WorkerAgent` would never fire).
 
 ### Workers
 
-Existing `WorkerAgent`, no new AI. **Stockers, two per storage room** ($800 each, $0.40/unit),
+Existing `WorkerAgent`, no new AI. **Stockers, two per storage room** ($800 each, no running cost),
 hired beside the room's doorway. A stocker serves its **whole room**: `WorkerAgent.routes` is a
 list of (collect square, stocking square) pairs, and each time it is empty-handed it chooses the
 usable pair whose shelf is **emptiest** - skipping a shelf that is not open yet, is full, whose
 crate is empty, or that the other stocker has **claimed** (`WorkerAgent.Claims`, a small static
 registry; released when the load is delivered, and cleared on every start). The chosen pair simply
-becomes `pickup` / `dropoff`, so walking, standing off for the player and piece-rate pay are the
+becomes `pickup` / `dropoff`, so walking and standing off for the player are the
 old code. With nothing usable the worker **idles** where it stands (empty-handed only) rather than
 fetching goods for a shelf the other stocker is already filling. `WillUse` is deliberately only
 the CURRENT pair: if it covered all routes a stocker walking past the apple crate would fill its
@@ -971,8 +996,8 @@ three lines trade from the day the shop opens, and every growth step is optional
 | Demand per extra line / cap | `CustomerQueue.demandPerExtraLine` / `maxLineDemand` | +25 % / 2x |
 | Queue slots (each) / max shoppers | `QueueSlots` / `MaxShoppers` | 3 / 8 |
 | Checkout multiplier | `CheckoutStation.priceMultiplier` | 1.5 |
-| Stocker | `StockerPrice` / `StockerFee` | $800 / $0.40 |
-| Cashier | `CashierPrice` / `CashierFee` | $1,500 / $0.50 |
+| Stocker | `StockerPrice` / `StockerFee` | $800 / $0 |
+| Cashier | `CashierPrice` / `CashierFee` | $1,500 / $0 |
 | Shelves S21 / S22 / S23 | `GrowthShelfPrices` | $1,000 / $1,500 / $2,000 |
 | Orders bread / apples / yogurt | `GrowthOrderPrices` | $1,500 / $2,500 / $3,500 |
 | Second checkout | `Checkout2Price` | $3,000 |

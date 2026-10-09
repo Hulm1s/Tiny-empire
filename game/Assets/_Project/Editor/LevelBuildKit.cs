@@ -872,6 +872,10 @@ namespace Tycoon.EditorTools
             kit.Beacon.durability = kit.Durability;
             kit.Beacon.inputBuffer = kit.Input;
             kit.Beacon.outputBuffer = kit.Output;
+            // Where the task list's arrow sends the player for each kind of alert.
+            kit.Beacon.repairSquare = kit.Repair;
+            kit.Beacon.feedSquare = kit.Feed;
+            kit.Beacon.collectSquare = kit.Collect;
 
             return kit;
         }

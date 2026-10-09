@@ -109,7 +109,7 @@ Buy a hire square (prices are $10 in test mode — see `PROJECT_STRUCTURE.md` §
 - [ ] On completion a worker appears and starts its route.
 - [ ] The worker walks **around** buildings, not into them.
 - [ ] It fills at its pickup, walks to its dropoff, empties, walks back. Repeats indefinitely.
-- [ ] Money ticks **down** slightly per delivery (piece rate).
+- [ ] Deliveries do **not** move the wallet (workers have no running cost).
 - [ ] **Player priority:** stand in a square the worker wants → the worker walks a couple of
       metres back down its own route and waits. It does not shove in, and it does not drop its
       load. When you leave, it resumes after about a second.
@@ -274,6 +274,21 @@ With `TestPriceOverride` at 10 the whole progression takes a few minutes. Use a 
       (their ids are gone). Delete the save: the market is locked again.
 - [ ] **Farm regression:** farm shoppers, tills, workers and prices behave as before; frame time
       with `?debug=1` is in line with the farm-only build.
+
+## TASK LIST AND ARROW (after any change to Tasks/, TaskPanel, HudRoot or the stations' tutorial hooks)
+
+- [ ] **Fresh save:** the card shows green "FIRST STEPS 1/5", no tabs, and a green arrow. Walk it:
+      harvest corn -> feed the chickens -> collect eggs -> sell at the egg counter -> bin. The
+      steps advance one at a time and then the tutorial ends; the tabs appear.
+- [ ] Throw the corn away mid-tutorial: the feed step points back at the field instead.
+- [ ] Reload mid-tutorial: the same step resumes. A save with money or purchases skips it.
+- [ ] **Goals tab (yellow):** the arrow points at the next purchase; after buying it, the next.
+- [ ] **Problems tab (red):** let a coop jam: the tab shows a red count badge; the Problems arrow
+      points at that coop's FIX square. Out of feed -> FEED square; full basket -> COLLECT square.
+- [ ] Target off screen: the arrow sits on the screen edge, turned toward it, clear of the money
+      readout, pause button and card. Target on screen: it bounces above the square.
+      Standing in the square hides it. A target in the other location points at the travel square.
+- [ ] 375x812: card, money readout, pause button and arrow do not overlap. Tab choice survives a reload.
 
 ---
 

@@ -260,5 +260,173 @@ namespace Tycoon.UI
             text.verticalOverflow = VerticalWrapMode.Overflow;
             return text;
         }
+
+        // ---- the framed HUD (see HudArt) ---------------------------------------------------
+
+        private static readonly Color LabelEdge = new Color(0.10f, 0.078f, 0.063f, 1f);
+
+        private static Sprite PlateSprite(Vector2 size, float radius, HudArt.Look look, bool pressed) =>
+            HudArt.Panel(size.x + 2f * HudArt.Margin, size.y + 2f * HudArt.Margin + 6f, radius, look, pressed);
+
+        /// <summary>
+        /// A framed plate. The returned rect is the VISIBLE plate, <paramref name="size"/> units,
+        /// so layout maths is about what the player sees; the art child reaches out past it for
+        /// the shadow.
+        /// </summary>
+        public static RectTransform CreatePlate(string name, RectTransform parent, Vector2 size, float radius,
+            HudArt.Look look, out Image art, bool raycast = false)
+        {
+            var holder = CreateRect(name, parent);
+            holder.sizeDelta = size;
+
+            var artRect = CreateRect("Art", holder);
+            artRect.anchorMin = Vector2.zero;
+            artRect.anchorMax = Vector2.one;
+            artRect.offsetMin = new Vector2(-HudArt.Margin, -HudArt.Margin - 6f);
+            artRect.offsetMax = new Vector2(HudArt.Margin, HudArt.Margin);
+
+            art = artRect.gameObject.AddComponent<Image>();
+            art.sprite = PlateSprite(size, radius, look, false);
+            art.raycastTarget = raycast;
+            return holder;
+        }
+
+        /// <summary>Re-skins a plate made by <see cref="CreatePlate"/> for a new size or look.</summary>
+        public static void SetPlate(Image art, Vector2 size, float radius, HudArt.Look look)
+        {
+            art.sprite = PlateSprite(size, radius, look, false);
+        }
+
+        /// <summary>Re-skins a framed button: new look for both its resting and its pressed plate.</summary>
+        public static void SkinButton(Button button, Image art, Vector2 size, float radius, HudArt.Look look)
+        {
+            art.sprite = PlateSprite(size, radius, look, false);
+            button.spriteState = new SpriteState
+            {
+                pressedSprite = PlateSprite(size, radius, look, true),
+                highlightedSprite = art.sprite,
+                selectedSprite = art.sprite,
+                disabledSprite = art.sprite
+            };
+        }
+
+        /// <summary>
+        /// White lettering with a hard dark edge, like the loading-screen tips. Tracking spaces the
+        /// letters out; the effect is added before the outline so the edge follows the letters.
+        /// </summary>
+        public static Text CreateLabel(string name, RectTransform parent, string content, int fontSize,
+            TextAnchor anchor = TextAnchor.MiddleCenter, float tracking = 0f)
+        {
+            var text = CreateText(name, parent, content, fontSize, anchor);
+            text.fontStyle = FontStyle.Bold;
+
+            if (tracking > 0f) text.gameObject.AddComponent<LetterSpacing>().tracking = tracking;
+
+            var outline = text.gameObject.AddComponent<Outline>();
+            outline.effectColor = LabelEdge;
+            float edge = Mathf.Clamp(fontSize * 0.055f, 2f, 4f);
+            outline.effectDistance = new Vector2(edge, -edge);
+            return text;
+        }
+
+        /// <summary>A framed button: sprite swap to a pressed plate, label dips, clicks like every button.</summary>
+        public static Button CreatePlateButton(string name, RectTransform parent, Vector2 size, float radius,
+            HudArt.Look look, string content, int fontSize, out Text label)
+        {
+            var holder = CreatePlate(name, parent, size, radius, look, out Image art, true);
+            label = CreateLabel("Label", holder, content, fontSize, TextAnchor.MiddleCenter, 0.12f);
+            Stretch(label.rectTransform);
+
+            var button = holder.gameObject.AddComponent<Button>();
+            button.targetGraphic = art;
+            button.transition = Selectable.Transition.SpriteSwap;
+            button.spriteState = new SpriteState
+            {
+                pressedSprite = PlateSprite(size, radius, look, true),
+                highlightedSprite = art.sprite,
+                selectedSprite = art.sprite,
+                disabledSprite = art.sprite
+            };
+            button.onClick.AddListener(() => SoundFx.Play(Sfx.Click));
+            holder.gameObject.AddComponent<PressShift>().label = label.rectTransform;
+            return button;
+        }
+
+        /// <summary>The round pause button: a medallion whose visible disc is <paramref name="diameter"/> units.</summary>
+        public static Button CreateMedallionButton(string name, RectTransform parent, float diameter,
+            HudArt.Glyph glyph = HudArt.Glyph.Pause)
+        {
+            var holder = CreateRect(name, parent);
+            holder.sizeDelta = new Vector2(diameter, diameter);
+
+            // The sprite is 21 units larger than the disc to hold the shadow, and the disc sits
+            // 2.5 units above its centre.
+            float full = diameter + 21f;
+            var artRect = CreateRect("Art", holder);
+            artRect.anchorMin = artRect.anchorMax = new Vector2(0.5f, 0.5f);
+            artRect.sizeDelta = new Vector2(full, full);
+            artRect.anchoredPosition = new Vector2(0f, -2.5f);
+
+            var art = artRect.gameObject.AddComponent<Image>();
+            art.sprite = HudArt.Medallion(full, false, glyph);
+            art.raycastTarget = true;
+
+            var button = holder.gameObject.AddComponent<Button>();
+            button.targetGraphic = art;
+            button.transition = Selectable.Transition.SpriteSwap;
+            button.spriteState = new SpriteState
+            {
+                pressedSprite = HudArt.Medallion(full, true, glyph),
+                highlightedSprite = art.sprite,
+                selectedSprite = art.sprite,
+                disabledSprite = art.sprite
+            };
+            button.onClick.AddListener(() => SoundFx.Play(Sfx.Click));
+            return button;
+        }
+
+        /// <summary>Swaps the glyph on a medallion made by <see cref="CreateMedallionButton"/>.</summary>
+        public static void SetGlyph(Button button, float diameter, HudArt.Glyph glyph)
+        {
+            float full = diameter + 21f;
+            var art = (Image)button.targetGraphic;
+            art.sprite = HudArt.Medallion(full, false, glyph);
+            button.spriteState = new SpriteState
+            {
+                pressedSprite = HudArt.Medallion(full, true, glyph),
+                highlightedSprite = art.sprite,
+                selectedSprite = art.sprite,
+                disabledSprite = art.sprite
+            };
+        }
+
+        public static void Stretch(RectTransform rect)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+        }
+    }
+
+    /// <summary>Dips a button's label a few units while it is held, to match the pressed plate.</summary>
+    public class PressShift : MonoBehaviour,
+        UnityEngine.EventSystems.IPointerDownHandler, UnityEngine.EventSystems.IPointerUpHandler,
+        UnityEngine.EventSystems.IPointerExitHandler
+    {
+        public RectTransform label;
+        private bool _down;
+
+        public void OnPointerDown(UnityEngine.EventSystems.PointerEventData e) => Set(true);
+        public void OnPointerUp(UnityEngine.EventSystems.PointerEventData e) => Set(false);
+        public void OnPointerExit(UnityEngine.EventSystems.PointerEventData e) => Set(false);
+        private void OnDisable() => Set(false);
+
+        private void Set(bool down)
+        {
+            if (label == null || down == _down) return;
+            _down = down;
+            label.anchoredPosition = new Vector2(0f, down ? -5f : 0f);
+        }
     }
 }

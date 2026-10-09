@@ -20,7 +20,9 @@
     <!-- iOS uses this, not the manifest icons, for the Home Screen tile. -->
     <link rel="apple-touch-icon" href="TemplateData/icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="TemplateData/icons/icon-192.png">
-    <link rel="stylesheet" href="TemplateData/style.css">
+    <!-- Versioned like the build files: a cached old stylesheet next to a new page is what
+         showed the new loading screen in the old blue look on an iPhone. -->
+    <link rel="stylesheet" href="TemplateData/style.css?v={{{ PRODUCT_VERSION }}}">
 #if SHOW_DIAGNOSTICS
     <link rel="stylesheet" href="<<<TemplateData/diagnostics.css>>>">
     <script src="<<<TemplateData/diagnostics.js>>>"></script>
@@ -32,7 +34,7 @@
     </div>
 
     <div id="loading-screen">
-      <img id="loading-logo" src="TemplateData/logo.png" alt="{{{ PRODUCT_NAME }}}">
+      <img id="loading-logo" src="TemplateData/logo.png?v={{{ PRODUCT_VERSION }}}" alt="{{{ PRODUCT_NAME }}}">
       <div id="money-bar">
         <div id="progress-fill"></div>
         <div id="money-roll"></div>

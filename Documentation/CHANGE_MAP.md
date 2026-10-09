@@ -31,7 +31,7 @@ resized or added anything.
 | **What a product sells for** | **FSB:129-147 `price:`** | corn 1, egg 5, hay 1, milk 12 |
 | Repair cost per point | FSB:322, 331, 359, 368 | 0.25 coops / 0.35 sheds |
 | Free repair fraction (**never 0**) | `Stations/RepairStation.cs:33` | 0.25 |
-| Worker pay per delivered unit | FSB:379-410, `feePerDelivery:` | 0.5 / 0.6 / 0.8 / 1.4 |
+| Worker running cost | FSB `BuildHire(... feePerDelivery:)` | 0 on every worker - hire price only. The parameter and the `WorkerAgent` / `CheckoutStation` fee code remain, inert at 0 |
 | Starting balance | `Core/SaveSystem.cs:81` | $0 |
 | Money display format | `Core/Wallet.cs:48-60` | `$950`, `$1.2K`, `$3.4M` |
 
@@ -54,7 +54,7 @@ resized or added anything.
 | Field size | FSB:213 `FieldSize` | 4.5 × 3.5 |
 | Spoil time | FSB:137, 147, `spoilSeconds:` | 90 s egg, 120 s milk |
 | Whether an item spoils | FSB:129-147, `perishable:` | egg + milk only |
-| Wear per unit produced | FSB:319, 328, 356, 365, `wearPerOutput:` | 1.5 coops, 2.0 sheds |
+| Wear per unit produced | FSB:319, 328, 356, 365, `wearPerOutput:` | 0.75 coops, 1.0 sheds (halved) |
 | Max condition | `Upkeep/Durability.cs:18` `max` | 100 |
 | Condition restored per repair ring | `Stations/RepairStation.cs:22` `repairPerTask` | 25 |
 | Repair ring duration | `Stations/StationBase.cs:65` `taskDuration` | 1.2 s |
@@ -189,12 +189,19 @@ resized or added anything.
 
 | I want to change… | Go to |
 |---|---|
-| Money readout | `UI/HudRoot.cs:127-144` |
-| Alert text | `UI/HudRoot.cs:146-156` |
+| Money plaque + coin | `UI/HudRoot.cs` `BuildMoneyReadout` (420 x 116, coin 92) |
+| **HUD art** (frames, coin, medallion, badge; colours / outline / rim) | `UI/HudArt.cs` `Looks` + `RuntimeScale`; helpers `UIFactory.CreatePlate / CreatePlateButton / CreateMedallionButton / CreateLabel` |
+| Letter spacing on labels | `UI/LetterSpacing.cs` (`tracking`, a fraction of font size); `CreateLabel(... tracking)`. Must sit BEFORE the `Outline` on the Text |
+| Preview every HUD sprite | `Tycoon > Export HUD Sheet` -> `hud-sheet.png` (`Editor/HudSheet.cs`; stroke-font lettering is schematic). **Send to Filip before changing the look** |
+| Task list card (replaces the old alert text) | `UI/TaskPanel.cs`; lines/arrow target from `Tasks/TaskBoard.cs` |
+| Guide arrow behaviour / size | `Tasks/GuideArrow.cs` constants; sprite `IconFactory.GuideArrow`; sheet `Tycoon → Export Arrow Sheet` |
+| Tutorial steps / text | `Tasks/TaskBoard.cs` `StepLabels`, `Tasks/TutorialProgress.cs`; wired in `FarmSceneBuilder.BuildFarm` ("Tutorial" object, id `game.tutorial`) |
 | Debug readout (`?debug=1`) | `UI/HudRoot.cs:158-168` |
 | HUD reference resolution | `UI/HudRoot.cs:115-117` (1080 × 1920, match 0.35) |
-| Pause menu rows | `UI/PauseMenu.cs:60-100` |
-| Pause button | `UI/PauseMenu.cs:42-49` |
+| Pause board / rows / title / armed-delete text ("TAP TO CONFIRM") | `UI/PauseMenu.cs` `Build`, `MakeRow` |
+| Task card collapse (minimize medallion, `-`/`+`) | `UI/TaskPanel.cs` `ToggleCollapsed`; PlayerPrefs `tycoon.taskPanelCollapsed` (0/1) |
+| Guide arrow on/off (pause menu `ARROW: ON/OFF` row) | `UI/PauseMenu.cs` `ToggleArrow`, `Tasks/GuideArrow.cs` `Enabled`; PlayerPrefs `tycoon.guideArrow` (default 1) |
+| Pause medallion | `UI/PauseMenu.cs` `Build` (110 units, `CreateMedallionButton`) |
 | Safe area / notch handling | `UI/HudRoot.cs` `SafeRect()` / `RefreshSafeArea()`; browser side `Plugins/WebGL/SafeArea.jslib` + the `safe-area-probe` div in `WebGLTemplates/MobilePWA/index.html` |
 | **Which recorded sound plays for what** | `Audio/SoundFx.cs` `RecordedName` - pickup for anything into your arms; lip pop for feeding, stocking, selling and the bin. Everything else is silent until it gets a recording |
 | **Replace / add a recorded sound** | put the source in `Assets/_Project/Audio/Source/`, add a line to `Cuts` in `Editor/SoundTrim.cs`, run `Tycoon → Sounds → Trim To Game Clips` → writes `Resources/Sfx/<name>.wav` + `<name>_0..7.wav`. **Send the result to Filip to listen before it goes in.** |
@@ -318,12 +325,12 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 | How long a shopper waits at an empty shelf | `CustomerAgent.maxWaitAtShelf` | 8 s |
 | Reputation lost per skipped item | `CustomerQueue.reputationPerSkip` | 0.04 |
 | Market sell price multiplier | `CheckoutStation.priceMultiplier` | 1.5 |
-| Stocker price / fee (two per room) | MB `StockerPrice`, `StockerFee` | $800 / $0.40 |
+| Stocker price / fee (two per room) | MB `StockerPrice`, `StockerFee` | $800 / $0 |
 | Stocker hire squares | MB `Stocker1Hires`, `Stocker2Hires` | beside each doorway |
 | Growth: shelf / order / 2nd checkout prices | MB `GrowthShelfPrices`, `GrowthOrderPrices`, `Checkout2Price` | 1,000 1,500 2,000 / 1,500 2,500 3,500 / 3,000 |
 | New products | FSB `CreateItems` (Bread, Apples, Yogurt) | base 7 / 4 / 10 |
 | Product order and what each step reveals | MB `BuildGrowth` | bread -> apples -> yogurt |
-| Cashier price / fee | MB `CashierPrice`, `CashierFee` | $1,500 / $0.50 |
+| Cashier price / fee | MB `CashierPrice`, `CashierFee` | $1,500 / $0 |
 | Shop walls / door | MB `Shop*`, `DoorHalf`, `TallWall`, `LowWall` | 24 x 21 m, door 3.6 m |
 | Market boundary / fence | MB `EdgeWest/East/North/South` | -17 / 17 / 18.6 / -13 |
 | Shopper waypoints | MB `EntryRoute`, `ExitRoute`, `QueueApproach` | through the door at x = 0 |

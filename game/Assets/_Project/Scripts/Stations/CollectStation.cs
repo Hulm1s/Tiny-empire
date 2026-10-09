@@ -44,6 +44,7 @@ namespace Tycoon.Stations
             }
 
             SoundFx.PlayAt(Sfx.Pop, Carry.transform.position);
+            Tycoon.Tasks.TutorialEvents.Raise(Tycoon.Tasks.TutorialEvent.Collect, Carry);
 
             Tycoon.UI.WorldFeedback.Add($"collect{GetInstanceID()}",
                 Carry.transform.position + Vector3.up * 2.2f, 1,

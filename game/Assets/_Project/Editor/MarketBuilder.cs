@@ -282,9 +282,9 @@ namespace Tycoon.EditorTools
         // pays back in a few shelves of sales, the cashier is the bigger step because it
         // frees the player entirely from the till.
         private const double StockerPrice = 800d;
-        private const double StockerFee = 0.40d;
+        private const double StockerFee = 0d;   // staff cost only their hire price
         private const double CashierPrice = 1500d;
-        private const double CashierFee = 0.50d;
+        private const double CashierFee = 0d;
 
         /// <summary>Stocker hire squares: beside each doorway, on the room side, not in it.</summary>
         private static readonly Vector3[] Stocker1Hires =

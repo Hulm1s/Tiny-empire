@@ -47,6 +47,9 @@ namespace Tycoon.Stations
 
         public double Remaining => Math.Max(0d, CurrentPrice - _paid);
 
+        /// <summary>How many units have been bought here. Read by the tutorial and the goal list.</summary>
+        public int Purchases => _purchases;
+
         public bool SoldOut => target == null || target.IsAtMaxUnits;
 
         /// <summary>

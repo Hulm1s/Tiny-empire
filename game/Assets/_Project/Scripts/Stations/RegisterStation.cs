@@ -119,6 +119,7 @@ namespace Tycoon.Stations
             double price = wanted.basePrice * priceMultiplier * queue.PriceMultiplier;
             GameRoot.Money?.Add(price);
             Sold?.Invoke(price);
+            Tycoon.Tasks.TutorialEvents.Raise(Tycoon.Tasks.TutorialEvent.Sell, Carry);
 
             SoundFx.PlayAt(Sfx.Coin, transform.position);
 

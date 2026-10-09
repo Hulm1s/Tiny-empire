@@ -30,6 +30,16 @@ namespace Tycoon.Upkeep
         [Tooltip("Warns when this runs dry.")]
         public ItemBuffer inputBuffer;
 
+        [Header("Where to send the player (all optional)")]
+        [Tooltip("The square that fixes this business. The task list's arrow points here.")]
+        public StationBase repairSquare;
+
+        [Tooltip("The square that feeds this business.")]
+        public StationBase feedSquare;
+
+        [Tooltip("The square that empties this business's output.")]
+        public StationBase collectSquare;
+
         [Header("Thresholds")]
         [Range(0f, 1f)] public float outputFullAbove = 0.999f;
 
@@ -48,6 +58,13 @@ namespace Tycoon.Upkeep
         /// <summary>Non-empty when this business wants attention. Read by the world map later.</summary>
         public string CurrentAlert { get; private set; }
 
+        // The same conditions as the text, kept as flags so the task list can turn each one into
+        // its own line and arrow target without parsing the sentence back apart.
+        public bool IsJammed { get; private set; }
+        public bool IsWearing { get; private set; }
+        public bool NeedsFeed { get; private set; }
+        public bool OutputIsFull { get; private set; }
+
         private void OnEnable() => Active.Add(this);
 
         private void OnDisable() => Active.Remove(this);
@@ -57,15 +74,17 @@ namespace Tycoon.Upkeep
         {
             _builder.Clear();
 
-            if (durability != null && durability.IsBroken) Add("jammed");
-            else if (durability != null && durability.NeedsAttention) Add("wearing out");
+            IsJammed = durability != null && durability.IsBroken;
+            IsWearing = !IsJammed && durability != null && durability.NeedsAttention;
+            NeedsFeed = machine != null && machine.CurrentBlockage == ProducerMachine.Blockage.NoInput;
+            OutputIsFull = outputBuffer != null && outputBuffer.Fill >= outputFullAbove;
 
-            if (worker != null && worker.UnderpaidRecently) Add("worker underpaid");
+            if (IsJammed) Add("jammed");
+            else if (IsWearing) Add("wearing out");
 
-            if (machine != null && machine.CurrentBlockage == ProducerMachine.Blockage.NoInput)
-                Add("out of feed");
+            if (NeedsFeed) Add("out of feed");
 
-            if (outputBuffer != null && outputBuffer.Fill >= outputFullAbove) Add("output full");
+            if (OutputIsFull) Add("output full");
             else if (inputBuffer != null && inputBuffer.IsEmpty && machine != null) { /* covered above */ }
 
             CurrentAlert = _builder.Length == 0 ? "" : $"{businessName}: {_builder}";

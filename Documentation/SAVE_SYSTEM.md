@@ -166,6 +166,7 @@ Written in `MarketBuilder.cs` (and `FarmSceneBuilder.BuildMarketLink` for the tw
 
 | Save id | Carries |
 |---|---|
+| `game.tutorial` | `TutorialProgress` ("Tutorial" object, `FarmSceneBuilder.BuildFarm`): one number, the walkthrough step (0-5; 5 = finished). A save with no `game.tutorial` entry but with money or any purchase starts finished |
 | `farm.unlock.market` | the $10,000 supermarket purchase (`UnlockStation`) |
 | `farm.travel.town` | the farm-side travel square (not saveable, but identified) |
 | `market.travel.farm` | the market-side travel square (not saveable, but identified) |

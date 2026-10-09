@@ -64,6 +64,7 @@ namespace Tycoon.Stations
             if (!Carry.TryRemove(null)) return false;
 
             SoundFx.PlayAt(Sfx.Trash, transform.position);
+            Tycoon.Tasks.TutorialEvents.Raise(Tycoon.Tasks.TutorialEvent.Discard, Carry);
 
             Tycoon.UI.WorldFeedback.Remove($"bin{GetInstanceID()}",
                 transform.position + Vector3.up * 1.6f, 1,

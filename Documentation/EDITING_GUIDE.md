@@ -74,7 +74,7 @@ no worker can be hired before its route is affordable. Changing a gate price can
 ```csharp
 var hireFarmerA = BuildHire(root, "Farmer", "HarvesterA", NorthOfField(root, cornA),
     price: 250d, pickup: cornA, dropoff: coopA.Feed,
-    color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopA.Beacon);
+    color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0d, beacon: coopA.Beacon);
 ```
 
 **Current real prices:** Farmer 250, Cashier 400, Farmer 2 700, Cashier 2 800, Hay Hand 1500,
@@ -187,7 +187,7 @@ produce an egg every 2 s, three cows every 3.33 s.
 > makes the second chicken worth buying.
 
 **Watch out:** faster production also means **faster wear**, because wear is charged per unit, not
-per second. A coop jams after 100 / 1.5 ≈ 67 eggs regardless of speed — so halving
+per second. A coop jams after 100 / 0.75 ≈ 133 eggs regardless of speed — so halving
 `secondsPerOutput` halves the wall-clock time to a jam.
 
 ---
@@ -239,7 +239,7 @@ at the pen.
 ## 6. Change a durability / repair number
 
 **Where:**
-- Wear per unit: `FSB:313-369`, `wearPerOutput:` — currently **1.5** coops, **2.0** cow sheds.
+- Wear per unit: `FSB:313-369`, `wearPerOutput:` — currently **0.75** coops, **1.0** cow sheds (halved from 1.5 / 2.0).
 - Repair cost: `FSB:322/331/359/368`, `coopA.Repair.costPerPoint = 0.25d;` — **0.25** coops,
   **0.35** cow sheds.
 - Max condition: `Upkeep/Durability.cs:18`, `max = 100`. Never overridden.
@@ -361,8 +361,9 @@ value is every worker.** `Awake()` pushes it into the `NavMeshAgent`.
 Also `NavMeshAgent.acceleration = 24f` at `LBK:639`.
 
 ### Pay
-**Where:** `FSB:379-410`, `feePerDelivery:` — 0.5 farmers, 0.8 cashiers, 0.6 hay hands, 1.4 milk
-runs.
+**Where:** `FSB` `BuildHire(... feePerDelivery:)`. Workers now cost **only their hire price**:
+every fee is `0` (farm hires, market stockers/cashiers via `StockerFee` / `CashierFee`). The piece-rate
+code in `WorkerAgent` / `CheckoutStation` is kept and does nothing at 0; set a fee above 0 to bring it back.
 
 **⚠ Never change this to a per-second wage.** `WorkerAgent.cs:38-43`:
 
@@ -850,10 +851,12 @@ hour of debugging once.
 
 | Element | Where |
 |---|---|
-| Money readout | `HudRoot.cs:127-144` — top-centre, 420 × 116, font 64 |
+| Money plaque | `HudRoot.cs` `BuildMoneyReadout` — top-centre, 420 × 116 visible, coin 92, font 64 (best-fit down to 34) |
 | Money format | `Core/Wallet.cs:48-60` — `$950`, `$1.2K`, `$3.4M` |
-| Alert text | `HudRoot.cs:146-156` — top-left, polled every 0.25 s |
-| Pause button | `UI/PauseMenu.cs:42-49` — top-right |
+| Task list card | `UI/TaskPanel.cs` — top-left under the money readout, max 3 lines, tabs Problems / Goals; data swept every 0.25 s by `Tasks/TaskBoard.cs` |
+| Guide arrow | `Tasks/GuideArrow.cs` — one screen-space arrow; edge-pinned when the target is off screen, bounces above it when on screen |
+| Pause medallion | `UI/PauseMenu.cs` `Build` — top-right, 110 units, pressed sprite swap |
+| HUD art | `UI/HudArt.cs` (sprites drawn in code at 0.75 px/unit, ~10 unit shadow margin; `Looks.*` hold the colours), `UI/UIFactory.cs` (`CreatePlate` returns the VISIBLE rect), `UI/LetterSpacing.cs` (tracking for the legacy font; add before `Outline`). Preview with `Tycoon > Export HUD Sheet` and get approval before restyling |
 | Joystick | `UI/VirtualJoystick.cs` — `radius 170`, `deadZone 0.08` |
 | Debug readout | `HudRoot.cs:158-168` — off unless `?debug=1` |
 | Reference resolution | `HudRoot.cs:115-117` — 1080 × 1920 portrait, match 0.35 |

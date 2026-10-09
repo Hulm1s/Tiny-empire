@@ -547,6 +547,184 @@ namespace Tycoon.UI
                 arrowTop, arrowBottom, outline: 2.2f);
         }
 
+        // ------------------------------------------------------------------ guide arrow
+
+        private const int ArrowSize = 256;
+
+        /// <summary>
+        /// The guide arrow, drawn pointing DOWN; the caller rotates it. Solid in the given colour
+        /// (green tutorial / red problem / gold goal) with the logo's treatment: a thick dark
+        /// outline, a gold rim, a glossy cap and a soft drop shadow, on a chunky heraldic head.
+        /// Cached per colour. Sprite only - no Material.
+        /// </summary>
+        public static Sprite GuideArrow(Color fill)
+        {
+            string key = "guide_arrow_" + ColorUtility.ToHtmlStringRGB(fill);
+            if (Cache.TryGetValue(key, out var cached) && cached != null) return cached;
+
+            var painter = new Painter(ArrowSize);
+            DrawGuideArrow(painter, fill);
+            var sprite = painter.ToSprite(key);
+            Cache[key] = sprite;
+            return sprite;
+        }
+
+        /// <summary>
+        /// Outline of the arrow, down-pointing, in the 256 px canvas: a short square tail, two
+        /// upturned horns where it meets the head, then curved shield sides down to a point.
+        /// Corners are filleted so the gold rim follows a soft shape, not a sharp polygon.
+        /// </summary>
+        private static Vector2[] ArrowPolygon()
+        {
+            var pts = new List<Vector2>();
+            var radii = new List<float>();
+            void Add(float x, float y, float r) { pts.Add(new Vector2(x, y)); radii.Add(r); }
+
+            Add(98f, 236f, 14f);
+            Add(158f, 236f, 14f);
+            Add(158f, 178f, 9f);
+            Add(228f, 200f, 9f);
+
+            // Right side: quadratic curve from the horn to the tip, bulging outwards a little.
+            var horn = new Vector2(228f, 200f);
+            var ctrl = new Vector2(236f, 96f);
+            var tip = new Vector2(128f, 24f);
+            const int steps = 14;
+            for (int k = 1; k < steps; k++)
+            {
+                float t = k / (float)steps;
+                var q = (1 - t) * (1 - t) * horn + 2 * (1 - t) * t * ctrl + t * t * tip;
+                Add(q.x, q.y, 0f);
+            }
+            Add(tip.x, tip.y, 7f);
+
+            // Left side is the mirror image, walked back up (the tail corners are already in).
+            int rightCount = pts.Count;
+            for (int i = rightCount - 2; i >= 2; i--)
+                Add(256f - pts[i].x, pts[i].y, radii[i]);
+
+            return Fillet(pts, radii);
+        }
+
+        private static Vector2[] Fillet(List<Vector2> pts, List<float> radii)
+        {
+            var result = new List<Vector2>();
+            int n = pts.Count;
+            for (int i = 0; i < n; i++)
+            {
+                var a = pts[(i + n - 1) % n];
+                var p = pts[i];
+                var b = pts[(i + 1) % n];
+                float r = radii[i];
+                if (r <= 0f) { result.Add(p); continue; }
+
+                var u = a - p; float lu = u.magnitude; u /= lu;
+                var v = b - p; float lv = v.magnitude; v /= lv;
+                float theta = Mathf.Acos(Mathf.Clamp(Vector2.Dot(u, v), -1f, 1f));
+                if (theta > 3.0f || theta < 0.05f) { result.Add(p); continue; }
+
+                float half = theta * 0.5f;
+                float t = Mathf.Min(r / Mathf.Tan(half), 0.45f * Mathf.Min(lu, lv));
+                r = t * Mathf.Tan(half);
+
+                var t1 = p + u * t;
+                var t2 = p + v * t;
+                var centre = p + (u + v).normalized * (r / Mathf.Sin(half));
+                float a1 = Mathf.Atan2(t1.y - centre.y, t1.x - centre.x);
+                float a2 = Mathf.Atan2(t2.y - centre.y, t2.x - centre.x);
+                float delta = Mathf.DeltaAngle(a1 * Mathf.Rad2Deg, a2 * Mathf.Rad2Deg) * Mathf.Deg2Rad;
+                const int arc = 10;
+                for (int k = 0; k <= arc; k++)
+                {
+                    float ang = a1 + delta * (k / (float)arc);
+                    result.Add(centre + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * r);
+                }
+            }
+            return result.ToArray();
+        }
+
+        /// <summary>Signed distance to a polygon, positive INSIDE (the painter's convention).</summary>
+        private static float PolygonField(Vector2[] v, float x, float y)
+        {
+            float d = float.MaxValue;
+            float sign = 1f;
+            int n = v.Length;
+            for (int i = 0, j = n - 1; i < n; j = i, i++)
+            {
+                float ex = v[j].x - v[i].x, ey = v[j].y - v[i].y;
+                float wx = x - v[i].x, wy = y - v[i].y;
+                float h = Mathf.Clamp01((wx * ex + wy * ey) / (ex * ex + ey * ey));
+                float bx = wx - ex * h, by = wy - ey * h;
+                d = Mathf.Min(d, bx * bx + by * by);
+
+                bool c1 = y >= v[i].y, c2 = y < v[j].y, c3 = ex * wy > ey * wx;
+                if ((c1 && c2 && c3) || (!c1 && !c2 && !c3)) sign = -sign;
+            }
+            return -sign * Mathf.Sqrt(d);
+        }
+
+        private static void DrawGuideArrow(Painter p, Color fill)
+        {
+            const int N = ArrowSize;
+            var poly = ArrowPolygon();
+            float[] f = p.Field((x, y) => PolygonField(poly, x, y));
+            // The same shape sampled 9 px higher, i.e. drawn 9 px lower: the drop shadow.
+            float[] shadow = p.Field((x, y) => PolygonField(poly, x, y + 9f));
+
+            float Cov(float d) => Mathf.Clamp01(d + 0.5f);
+            float Ramp(float y) => Mathf.Clamp01((y - 24f) / 212f);
+
+            var outline = new Color(0.15f, 0.08f, 0.04f);
+            var goldTop = new Color(1f, 0.9f, 0.5f);
+            var goldBottom = new Color(0.8f, 0.5f, 0.1f);
+            var seam = new Color(0.36f, 0.19f, 0.04f);
+            var fillTop = Color.Lerp(fill, Color.white, 0.2f);
+            var fillBottom = new Color(fill.r * 0.72f, fill.g * 0.66f, fill.b * 0.66f);
+
+            // Drop shadow.
+            p.Raster((x, y) =>
+            {
+                float t = Mathf.Clamp01((shadow[y * N + x] + 14f) / 16f);
+                return new Color(0.04f, 0.02f, 0.01f, 0.42f * t * t * (3f - 2f * t));
+            });
+
+            // Thick dark outline.
+            p.Raster((x, y) => new Color(outline.r, outline.g, outline.b, Cov(f[y * N + x] + 11f)));
+
+            // Gold rim, lit from above.
+            p.Raster((x, y) =>
+            {
+                var c = Color.Lerp(goldBottom, goldTop, Ramp(y));
+                c.a = Cov(f[y * N + x]);
+                return c;
+            });
+
+            // Fine dark seam between rim and body, like the logo's frame.
+            p.Raster((x, y) => new Color(seam.r, seam.g, seam.b, Cov(f[y * N + x] - 7.5f)));
+
+            // Body: vertical gradient, the right half a shade darker so the head reads as two
+            // heraldic facets rather than a flat blob.
+            p.Raster((x, y) =>
+            {
+                var c = Color.Lerp(fillBottom, fillTop, Ramp(y));
+                float right = Mathf.Clamp01(x + 0.5f - 128f);
+                float shade = 1f - 0.16f * right;
+                return new Color(c.r * shade, c.g * shade, c.b * shade, Cov(f[y * N + x] - 9.5f));
+            });
+
+            // Glossy cap: a domed white wash over the upper part, kept off the rim.
+            p.Raster((x, y) =>
+            {
+                float dx = (x - 128f) / 175f, dy = (y - 332f) / 178f;
+                float cap = Mathf.Clamp01((1f - Mathf.Sqrt(dx * dx + dy * dy)) * 14f);
+                float a = Mathf.Lerp(0.06f, 0.40f, Mathf.Clamp01((y - 150f) / 90f));
+                return new Color(1f, 1f, 1f, a * cap * Cov(f[y * N + x] - 14f));
+            });
+
+            // Small specular spot on the left shoulder.
+            p.Glow(86f, 172f, 20f, 9f, new Color(1f, 1f, 1f, 0.55f));
+        }
+
         // ------------------------------------------------------------------ rasteriser
 
         /// <summary>
@@ -661,6 +839,27 @@ namespace Tycoon.UI
                     float e3 = Edge(d, a, x, y) * flip;
                     return Mathf.Min(Mathf.Min(e0, e1), Mathf.Min(e2, e3));
                 }, top, bottom, outline);
+            }
+
+            /// <summary>Samples a signed-distance function once per pixel, for reuse across layers.</summary>
+            public float[] Field(System.Func<float, float, float> sdf)
+            {
+                var field = new float[_size * _size];
+                for (int y = 0; y < _size; y++)
+                    for (int x = 0; x < _size; x++)
+                        field[y * _size + x] = sdf(x + 0.5f, y + 0.5f);
+                return field;
+            }
+
+            /// <summary>Paints one layer, per pixel; the colour's alpha is the coverage.</summary>
+            public void Raster(System.Func<int, int, Color> colourAt)
+            {
+                for (int y = 0; y < _size; y++)
+                    for (int x = 0; x < _size; x++)
+                    {
+                        var c = colourAt(x, y);
+                        if (c.a > 0f) Blend(x, y, new Color(c.r, c.g, c.b, 1f), c.a);
+                    }
             }
 
             /// <summary>Distance from a point to an edge, normalised so it is in pixels.</summary>

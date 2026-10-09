@@ -365,7 +365,7 @@ namespace Tycoon.EditorTools
                 // one counter absorbs roughly 30 items a minute. One chicken at 6s an egg makes
                 // 10 - visibly short, which is what makes the second chicken worth buying.
                 secondsPerOutput: 6f, inputCapacity: 10, outputCapacity: 12,
-                bodyColor: new Color(0.86f, 0.42f, 0.34f), wearPerOutput: 1.5f,
+                bodyColor: new Color(0.86f, 0.42f, 0.34f), wearPerOutput: 0.75f,
                 startUnits: 1, maxUnits: 3, unitPrice: Price(120d),
                 unitName: "Chicken", livestock: LevelBuildKit.Livestock.Chicken);
             coopA.Repair.costPerPoint = 0.25d;
@@ -374,7 +374,7 @@ namespace Tycoon.EditorTools
                 "farm.coopB", "CoopB", root, new Vector3(ColumnB, 0f, BuildingRow),
                 input: items.Corn, output: items.Egg,
                 secondsPerOutput: 6f, inputCapacity: 10, outputCapacity: 12,
-                bodyColor: new Color(0.62f, 0.5f, 0.85f), wearPerOutput: 1.5f,
+                bodyColor: new Color(0.62f, 0.5f, 0.85f), wearPerOutput: 0.75f,
                 startUnits: 1, maxUnits: 3, unitPrice: Price(150d),
                 unitName: "Chicken", livestock: LevelBuildKit.Livestock.Chicken);
             coopB.Repair.costPerPoint = 0.25d;
@@ -402,7 +402,7 @@ namespace Tycoon.EditorTools
                 input: items.Hay, output: items.Milk,
                 // Much slower than a chicken, and worth more than twice as much per unit.
                 secondsPerOutput: 10f, inputCapacity: 10, outputCapacity: 10,
-                bodyColor: new Color(0.75f, 0.72f, 0.66f), wearPerOutput: 2f,
+                bodyColor: new Color(0.75f, 0.72f, 0.66f), wearPerOutput: 1f,
                 startUnits: 1, maxUnits: 3, unitPrice: Price(400d),
                 unitName: "Cow", livestock: LevelBuildKit.Livestock.Cow);
             cowA.Repair.costPerPoint = 0.35d;
@@ -411,7 +411,7 @@ namespace Tycoon.EditorTools
                 "farm.cowB", "CowShedB", root, new Vector3(ColumnD, 0f, BuildingRow),
                 input: items.Hay, output: items.Milk,
                 secondsPerOutput: 10f, inputCapacity: 10, outputCapacity: 10,
-                bodyColor: new Color(0.6f, 0.66f, 0.72f), wearPerOutput: 2f,
+                bodyColor: new Color(0.6f, 0.66f, 0.72f), wearPerOutput: 1f,
                 startUnits: 1, maxUnits: 3, unitPrice: Price(450d),
                 unitName: "Cow", livestock: LevelBuildKit.Livestock.Cow);
             cowB.Repair.costPerPoint = 0.35d;
@@ -423,40 +423,41 @@ namespace Tycoon.EditorTools
             // front of a counter and buying a cashier is immediately understandable in a way
             // that a square out in the corridor never was.
             //
-            // Workers take a cut of every unit they deliver, so automation is a running cost
-            // that scales with throughput.
+            // Workers cost only their hire price; there is no running wage. (A per-minute wage
+            // once deadlocked the game when the wallet emptied; piece rates were dropped later
+            // as needless friction.)
             var hireFarmerA = BuildHire(root, "Farmer", "HarvesterA", BesideField(root, cornA, -1),
                 price: 250d, pickup: cornA, dropoff: coopA.Feed,
-                color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopA.Beacon);
+                color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0d, beacon: coopA.Beacon);
 
             var hireCashierA = BuildHire(root, "Cashier", "SellerA", AtTill(root, counterA, -1),
                 price: 400d, pickup: coopA.Collect, dropoff: counterA.Register,
-                color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopA.Beacon);
+                color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0d, beacon: coopA.Beacon);
 
             var hireFarmerB = BuildHire(root, "Farmer 2", "HarvesterB", BesideField(root, cornB, 1),
                 price: 700d, pickup: cornB, dropoff: coopB.Feed,
-                color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0.5d, beacon: coopB.Beacon);
+                color: new Color(0.95f, 0.58f, 0.25f), feePerDelivery: 0d, beacon: coopB.Beacon);
 
             var hireCashierB = BuildHire(root, "Cashier 2", "SellerB", AtTill(root, counterA, 1),
                 price: 800d, pickup: coopB.Collect, dropoff: counterA.Register,
-                color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0.8d, beacon: coopB.Beacon);
+                color: new Color(0.35f, 0.75f, 0.55f), feePerDelivery: 0d, beacon: coopB.Beacon);
 
             // Each hay hand is hired at the meadow it actually cuts, the same as the farmers.
             var hireHayA = BuildHire(root, "Hay Hand", "HayHandA", BesideField(root, hayA, -1),
                 price: 1500d, pickup: hayA, dropoff: cowA.Feed,
-                color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0.6d, beacon: cowA.Beacon);
+                color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0d, beacon: cowA.Beacon);
 
             var hireMilkA = BuildHire(root, "Milk Run", "MilkRunA", AtTill(root, counterB, -1),
                 price: 1700d, pickup: cowA.Collect, dropoff: counterB.Register,
-                color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowA.Beacon);
+                color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 0d, beacon: cowA.Beacon);
 
             var hireHayB = BuildHire(root, "Hay Hand 2", "HayHandB", BesideField(root, hayB, 1),
                 price: 2200d, pickup: hayB, dropoff: cowB.Feed,
-                color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0.6d, beacon: cowB.Beacon);
+                color: new Color(0.88f, 0.74f, 0.3f), feePerDelivery: 0d, beacon: cowB.Beacon);
 
             var hireMilkB = BuildHire(root, "Milk Run 2", "MilkRunB", AtTill(root, counterB, 1),
                 price: 2400d, pickup: cowB.Collect, dropoff: counterB.Register,
-                color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 1.4d, beacon: cowB.Beacon);
+                color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 0d, beacon: cowB.Beacon);
 
             parts.Unlocks.AddRange(new[]
             {
@@ -472,11 +473,11 @@ namespace Tycoon.EditorTools
             // only ever offered once its destination is standing. The farm hand who carries
             // corn to coop B is therefore sold with coop B, not with the field he cuts.
             parts.Unlocks.Add(Gate(root, "farm.unlock.cornB", "UnlockCornB", new Vector3(ColumnB, 0f, FieldRow),
-                FieldSize, "Field", 600d,
+                FieldSize, "Field", 400d,
                 cornB.gameObject));
 
             parts.Unlocks.Add(Gate(root, "farm.unlock.coopB", "UnlockCoopB", new Vector3(ColumnB, 0f, BuildingRow),
-                new Vector2(3.4f, 2.6f), "Coop", 900d,
+                new Vector2(3.4f, 2.6f), "Coop", 500d,
                 coopB.Root, hireFarmerB.gameObject, hireCashierB.gameObject));
 
             parts.Unlocks.Add(Gate(root, "farm.unlock.counterB", "UnlockCounterB", new Vector3(MilkTill, 0f, MarketRow),
@@ -514,6 +515,20 @@ namespace Tycoon.EditorTools
             parts.Unlocks.Add(Gate(root, "farm.unlock.cowB", "UnlockCowB", new Vector3(ColumnD, 0f, BuildingRow),
                 new Vector2(3.4f, 2.6f), "Cow Shed", 6000d,
                 cowB.Root, hireHayB.gameObject, hireMilkB.gameObject));
+
+            // ---- the walkthrough ------------------------------------------------------
+            // Harvest, feed, collect, sell, bin - the first loop, pointed out by the task list.
+            // The squares are wired here, where they exist; the bin is picked at runtime
+            // (whichever is nearest), so it is not listed. Saved as step number under
+            // "game.tutorial", and always active: nothing about it is gated.
+            var tutorial = new GameObject("Tutorial");
+            tutorial.transform.SetParent(root, false);
+            LevelBuildKit.Identify(tutorial, "game.tutorial");
+            var walkthrough = tutorial.AddComponent<Tycoon.Tasks.TutorialProgress>();
+            walkthrough.field = cornA;
+            walkthrough.feed = coopA.Feed;
+            walkthrough.collect = coopA.Collect;
+            walkthrough.till = counterA.Register;
 
             return parts;
         }

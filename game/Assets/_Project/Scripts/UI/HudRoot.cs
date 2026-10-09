@@ -1,8 +1,8 @@
-using System.Collections.Generic;
 #if UNITY_WEBGL && !UNITY_EDITOR
 using System.Runtime.InteropServices;
 #endif
 using Tycoon.Core;
+using Tycoon.Tasks;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
@@ -23,7 +23,6 @@ namespace Tycoon.UI
 
         private Text _moneyLabel;
         private RectTransform _moneyPanel;
-        private Text _alertLabel;
         private Canvas _canvas;
         private RectTransform _safeArea;
         private Rect _lastSafeArea;
@@ -46,13 +45,6 @@ namespace Tycoon.UI
 #endif
 
         private float _moneyPulse;
-        private readonly List<string> _alerts = new List<string>();
-
-        /// <summary>Seconds between sweeps of the businesses for problems.</summary>
-        private const float AlertInterval = 0.25f;
-
-        private float _alertTimer;
-
         /// <summary>
         /// Corner readout of frame time and player state. Invaluable when the only way to
         /// inspect a Web build is to look at a screenshot of it, so it stays in the code -
@@ -90,12 +82,22 @@ namespace Tycoon.UI
             EnsureEventSystem();
             BuildCanvas();
             BuildMoneyReadout();
-            BuildAlertReadout();
             var joystick = VirtualJoystick.Create(_safeArea, UIFactory.Circle);
             if (ShowDebug) BuildDebugReadout();
 
+            // The task list and its arrow. Built after the joystick so the card's two tabs sit
+            // above it and take their own taps; before the pause menu so the pause panel covers
+            // both. The board sweeps the world a few times a second and the panel and arrow
+            // only read what it found.
+            gameObject.AddComponent<TaskBoard>();
+            var tasks = TaskPanel.Create(_safeArea);
+            var arrow = GuideArrow.Create(_safeArea);
+            arrow.AddAvoid(_moneyPanel);
+            arrow.AddAvoid(tasks.Card);
+
             // Built last so the panel sits above the joystick area and swallows its taps.
             PauseMenu.Create(_safeArea, joystick.gameObject);
+            arrow.AddAvoid(_safeArea.Find("PauseButton") as RectTransform);
 
             // The paint menu opens from a square in the supermarket and is not built until it
             // does. Above the pause panel's button, below the fade.
@@ -155,33 +157,33 @@ namespace Tycoon.UI
 
         private void BuildMoneyReadout()
         {
-            var panel = UIFactory.CreatePanel("MoneyPanel", _safeArea, new Color(0.05f, 0.09f, 0.14f, 0.72f));
-            _moneyPanel = panel.rectTransform;
+            // The framed plaque with the coin: 420 x 116 visible, top centre, as before.
+            _moneyPanel = UIFactory.CreatePlate("MoneyPanel", _safeArea, new Vector2(420f, 116f), 44f,
+                HudArt.Looks.Plaque, out _);
             _moneyPanel.anchorMin = new Vector2(0.5f, 1f);
             _moneyPanel.anchorMax = new Vector2(0.5f, 1f);
             _moneyPanel.pivot = new Vector2(0.5f, 1f);
             _moneyPanel.anchoredPosition = new Vector2(0f, -28f);
-            _moneyPanel.sizeDelta = new Vector2(420f, 116f);
 
-            _moneyLabel = UIFactory.CreateText("MoneyLabel", _moneyPanel, "$0", 64);
+            // 92 units: small enough that the coin and its outline sit wholly inside the plaque.
+            var coinRect = UIFactory.CreateRect("Coin", _moneyPanel);
+            coinRect.anchorMin = coinRect.anchorMax = new Vector2(0f, 0.5f);
+            coinRect.sizeDelta = new Vector2(92f, 92f);
+            coinRect.anchoredPosition = new Vector2(62f, -2.5f);
+            var coin = coinRect.gameObject.AddComponent<Image>();
+            coin.sprite = HudArt.Coin(92f);
+            coin.raycastTarget = false;
+
+            _moneyLabel = UIFactory.CreateLabel("MoneyLabel", _moneyPanel, "$0", 64);
             _moneyLabel.rectTransform.anchorMin = Vector2.zero;
             _moneyLabel.rectTransform.anchorMax = Vector2.one;
-            _moneyLabel.rectTransform.offsetMin = Vector2.zero;
-            _moneyLabel.rectTransform.offsetMax = Vector2.zero;
-            _moneyLabel.color = new Color(1f, 0.92f, 0.55f);
-            _moneyLabel.fontStyle = FontStyle.Bold;
-        }
-
-        private void BuildAlertReadout()
-        {
-            _alertLabel = UIFactory.CreateText("Alerts", _safeArea, "", 40, TextAnchor.UpperLeft);
-            var rect = _alertLabel.rectTransform;
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(0f, 1f);
-            rect.pivot = new Vector2(0f, 1f);
-            rect.anchoredPosition = new Vector2(28f, -160f);
-            rect.sizeDelta = new Vector2(700f, 300f);
-            _alertLabel.color = new Color(1f, 0.6f, 0.45f);
+            _moneyLabel.rectTransform.offsetMin = new Vector2(120f, 0f);
+            _moneyLabel.rectTransform.offsetMax = new Vector2(-20f, 0f);
+            _moneyLabel.resizeTextForBestFit = true;
+            _moneyLabel.resizeTextMinSize = 34;
+            _moneyLabel.resizeTextMaxSize = 64;
+            _moneyLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+            _moneyLabel.verticalOverflow = VerticalWrapMode.Truncate;
         }
 
         private void BuildDebugReadout()
@@ -238,13 +240,6 @@ namespace Tycoon.UI
                 _moneyPulse = Mathf.Max(0f, _moneyPulse - Time.unscaledDeltaTime * 4f);
                 float scale = 1f + 0.07f * _moneyPulse;
                 _moneyPanel.localScale = new Vector3(scale, scale, 1f);
-            }
-
-            _alertTimer -= Time.unscaledDeltaTime;
-            if (_alertTimer <= 0f)
-            {
-                _alertTimer = AlertInterval;
-                RefreshAlerts();
             }
 
             RefreshDebug();
@@ -310,39 +305,6 @@ namespace Tycoon.UI
             _safeArea.anchorMax = max;
             _safeArea.offsetMin = Vector2.zero;
             _safeArea.offsetMax = Vector2.zero;
-        }
-
-        /// <summary>Registered by anything that wants the player's attention.</summary>
-        public void ReportAlert(string message)
-        {
-            if (!string.IsNullOrEmpty(message) && !_alerts.Contains(message)) _alerts.Add(message);
-        }
-
-        /// <summary>
-        /// Asks every running business whether it needs the player, and redraws the list.
-        ///
-        /// Polled a few times a second rather than every frame: these are slow conditions - a
-        /// jam, a full basket - and composing the lines at frame rate cost more than the whole
-        /// rest of the upkeep system put together.
-        /// </summary>
-        private void RefreshAlerts()
-        {
-            if (_alertLabel == null) return;
-
-            _alerts.Clear();
-
-            var beacons = Tycoon.Upkeep.AlertBeacon.Active;
-            for (int i = 0; i < beacons.Count; i++)
-            {
-                var beacon = beacons[i];
-                if (beacon == null) continue;
-
-                beacon.Refresh();
-                ReportAlert(beacon.CurrentAlert);
-            }
-
-            string wanted = _alerts.Count == 0 ? "" : string.Join("\n", _alerts);
-            if (_alertLabel.text != wanted) _alertLabel.text = wanted;
         }
     }
 }

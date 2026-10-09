@@ -88,6 +88,7 @@ namespace Tycoon.Stations
             RefreshVisuals();
 
             SoundFx.PlayAt(Sfx.Pop, Carry.transform.position);
+            Tycoon.Tasks.TutorialEvents.Raise(Tycoon.Tasks.TutorialEvent.Harvest, Carry);
 
             Tycoon.UI.WorldFeedback.Add($"harvest{GetInstanceID()}",
                 Carry.transform.position + Vector3.up * 2.2f, 1, crop.displayName, crop.color);

@@ -18,7 +18,9 @@ namespace Tycoon.UI
         private const string SoundPrefKey = "tycoon.sound";
 
         private RectTransform _panel;
+        private RectTransform _board;
         private Text _soundLabel;
+        private Text _arrowLabel;
         private Text _deleteLabel;
         private GameObject _joystick;
 
@@ -39,14 +41,12 @@ namespace Tycoon.UI
 
         private void Build(RectTransform safeArea)
         {
-            // --- the button that opens it ------------------------------------------------
-            var openButton = UIFactory.CreateButton("PauseButton", safeArea, "II",
-                new Color(0.08f, 0.13f, 0.19f, 0.8f), 48, out _);
+            // --- the medallion that opens it ----------------------------------------------
+            var openButton = UIFactory.CreateMedallionButton("PauseButton", safeArea, 110f);
             var buttonRect = openButton.GetComponent<RectTransform>();
             buttonRect.anchorMin = buttonRect.anchorMax = new Vector2(1f, 1f);
             buttonRect.pivot = new Vector2(1f, 1f);
             buttonRect.anchoredPosition = new Vector2(-28f, -28f);
-            buttonRect.sizeDelta = new Vector2(110f, 110f);
             openButton.onClick.AddListener(() => SetOpen(true));
 
             // --- the panel ----------------------------------------------------------------
@@ -58,45 +58,56 @@ namespace Tycoon.UI
             _panel.offsetMax = Vector2.zero;
             dim.raycastTarget = true; // swallow taps so the world never gets them while paused
 
-            var title = UIFactory.CreateText("Title", _panel, "PAUSED", 84);
-            title.rectTransform.anchorMin = title.rectTransform.anchorMax = new Vector2(0.5f, 0.82f);
-            title.rectTransform.sizeDelta = new Vector2(700f, 120f);
-            title.fontStyle = FontStyle.Bold;
+            // The framed board, centred. 780 x 920 units on a phone; scaled down in SetOpen on a
+            // screen too short to hold it.
+            _board = UIFactory.CreatePlate("Board", _panel, new Vector2(780f, 1090f), 56f,
+                HudArt.Looks.Board, out _);
+            _board.anchorMin = _board.anchorMax = new Vector2(0.5f, 0.5f);
+            _board.pivot = new Vector2(0.5f, 0.5f);
+            _board.anchoredPosition = Vector2.zero;
 
-            float y = 0.63f;
-            var resume = MakeRow("Resume", "RESUME", new Color(0.98f, 0.83f, 0.35f),
-                new Color(0.15f, 0.18f, 0.1f), ref y, out _);
+            // The gold title plate straddling the top edge, like the logo's ribbon.
+            var title = UIFactory.CreatePlate("TitlePlate", _board, new Vector2(520f, 124f), 42f,
+                HudArt.Looks.Gold, out _);
+            title.anchorMin = title.anchorMax = new Vector2(0.5f, 0.5f);
+            title.anchoredPosition = new Vector2(0f, 553f);
+            var titleText = UIFactory.CreateLabel("Title", title, "PAUSED", 62, TextAnchor.MiddleCenter, 0.14f);
+            UIFactory.Stretch(titleText.rectTransform);
+
+            var resume = MakeRow("Resume", "RESUME", HudArt.Looks.Gold, 300f, out _);
             resume.onClick.AddListener(() => SetOpen(false));
 
-            var sound = MakeRow("Sound", "", new Color(0.25f, 0.45f, 0.62f), Color.white, ref y, out _soundLabel);
+            var sound = MakeRow("Sound", "", HudArt.Looks.Blue, 130f, out _soundLabel);
             sound.onClick.AddListener(ToggleSound);
 
-            var delete = MakeRow("Delete", "DELETE SAVE", new Color(0.55f, 0.18f, 0.16f), Color.white,
-                ref y, out _deleteLabel);
+            var arrow = MakeRow("Arrow", "", HudArt.Looks.Green, -40f, out _arrowLabel);
+            arrow.onClick.AddListener(ToggleArrow);
+
+            // Red, so the one irreversible button is never mistaken for the others.
+            var delete = MakeRow("Delete", "DELETE SAVE", HudArt.Looks.Red, -210f, out _deleteLabel);
             delete.onClick.AddListener(OnDeletePressed);
 
-            var hint = UIFactory.CreateText("Hint", _panel,
-                "Progress saves automatically on this device.", 32);
-            hint.rectTransform.anchorMin = hint.rectTransform.anchorMax = new Vector2(0.5f, 0.16f);
-            hint.rectTransform.sizeDelta = new Vector2(820f, 60f);
-            hint.color = new Color(1f, 1f, 1f, 0.55f);
+            var hint = UIFactory.CreateLabel("Hint", _board,
+                "Progress saves automatically on this device.", 22);
+            hint.rectTransform.anchorMin = hint.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            hint.rectTransform.anchoredPosition = new Vector2(0f, -375f);
+            hint.rectTransform.sizeDelta = new Vector2(700f, 50f);
+            hint.color = new Color(1f, 1f, 1f, 0.6f);
 
             ApplySound(PlayerPrefs.GetInt(SoundPrefKey, 1) == 1);
+            _arrowLabel.text = Tycoon.Tasks.GuideArrow.Enabled ? "ARROW: ON" : "ARROW: OFF";
             _panel.gameObject.SetActive(false);
         }
 
-        private Button MakeRow(string name, string content, Color background, Color textColor,
-            ref float y, out Text label)
+        private Button MakeRow(string name, string content, HudArt.Look look, float y, out Text label)
         {
-            var button = UIFactory.CreateButton(name, _panel, content, background, 52, out label);
-            label.color = textColor;
+            var button = UIFactory.CreatePlateButton(name, _board, new Vector2(620f, 130f), 46f, look,
+                content, 48, out label);
 
             var rect = button.GetComponent<RectTransform>();
-            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, y);
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(620f, 130f);
-
-            y -= 0.13f;
+            rect.anchoredPosition = new Vector2(0f, y);
             return button;
         }
 
@@ -104,6 +115,14 @@ namespace Tycoon.UI
         {
             _open = open;
             _panel.gameObject.SetActive(open);
+
+            // Fit the board to the screen: full size on a phone, smaller on a short window.
+            if (open && _board != null)
+            {
+                var area = _panel.rect;
+                float fit = Mathf.Min(1f, area.height / 1170f, area.width / 840f);
+                _board.localScale = new Vector3(fit, fit, 1f);
+            }
 
             // Freeze the world. Everything in the game is driven by Time.deltaTime, so this
             // stops production, decay, customers and spoilage together.
@@ -126,6 +145,17 @@ namespace Tycoon.UI
             if (on) SoundFx.Play(Sfx.Click);
         }
 
+        private void ToggleArrow()
+        {
+            ApplyArrow(!Tycoon.Tasks.GuideArrow.Enabled);
+        }
+
+        private void ApplyArrow(bool on)
+        {
+            Tycoon.Tasks.GuideArrow.Enabled = on;
+            if (_arrowLabel != null) _arrowLabel.text = on ? "ARROW: ON" : "ARROW: OFF";
+        }
+
         private void ApplySound(bool on)
         {
             AudioListener.volume = on ? 1f : 0f;
@@ -144,7 +174,7 @@ namespace Tycoon.UI
             {
                 _deleteArmed = true;
                 _deleteArmedUntil = Time.unscaledTime + 4f;
-                _deleteLabel.text = "TAP AGAIN TO CONFIRM";
+                _deleteLabel.text = "TAP TO CONFIRM";
                 return;
             }
 
