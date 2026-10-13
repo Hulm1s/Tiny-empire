@@ -34,6 +34,13 @@ namespace Tycoon.EditorTools
         /// </summary>
         public static readonly Vector3 HandAnchor = new Vector3(0f, 0.86f, 0.42f);
 
+        /// <summary>
+        /// Where the player's cash sits: on the back at lower-back height (above the hips, a little below
+        /// the 0.86 m the front stack is held at), just behind the spine, growing upwards. The stack's
+        /// footprint is about 0.75 x 0.5 m around this point.
+        /// </summary>
+        public static readonly Vector3 BackAnchor = new Vector3(0f, 0.78f, -0.36f);
+
         public static GameObject Model(string role)
         {
             string path = $"{CharacterImportSettings.Folder}Villager_{role}.fbx";

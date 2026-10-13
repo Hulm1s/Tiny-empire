@@ -33,7 +33,7 @@ namespace Tycoon.UI
         }
 
         public static readonly Color Outline = new Color(0.15f, 0.08f, 0.04f);
-        private static readonly Color Seam = new Color(0.36f, 0.19f, 0.04f);
+        public static readonly Color Seam = new Color(0.36f, 0.19f, 0.04f);
         private static readonly Color GoldTop = new Color(1f, 0.9f, 0.5f);
         private static readonly Color GoldBottom = new Color(0.8f, 0.5f, 0.1f);
 
@@ -250,7 +250,7 @@ namespace Tycoon.UI
             });
         }
 
-        private static readonly Vector2[] Dollar =
+        public static readonly Vector2[] Dollar =
         {
             new Vector2(4f, 5f), new Vector2(3f, 6f), new Vector2(1f, 6f), new Vector2(0f, 5f), new Vector2(0f, 4f),
             new Vector2(1f, 3f), new Vector2(3f, 3f), new Vector2(4f, 2f), new Vector2(4f, 1f), new Vector2(3f, 0f),
@@ -259,7 +259,7 @@ namespace Tycoon.UI
             new Vector2(2f, -0.9f), new Vector2(2f, 6.9f),
         };
 
-        private static float SegDist(float px, float py, Vector2 a, Vector2 b)
+        public static float SegDist(float px, float py, Vector2 a, Vector2 b)
         {
             float dx = b.x - a.x, dy = b.y - a.y;
             float len2 = dx * dx + dy * dy;
@@ -270,7 +270,7 @@ namespace Tycoon.UI
 
         // ---- the renderer -----------------------------------------------------------------
 
-        private static float RoundRect(float x, float y, float hx, float hy, float r)
+        public static float RoundRect(float x, float y, float hx, float hy, float r)
         {
             float qx = Mathf.Abs(x) - (hx - r);
             float qy = Mathf.Abs(y) - (hy - r);
@@ -278,9 +278,9 @@ namespace Tycoon.UI
             return r - (outside + Mathf.Min(Mathf.Max(qx, qy), 0f));
         }
 
-        private static float Cov(float d) => Mathf.Clamp01(d + 0.5f);
+        public static float Cov(float d) => Mathf.Clamp01(d + 0.5f);
 
-        private static void Over(ref Color dst, Color src, float cover)
+        public static void Over(ref Color dst, Color src, float cover)
         {
             float sa = src.a * cover;
             if (sa <= 0f) return;
@@ -292,7 +292,7 @@ namespace Tycoon.UI
                 oa);
         }
 
-        private static void Glint(Color[] px, int n, float gx, float gy, float rad)
+        public static void Glint(Color[] px, int n, float gx, float gy, float rad)
         {
             for (int y = 0; y < n; y++)
             {
@@ -310,7 +310,7 @@ namespace Tycoon.UI
         /// One shape, five layers: shadow, outline, gold rim, seam, body, gloss. <paramref name="sdf"/>
         /// is positive inside, measured from the shape's centre (cx, cy).
         /// </summary>
-        private static Color[] Render(int w, int h, Func<float, float, float> sdf, float cx, float cy,
+        public static Color[] Render(int w, int h, Func<float, float, float> sdf, float cx, float cy,
             float yBottom, float yTop, Look look, float u, bool pressed)
         {
             var px = new Color[w * h];
@@ -352,7 +352,7 @@ namespace Tycoon.UI
             return px;
         }
 
-        private static Texture2D ToTexture(int w, int h, Color[] px, string name)
+        public static Texture2D ToTexture(int w, int h, Color[] px, string name)
         {
             var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { name = name };
             tex.SetPixels(px);

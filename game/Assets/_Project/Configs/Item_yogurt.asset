@@ -15,10 +15,10 @@ MonoBehaviour:
   id: yogurt
   displayName: Yogurt
   color: {r: 0.93, g: 0.78, b: 0.86, a: 1}
-  visualPrefab: {fileID: 0}
+  visualPrefab: {fileID: 3024393892739777660, guid: c9ab40d77abb3dd4f8dfb7a2f3136c18, type: 3}
   carryMaterial: {fileID: 2100000, guid: ef4cc76ab7fc48042abb50ec504d01bb, type: 2}
   icon: {fileID: 0}
-  stackHeight: 0.28
+  stackHeight: 0.45
   basePrice: 10
   perishable: 1
   spoilSeconds: 120

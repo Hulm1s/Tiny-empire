@@ -51,8 +51,31 @@ namespace Tycoon.Stations
             return false;
         }
 
+        [Header("Takings")]
+        [Tooltip("Where the money from a sale lands: the cash pile beside the till. Empty pays the account.")]
+        public CashPile pile;
+
+        [Tooltip("Once this purchase is owned, takings go straight to the account instead of the pile. " +
+                 "The farm's tills point at the supermarket: after that the player never has to come back.")]
+        public UnlockStation accountWhenUnlocked;
+
+        [Tooltip("Share of a sale that reaches the account once the farm is let go (accountWhenUnlocked is owned). " +
+                 "The farm tills use 0.5: the farm becomes wholesale after the supermarket, so the shop is the " +
+                 "growth engine rather than a bigger farm. 1 pays in full. Does not touch the pile (before the " +
+                 "supermarket) and does not touch a till with no pile (the shop's own).")]
+        [Range(0f, 1f)] public float accountShare = 1f;
+
         /// <summary>Fired with the money taken per unit, for popups and audio.</summary>
         public event Action<double> Sold;
+
+        /// <summary>Puts a sale where it belongs: the pile, or the account once the farm is let go.</summary>
+        private void Pay(double price)
+        {
+            bool letGo = accountWhenUnlocked != null && accountWhenUnlocked.IsUnlocked;
+            if (pile == null) GameRoot.Money?.Add(price);
+            else if (letGo) GameRoot.Money?.Add(price * accountShare);
+            else pile.Deposit(price);
+        }
 
         public override bool IsOperational => queue != null && queue.Front != null;
 
@@ -117,7 +140,7 @@ namespace Tycoon.Stations
             }
 
             double price = wanted.basePrice * priceMultiplier * queue.PriceMultiplier;
-            GameRoot.Money?.Add(price);
+            Pay(price);
             Sold?.Invoke(price);
             Tycoon.Tasks.TutorialEvents.Raise(Tycoon.Tasks.TutorialEvent.Sell, Carry);
 

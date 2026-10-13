@@ -1319,6 +1319,38 @@ namespace Tycoon.EditorTools
                     }
                 }
 
+                // A field hand with several fields: every field must be reachable at some stage,
+                // carry the crop the shared feed square takes, and the first must be pickup/dropoff.
+                if (worker.routes != null && worker.routes.Length > 0 &&
+                    worker.routes[0] != null && worker.routes[0].pickup is HarvestStation)
+                {
+                    if (worker.routes[0].pickup != worker.pickup || worker.routes[0].dropoff != worker.dropoff)
+                    {
+                        faults++;
+                        Debug.LogWarning($"[Audit] FIELDS {tag} {worker.name}'s pickup/dropoff is not its first field route.");
+                    }
+
+                    foreach (var route in worker.routes)
+                    {
+                        var field = route != null ? route.pickup as HarvestStation : null;
+                        var feed = route != null ? route.dropoff as DepositStation : null;
+                        if (field == null || feed == null || feed.target == null || feed.target.item != field.crop)
+                        {
+                            faults++;
+                            Debug.LogWarning($"[Audit] FIELDS {tag} {worker.name} has a field route that is not a " +
+                                             "field to a feed square taking its crop.");
+                            continue;
+                        }
+
+                        if (!firstLive.ContainsKey(field) || !firstLive.ContainsKey(feed))
+                        {
+                            faults++;
+                            Debug.LogWarning($"[Audit] FIELDS {tag} {worker.name}'s route {field.name} -> {feed.name} " +
+                                             "is never switched on.");
+                        }
+                    }
+                }
+
                 lines.Add($"{worker.name} hire@{hireCost:0} route@{Mathf.Max((float)pickupCost, (float)dropCost):0}");
             }
 

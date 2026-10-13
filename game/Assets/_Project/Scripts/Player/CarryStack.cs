@@ -23,6 +23,10 @@ namespace Tycoon.Player
         [Tooltip("Total units carried, across all kinds of goods.")]
         [Min(1)] public int capacity = 8;
 
+        [Tooltip("The stack never grows taller than this: past it the units close up and overlap, " +
+                 "so a full load of tall goods does not tower over the character.")]
+        public float maxStackHeight = 2.4f;
+
         [Tooltip("How fast stacked items settle into place. Purely cosmetic.")]
         public float settleSpeed = 14f;
 
@@ -139,6 +143,10 @@ namespace Tycoon.Player
         {
             float y = 0f;
             for (int i = 0; i < index && i < _entries.Count; i++) y += HeightOf(_entries[i].Item);
+
+            float total = 0f;
+            for (int i = 0; i < _entries.Count; i++) total += HeightOf(_entries[i].Item);
+            if (total > maxStackHeight) y *= maxStackHeight / total;
             return new Vector3(0f, y, 0f);
         }
 

@@ -52,6 +52,9 @@ namespace Tycoon.EditorTools
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
+            // The cash bundle prefab is written once per build; the stacks and piles instantiate it.
+            CashModels.Begin();
+
             var items = CreateItems();
             BuildEnvironment();
             var root = CreateLevelRoot();
@@ -139,23 +142,23 @@ namespace Tycoon.EditorTools
             {
                 Corn = LevelBuildKit.Item(
                     "corn", "Corn", new Color(0.96f, 0.78f, 0.22f),
-                    price: 1d, perishable: false, stackHeight: 0.3f),
+                    price: 1d, perishable: false, stackHeight: 0.48f),
 
                 // Perishables rot, so hoarding output loses money. It is the gentlest of the
                 // upkeep pressures and the first one players notice.
                 Egg = LevelBuildKit.Item(
                     "egg", "Egg", new Color(0.96f, 0.94f, 0.86f),
-                    price: 5d, perishable: true, spoilSeconds: 90f, stackHeight: 0.26f),
+                    price: 5d, perishable: true, spoilSeconds: 90f, stackHeight: 0.42f),
 
                 Hay = LevelBuildKit.Item(
                     "hay", "Hay", new Color(0.85f, 0.72f, 0.33f),
-                    price: 1d, perishable: false, stackHeight: 0.32f),
+                    price: 1d, perishable: false, stackHeight: 0.51f),
 
                 // Slower to make and worth far more than an egg, so the dairy wing is a
                 // genuine step up rather than a reskin of the chickens.
                 Milk = LevelBuildKit.Item(
                     "milk", "Milk", new Color(0.95f, 0.96f, 0.98f),
-                    price: 12d, perishable: true, spoilSeconds: 120f, stackHeight: 0.3f),
+                    price: 12d, perishable: true, spoilSeconds: 120f, stackHeight: 0.48f),
 
                 // The market's rubbish. Worth nothing and nothing buys it - it exists only to
                 // be carried out of the derelict shop to the bin. Never in any sell list.
@@ -168,15 +171,15 @@ namespace Tycoon.EditorTools
                 // yogurt 15 (dearer than milk and rots faster than eggs, like the real thing).
                 Bread = LevelBuildKit.Item(
                     "bread", "Bread", new Color(0.86f, 0.6f, 0.3f),
-                    price: 7d, perishable: true, spoilSeconds: 150f, stackHeight: 0.3f),
+                    price: 7d, perishable: true, spoilSeconds: 150f, stackHeight: 0.48f),
 
                 Apples = LevelBuildKit.Item(
                     "apples", "Apples", new Color(0.82f, 0.2f, 0.18f),
-                    price: 4d, perishable: false, stackHeight: 0.28f),
+                    price: 4d, perishable: false, stackHeight: 0.45f),
 
                 Yogurt = LevelBuildKit.Item(
                     "yogurt", "Yogurt", new Color(0.93f, 0.78f, 0.86f),
-                    price: 10d, perishable: true, spoilSeconds: 120f, stackHeight: 0.28f)
+                    price: 10d, perishable: true, spoilSeconds: 120f, stackHeight: 0.45f)
             };
         }
 
@@ -251,8 +254,18 @@ namespace Tycoon.EditorTools
         private static readonly Vector2 FieldSize = new Vector2(4.5f, 3.5f);
 
         private const float MarketRow = -14f;
+
+        /// <summary>The farm's ATM, west of the west cashier's hire square (x -14.05, card to -15.3).</summary>
+        private const float AtmX = -19.0f;
         private const float BuildingRow = MarketRow + 6.15f;    // -7.85
         private const float FieldRow = BuildingRow + 6.8f;      // -1.05
+
+        /// <summary>
+        /// The second field of every line, north of the first with 0.6 m of walkable grass between
+        /// the two (field 1 reaches 0.7, field 2 starts at 1.3). A bought extension, not a new
+        /// column: the farmer cuts both and carries to the same feed square.
+        /// </summary>
+        private const float FieldRow2 = FieldRow + 3.5f + 0.6f;   // 3.05 (3.5 = FieldSize.y)
 
         // ---- demand --------------------------------------------------------------
         // Every number that decides how busy the market is lives here.
@@ -264,11 +277,11 @@ namespace Tycoon.EditorTools
         // ---- where the world ends --------------------------------------------------
         // The fence, the invisible wall and the grass all read these, so the boundary is one
         // decision rather than three numbers that drift apart. Everything the farm is made of
-        // sits inside roughly x -21..21 and z -20..4, and the edge is held a couple of metres
+        // sits inside roughly x -21..21 and z -20..5, and the edge is held a couple of metres
         // clear of that so the fence never crowds a square.
         private const float EdgeWest = -25.5f;
         private const float EdgeEast = 25.5f;
-        private const float EdgeNorth = 7f;
+        private const float EdgeNorth = 9f;   // was 7: the second fields reach z 4.8
         private const float EdgeSouth = -23f;
 
         /// <summary>Where the tarmac lies, in the level's grid. The road box is 2.8 m deep.</summary>
@@ -286,6 +299,10 @@ namespace Tycoon.EditorTools
         {
             public readonly List<UnlockStation> Unlocks = new List<UnlockStation>();
             public readonly List<UpgradeStation> Upgrades = new List<UpgradeStation>();
+
+            // For the supermarket: its takings stop landing in the farm's piles, and the farm stops wearing.
+            public readonly List<LevelBuildKit.Counter> Counters = new List<LevelBuildKit.Counter>();
+            public readonly List<LevelBuildKit.Workshop> Workshops = new List<LevelBuildKit.Workshop>();
         }
 
         private static FarmParts BuildFarm(Transform root, Items items)
@@ -318,6 +335,9 @@ namespace Tycoon.EditorTools
 
             var counterB = LevelBuildKit.AddCounter(street, "farm.counterB", "CounterB", MilkTill,
                 new[] { items.Milk }, queueLength: 3, enterFromWest: false);
+
+            parts.Counters.Add(counterA);
+            parts.Counters.Add(counterB);
 
             foreach (var till in new[] { counterA, counterB })
             {
@@ -362,20 +382,21 @@ namespace Tycoon.EditorTools
                 "farm.coopA", "CoopA", root, new Vector3(ColumnA, 0f, BuildingRow),
                 input: items.Corn, output: items.Egg,
                 // Paced against demand: a till takes a shopper every 5s wanting 1-4 items, so
-                // one counter absorbs roughly 30 items a minute. One chicken at 6s an egg makes
-                // 10 - visibly short, which is what makes the second chicken worth buying.
-                secondsPerOutput: 6f, inputCapacity: 10, outputCapacity: 12,
+                // one counter absorbs roughly 30 items a minute. One chicken at 7s an egg makes
+                // 8.6 - visibly short, which is what makes the next chicken worth buying. Five
+                // hens at 7 s eat about what two fields regrow (econ_sim.py).
+                secondsPerOutput: 7f, inputCapacity: 20, outputCapacity: 24,
                 bodyColor: new Color(0.86f, 0.42f, 0.34f), wearPerOutput: 0.75f,
-                startUnits: 1, maxUnits: 3, unitPrice: Price(120d),
+                startUnits: 1, maxUnits: 5, unitPrice: Price(120d),
                 unitName: "Chicken", livestock: LevelBuildKit.Livestock.Chicken);
             coopA.Repair.costPerPoint = 0.25d;
 
             var coopB = LevelBuildKit.BuildWorkshop(
                 "farm.coopB", "CoopB", root, new Vector3(ColumnB, 0f, BuildingRow),
                 input: items.Corn, output: items.Egg,
-                secondsPerOutput: 6f, inputCapacity: 10, outputCapacity: 12,
+                secondsPerOutput: 7f, inputCapacity: 20, outputCapacity: 24,
                 bodyColor: new Color(0.62f, 0.5f, 0.85f), wearPerOutput: 0.75f,
-                startUnits: 1, maxUnits: 3, unitPrice: Price(150d),
+                startUnits: 1, maxUnits: 5, unitPrice: Price(180d),
                 unitName: "Chicken", livestock: LevelBuildKit.Livestock.Chicken);
             coopB.Repair.costPerPoint = 0.25d;
 
@@ -397,24 +418,54 @@ namespace Tycoon.EditorTools
                 plots: 8, regrowSeconds: 2.6f, size: FieldSize,
                 style: LevelBuildKit.FieldStyle.Meadow);
 
+            // ---- the second field of every line ---------------------------------------
+            // Bought extensions north of each first field (see FieldRow2). Same size, same crop,
+            // same regrowth; the line's farmer cuts whichever of the two has more ready. Each is
+            // saved under its own new id and kept inactive until its gate (below) is paid.
+            var cornA2 = LevelBuildKit.BuildField("farm.cornA2", "CornFieldA2", root,
+                new Vector3(ColumnA, 0f, FieldRow2), items.Corn,
+                plots: 8, regrowSeconds: 2.2f, size: FieldSize);
+
+            var cornB2 = LevelBuildKit.BuildField("farm.cornB2", "CornFieldB2", root,
+                new Vector3(ColumnB, 0f, FieldRow2), items.Corn,
+                plots: 8, regrowSeconds: 2.2f, size: FieldSize);
+
+            var hayA2 = LevelBuildKit.BuildField("farm.hayA2", "HayFieldA2", root,
+                new Vector3(ColumnC, 0f, FieldRow2), items.Hay,
+                plots: 8, regrowSeconds: 2.6f, size: FieldSize,
+                style: LevelBuildKit.FieldStyle.Meadow);
+
+            var hayB2 = LevelBuildKit.BuildField("farm.hayB2", "HayFieldB2", root,
+                new Vector3(ColumnD, 0f, FieldRow2), items.Hay,
+                plots: 8, regrowSeconds: 2.6f, size: FieldSize,
+                style: LevelBuildKit.FieldStyle.Meadow);
+
             var cowA = LevelBuildKit.BuildWorkshop(
                 "farm.cowA", "CowShedA", root, new Vector3(ColumnC, 0f, BuildingRow),
                 input: items.Hay, output: items.Milk,
-                // Much slower than a chicken, and worth more than twice as much per unit.
-                secondsPerOutput: 10f, inputCapacity: 10, outputCapacity: 10,
+                // Slower than a chicken, and worth more than twice as much per unit.
+                secondsPerOutput: 8f, inputCapacity: 20, outputCapacity: 20,
                 bodyColor: new Color(0.75f, 0.72f, 0.66f), wearPerOutput: 1f,
-                startUnits: 1, maxUnits: 3, unitPrice: Price(400d),
+                startUnits: 1, maxUnits: 5, unitPrice: Price(450d),
                 unitName: "Cow", livestock: LevelBuildKit.Livestock.Cow);
             cowA.Repair.costPerPoint = 0.35d;
 
             var cowB = LevelBuildKit.BuildWorkshop(
                 "farm.cowB", "CowShedB", root, new Vector3(ColumnD, 0f, BuildingRow),
                 input: items.Hay, output: items.Milk,
-                secondsPerOutput: 10f, inputCapacity: 10, outputCapacity: 10,
+                secondsPerOutput: 8f, inputCapacity: 20, outputCapacity: 20,
                 bodyColor: new Color(0.6f, 0.66f, 0.72f), wearPerOutput: 1f,
-                startUnits: 1, maxUnits: 3, unitPrice: Price(450d),
+                startUnits: 1, maxUnits: 5, unitPrice: Price(600d),
                 unitName: "Cow", livestock: LevelBuildKit.Livestock.Cow);
             cowB.Repair.costPerPoint = 0.35d;
+
+            parts.Workshops.AddRange(new[] { coopA, coopB, cowA, cowB });
+
+            // The farm's cash machine, on the market row beyond the west cashier's square. The machine
+            // stands north of its squares (the front faces the camera); a small deposit square sits
+            // between it and the hire square. Position held by the layout audit, not by eye.
+            LevelBuildKit.BuildAtm("farm.atm", "Atm", root, new Vector3(AtmX, 0f, MarketRow + 1.85f),
+                new Vector2(2.2f, 1.8f), new Vector2(1.6f, 1.5f), 2.3f);
 
             // ---- hired hands ----------------------------------------------------------
             // A hire square goes where its worker's job visibly happens, not on some separate
@@ -459,6 +510,14 @@ namespace Tycoon.EditorTools
                 price: 2400d, pickup: cowB.Collect, dropoff: counterB.Register,
                 color: new Color(0.55f, 0.8f, 0.9f), feePerDelivery: 0d, beacon: cowB.Beacon);
 
+            // Each line's hand cuts both of the line's fields. Route 0 is the original field (also
+            // pickup/dropoff); the second is optional - until its gate is paid it is inactive and the
+            // worker simply never chooses it. WorkerAgent.ChooseField picks the fuller field.
+            TwoFields(hireFarmerA, cornA, cornA2, coopA.Feed);
+            TwoFields(hireFarmerB, cornB, cornB2, coopB.Feed);
+            TwoFields(hireHayA, hayA, hayA2, cowA.Feed);
+            TwoFields(hireHayB, hayB, hayB2, cowB.Feed);
+
             parts.Unlocks.AddRange(new[]
             {
                 hireFarmerA, hireCashierA, hireFarmerB, hireCashierB,
@@ -472,16 +531,36 @@ namespace Tycoon.EditorTools
             // where it will be, finds no trigger, and stands there full for ever - so a hire is
             // only ever offered once its destination is standing. The farm hand who carries
             // corn to coop B is therefore sold with coop B, not with the field he cuts.
+
+            // The second fields. Their gates are made first because other gates reveal them: a
+            // second field is only OFFERED once what feeds on it is standing - corn A2 from day
+            // one (coop A is there), corn B2 with coop B, and hay A2 / hay B2 with the dairy /
+            // second cow shed, so hay can never be cut before a cow exists to eat it.
+            var gateCornA2 = Gate(root, "farm.unlock.cornA2", "UnlockCornA2", new Vector3(ColumnA, 0f, FieldRow2),
+                FieldSize, "Field", 350d, cornA2.gameObject);
+            gateCornA2.gameObject.SetActive(true);   // the one second field on sale from the start
+
+            var gateCornB2 = Gate(root, "farm.unlock.cornB2", "UnlockCornB2", new Vector3(ColumnB, 0f, FieldRow2),
+                FieldSize, "Field", 700d, cornB2.gameObject);
+
+            var gateHayA2 = Gate(root, "farm.unlock.hayA2", "UnlockHayA2", new Vector3(ColumnC, 0f, FieldRow2),
+                FieldSize, "Meadow", 1800d, hayA2.gameObject);
+
+            var gateHayB2 = Gate(root, "farm.unlock.hayB2", "UnlockHayB2", new Vector3(ColumnD, 0f, FieldRow2),
+                FieldSize, "Meadow", 2800d, hayB2.gameObject);
+
+            parts.Unlocks.AddRange(new[] { gateCornA2, gateCornB2, gateHayA2, gateHayB2 });
+
             parts.Unlocks.Add(Gate(root, "farm.unlock.cornB", "UnlockCornB", new Vector3(ColumnB, 0f, FieldRow),
                 FieldSize, "Field", 400d,
                 cornB.gameObject));
 
             parts.Unlocks.Add(Gate(root, "farm.unlock.coopB", "UnlockCoopB", new Vector3(ColumnB, 0f, BuildingRow),
                 new Vector2(3.4f, 2.6f), "Coop", 500d,
-                coopB.Root, hireFarmerB.gameObject, hireCashierB.gameObject));
+                coopB.Root, hireFarmerB.gameObject, hireCashierB.gameObject, gateCornB2.gameObject));
 
             parts.Unlocks.Add(Gate(root, "farm.unlock.counterB", "UnlockCounterB", new Vector3(MilkTill, 0f, MarketRow),
-                new Vector2(3.4f, 2.2f), "Dairy Till", 1400d,
+                new Vector2(3.4f, 2.2f), "Dairy Till", 800d,
                 counterB.Root));
 
             // The meadow comes with the cow shed, deliberately, and this is a softlock fix
@@ -493,28 +572,19 @@ namespace Tycoon.EditorTools
             // eggs, eggs are the only income, and the shed costs money: no way out except
             // starting over. Selling the two together means hay can never exist before
             // something that eats it.
-            //
-            // Priced under the sum of the two it replaces, because it now has to be saved for
-            // in one go rather than in two steps.
             parts.Unlocks.Add(Gate(root, "farm.unlock.cowA", "UnlockCowA", new Vector3(ColumnC, 0f, BuildingRow),
-                new Vector2(3.4f, 2.6f), "Dairy", 3200d,
-                cowA.Root, hayA.gameObject, hireHayA.gameObject, hireMilkA.gameObject));
+                new Vector2(3.4f, 2.6f), "Dairy", 2200d,
+                cowA.Root, hayA.gameObject, hireHayA.gameObject, hireMilkA.gameObject, gateHayA2.gameObject));
 
-            // The second meadow, bought on its own before the shed that will need it - exactly
-            // the shape the corn side already has, where the second field is the cheaper step
-            // and the second coop the expensive one.
-            //
-            // It is not decoration bought early: one meadow regrows roughly enough hay to keep
-            // one shed of three cows fed, so until this is standing a second shed would spend
-            // its life waiting. Buying it also immediately doubles what the player can cut in
-            // one trip for the shed they already own.
-            parts.Unlocks.Add(Gate(root, "farm.unlock.hayB", "UnlockHayB", new Vector3(ColumnD, 0f, FieldRow),
-                FieldSize, "Meadow", 4500d,
-                hayB.gameObject));
-
+            // The second shed takes its meadow with it, exactly like the first. The meadow used to
+            // be a separate gate (farm.unlock.hayB, $4,500) bought ahead of the shed ($6,000);
+            // they are now one purchase of $4,500 and that gate is gone. A save that had paid for
+            // only one half stays consistent: the shed's gate reveals the meadow and both hands
+            // whenever IT is unlocked, and a meadow bought alone in an old save is simply offered
+            // again with the shed (see SAVE_SYSTEM.md).
             parts.Unlocks.Add(Gate(root, "farm.unlock.cowB", "UnlockCowB", new Vector3(ColumnD, 0f, BuildingRow),
-                new Vector2(3.4f, 2.6f), "Cow Shed", 6000d,
-                cowB.Root, hireHayB.gameObject, hireMilkB.gameObject));
+                new Vector2(3.4f, 2.6f), "Cow Shed", 4500d,
+                cowB.Root, hayB.gameObject, hireHayB.gameObject, hireMilkB.gameObject, gateHayB2.gameObject));
 
             // ---- the walkthrough ------------------------------------------------------
             // Harvest, feed, collect, sell, bin - the first loop, pointed out by the task list.
@@ -531,6 +601,19 @@ namespace Tycoon.EditorTools
             walkthrough.till = counterA.Register;
 
             return parts;
+        }
+
+        /// <summary>Gives a hired field hand a second field to cut (see WorkerAgent.ChooseField).</summary>
+        private static void TwoFields(UnlockStation hire, HarvestStation first, HarvestStation second,
+            StationBase dropoff)
+        {
+            var worker = hire.revealOnUnlock[0].GetComponent<Tycoon.Upkeep.WorkerAgent>();
+            worker.routes = new[]
+            {
+                new Tycoon.Upkeep.StockRoute { pickup = first, dropoff = dropoff },
+                new Tycoon.Upkeep.StockRoute { pickup = second, dropoff = dropoff },
+            };
+            WarnIfRouteBroken(worker.name, second, dropoff);
         }
 
         /// <summary>
@@ -600,6 +683,10 @@ namespace Tycoon.EditorTools
             float sign = slot < 0 ? -1f : 1f;
             // Directly beside the serve square: its card is 3.6 wide, a hire card 2.5.
             float offset = 1.8f + 0.5f + 1.25f + (Mathf.Abs(slot) - 1) * 3.0f;
+
+            // The till's cash square sits right against its serve square on one side, so the hire
+            // square on that side stands one square further out to make room for it.
+            if (sign == till.CashSide) offset += 2.0f + 0.3f;
 
             return new Vector3(local.x + sign * offset, 0f, local.z);
         }
@@ -682,7 +769,7 @@ namespace Tycoon.EditorTools
             {
                 // The four columns: fields, buildings, and every square that belongs to them,
                 // including the hire squares standing behind the fields.
-                new Rect(-22f, -12.5f, 44f, 17f),
+                new Rect(-22f, -12.5f, 44f, 19f),
                 // The market: both tills, the bin, the hire squares flanking the counters,
                 // the queues and the road.
                 new Rect(EdgeWest - 1f, -21f, (EdgeEast - EdgeWest) + 2f, 8.5f),
@@ -747,7 +834,7 @@ namespace Tycoon.EditorTools
         internal const float MarketOffsetX = 75f;
 
         /// <summary>Price of the supermarket itself, before the test override.</summary>
-        private const double MarketPrice = 10000d;
+        private const double MarketPrice = 7000d;
 
         private static void BuildMarketLink(Transform farmRoot, Items items, FarmParts parts)
         {
@@ -782,6 +869,22 @@ namespace Tycoon.EditorTools
             reveal.maxed = parts.Upgrades.ToArray();
             reveal.reveal = new[] { gate.gameObject };
             gate.gameObject.SetActive(false);
+
+            // Once the supermarket is bought the player never needs to come back: farm takings go
+            // straight to the account (collected at an ATM in the shop), and the farm stops wearing,
+            // so there is nothing left to fix. Both read the saved purchase, so they hold after a reload.
+            foreach (var counter in parts.Counters)
+            {
+                counter.Register.accountWhenUnlocked = gate;
+                // Wholesale: once the farm is let go its sales reach the account at half value, so the
+                // shop - not a bigger farm - is where the money is made.
+                counter.Register.accountShare = 0.5f;
+            }
+            foreach (var shop in parts.Workshops)
+            {
+                shop.Durability.retireWhen = gate;
+                shop.Durability.retireDisable = new Behaviour[] { shop.Repair };
+            }
         }
 
         /// <summary>
@@ -902,6 +1005,20 @@ namespace Tycoon.EditorTools
             var carry = go.AddComponent<CarryStack>();
             carry.anchor = anchor.transform;
             carry.capacity = 8;
+
+            // The cash in hand rides on the back, separate from the goods in front: a 2 x 2 stack of
+            // bundles growing upwards. Saved as "player.cash".
+            var cashAnchor = new GameObject("CashAnchor");
+            cashAnchor.transform.SetParent(visual.transform, false);
+            cashAnchor.transform.localPosition = CharacterLibrary.BackAnchor;
+
+            LevelBuildKit.Identify(go, "player.cash");
+            var cash = go.AddComponent<CashStack>();
+            cash.anchor = cashAnchor.transform;
+            cash.bundlePrefab = CashModels.BundlePrefab();
+            // Kept short on purpose: seen from the game camera a tall stack on the back rises over
+            // the head. Past four layers the bundles merge (the amount is unlimited).
+            cash.maxLayers = 4;
         }
 
         private static void RegisterOnlyScene()

@@ -83,6 +83,11 @@ namespace Tycoon.Tasks
 
             var wallet = GameRoot.Money;
             bool hasMoney = wallet != null && wallet.Balance > 0d;
+            // Cash in hand or waiting at a till counts as progress too.
+            var cash = Tycoon.Player.CashStack.Instance;
+            if (cash != null && cash.Amount > 0d) hasMoney = true;
+            foreach (var pile in FindObjectsByType<CashPile>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (pile != null && pile.Amount > 0d) hasMoney = true;
             if (hasMoney || AnyPurchaseMade()) Step = StepCount;
         }
 

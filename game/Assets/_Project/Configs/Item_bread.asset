@@ -15,10 +15,10 @@ MonoBehaviour:
   id: bread
   displayName: Bread
   color: {r: 0.86, g: 0.6, b: 0.3, a: 1}
-  visualPrefab: {fileID: 0}
+  visualPrefab: {fileID: 3878222815444731141, guid: f67a0c7c1f2390c4eb709056353a52c7, type: 3}
   carryMaterial: {fileID: 2100000, guid: a70fe8d36782f534081a610641754171, type: 2}
   icon: {fileID: 0}
-  stackHeight: 0.3
+  stackHeight: 0.48
   basePrice: 7
   perishable: 1
   spoilSeconds: 150

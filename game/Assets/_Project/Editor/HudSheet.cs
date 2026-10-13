@@ -27,18 +27,18 @@ namespace Tycoon.EditorTools
         /// <summary>Pixels per canvas unit: the same as the runtime sprites are drawn at.</summary>
         private const float U = HudArt.RuntimeScale;
 
-        private static readonly Color Grass = new Color(0.42f, 0.66f, 0.30f);
-        private static readonly Color Night = new Color(0.13f, 0.17f, 0.20f);
+        internal static readonly Color Grass = new Color(0.42f, 0.66f, 0.30f);
+        internal static readonly Color Night = new Color(0.13f, 0.17f, 0.20f);
 
-        private static readonly Color Green = new Color(0.30f, 0.78f, 0.34f);
-        private static readonly Color Red = new Color(0.90f, 0.26f, 0.22f);
-        private static readonly Color Gold = new Color(1f, 0.78f, 0.16f);
+        internal static readonly Color Green = new Color(0.30f, 0.78f, 0.34f);
+        internal static readonly Color Red = new Color(0.90f, 0.26f, 0.22f);
+        internal static readonly Color Gold = new Color(1f, 0.78f, 0.16f);
 
-        private static Color[] _buf;
-        private static int _w, _h;
+        internal static Color[] _buf;
+        internal static int _w, _h;
 
         // Origin of the mock being drawn, in sheet pixels from the top-left.
-        private static float _ox, _oy;
+        internal static float _ox, _oy;
 
         [MenuItem("Tycoon/Export HUD Sheet")]
         public static void Export()
@@ -159,28 +159,28 @@ namespace Tycoon.EditorTools
             }
         }
 
-        private static Texture2D IconFactoryTexture(Color c) => IconFactory.GuideArrow(c).texture;
+        internal static Texture2D IconFactoryTexture(Color c) => IconFactory.GuideArrow(c).texture;
 
         // ---- placing things (mock units -> sheet pixels) ------------------------------------
 
         /// <summary>A framed plate whose VISIBLE rectangle starts at (x, y), in mock units.</summary>
-        private static void Plate(float x, float y, float w, float h, float radius, HudArt.Look look, bool pressed)
+        internal static void Plate(float x, float y, float w, float h, float radius, HudArt.Look look, bool pressed)
         {
             var tex = HudArt.PanelTexture(w + 2 * HudArt.Margin, h + 2 * HudArt.Margin + 6f, radius, look, U, pressed);
             Blit(tex, x - HudArt.Margin, y - HudArt.Margin);
         }
 
-        private static void Blit(Texture2D tex, float xUnits, float yUnits) =>
+        internal static void Blit(Texture2D tex, float xUnits, float yUnits) =>
             BlitPx(tex, _ox + xUnits * U, _oy + yUnits * U, 1f);
 
         /// <summary>Draws a texture scaled to <paramref name="sizeUnits"/> across (arrows).</summary>
-        private static void Blit(Texture2D tex, float xUnits, float yUnits, float sizeUnits)
+        internal static void Blit(Texture2D tex, float xUnits, float yUnits, float sizeUnits)
         {
             float px = sizeUnits * U;
             BlitPx(tex, _ox + xUnits * U, _oy + yUnits * U, px / tex.width);
         }
 
-        private static void BlitPx(Texture2D tex, float left, float top, float scale)
+        internal static void BlitPx(Texture2D tex, float left, float top, float scale)
         {
             var src = tex.GetPixels();
             int tw = tex.width, th = tex.height;
@@ -219,7 +219,7 @@ namespace Tycoon.EditorTools
             }
         }
 
-        private static void Plot(int x, int y, Color src, float cover)
+        internal static void Plot(int x, int y, Color src, float cover)
         {
             if (x < 0 || y < 0 || x >= _w || y >= _h) return;
             int i = (_h - 1 - y) * _w + x;
@@ -233,7 +233,7 @@ namespace Tycoon.EditorTools
                 (src.b * sa + dst.b * dst.a * (1f - sa)) / oa, oa);
         }
 
-        private static void Rect(float x, float y, float w, float h, Color c, bool inMock = false)
+        internal static void Rect(float x, float y, float w, float h, Color c, bool inMock = false)
         {
             float ox = inMock ? _ox : 0f, oy = inMock ? _oy : 0f;
             float sw = inMock ? w * U : w, sh = inMock ? h * U : h;
@@ -243,7 +243,7 @@ namespace Tycoon.EditorTools
                     Plot(x0 + xx, y0 + yy, c, 1f);
         }
 
-        private static void Dot(float cx, float cy, float diameter, Color c, float alpha)
+        internal static void Dot(float cx, float cy, float diameter, Color c, float alpha)
         {
             float r = diameter * 0.5f * U;
             float px = _ox + cx * U, py = _oy + cy * U;
@@ -311,7 +311,7 @@ namespace Tycoon.EditorTools
         /// Draws lettering with its vertical centre at (x, y) in mock units. align: 0 centred,
         /// -1 starts at x. Lower-case letters are drawn as smaller capitals.
         /// </summary>
-        private static void Text(string s, float x, float y, float capUnits, Color fill, int align, float track = 0f)
+        internal static void Text(string s, float x, float y, float capUnits, Color fill, int align, float track = 0f)
         {
             float cap = capUnits * U;
             float stroke = cap * 0.20f;

@@ -65,8 +65,10 @@ namespace Tycoon.Stations
 
             if (costPerPoint > 0d)
             {
-                var wallet = GameRoot.Money;
-                double spent = wallet != null ? wallet.TrySpend(points * costPerPoint) : 0d;
+                // The paid part comes out of the cash in hand. With none, the free fraction below
+                // still repairs, so a jam and empty pockets is never a dead end.
+                var cash = Tycoon.Player.CashStack.Of(Carry);
+                double spent = cash != null ? cash.TrySpend(points * costPerPoint) : 0d;
 
                 float paidFor = (float)(spent / costPerPoint);
                 float freeOfCharge = points * freeRepairFraction;

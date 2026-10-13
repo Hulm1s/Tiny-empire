@@ -21,7 +21,10 @@ namespace Tycoon.UI
     {
         public static HudRoot Instance { get; private set; }
 
-        private Text _moneyLabel;
+        private Text _moneyLabel;       // the account, small
+        private Text _cashLabel;        // cash in hand, big
+        private Tycoon.Player.CashStack _cashSub;
+        private double _lastCash;
         private RectTransform _moneyPanel;
         private Canvas _canvas;
         private RectTransform _safeArea;
@@ -120,6 +123,7 @@ namespace Tycoon.UI
         {
             var wallet = GameRoot.Money;
             if (wallet != null) wallet.Changed -= OnMoneyChanged;
+            if (_cashSub != null) _cashSub.Changed -= OnCashChanged;
             if (Instance == this) Instance = null;
         }
 
@@ -157,9 +161,12 @@ namespace Tycoon.UI
 
         private void BuildMoneyReadout()
         {
-            // The framed plaque with the coin: 420 x 116 visible, top centre, as before.
-            _moneyPanel = UIFactory.CreatePlate("MoneyPanel", _safeArea, new Vector2(420f, 116f), 44f,
-                HudArt.Looks.Plaque, out _);
+            // The two-number plaque, 420 x 150 visible, top centre: cash in hand big beside the coin,
+            // the account small beside the bank, on a recessed pill. The frame, the coin's place and
+            // the bank disc are the approved art (CashArt.PlaqueTexture); the numbers are live text.
+            _moneyPanel = UIFactory.CreatePlate("MoneyPanel", _safeArea,
+                new Vector2(CashArt.PlaqueWidth, CashArt.PlaqueHeight), 44f, HudArt.Looks.Plaque, out Image plaqueArt);
+            plaqueArt.sprite = CashArt.PlaqueSprite();
             _moneyPanel.anchorMin = new Vector2(0.5f, 1f);
             _moneyPanel.anchorMax = new Vector2(0.5f, 1f);
             _moneyPanel.pivot = new Vector2(0.5f, 1f);
@@ -167,23 +174,40 @@ namespace Tycoon.UI
 
             // 92 units: small enough that the coin and its outline sit wholly inside the plaque.
             var coinRect = UIFactory.CreateRect("Coin", _moneyPanel);
-            coinRect.anchorMin = coinRect.anchorMax = new Vector2(0f, 0.5f);
+            coinRect.anchorMin = coinRect.anchorMax = new Vector2(0f, 1f);
             coinRect.sizeDelta = new Vector2(92f, 92f);
-            coinRect.anchoredPosition = new Vector2(62f, -2.5f);
+            coinRect.anchoredPosition = new Vector2(CashArt.PlaqueLayout.CoinCentre.x, -CashArt.PlaqueLayout.CoinCentre.y - 2.5f);
             var coin = coinRect.gameObject.AddComponent<Image>();
             coin.sprite = HudArt.Coin(92f);
             coin.raycastTarget = false;
 
-            _moneyLabel = UIFactory.CreateLabel("MoneyLabel", _moneyPanel, "$0", 64);
-            _moneyLabel.rectTransform.anchorMin = Vector2.zero;
-            _moneyLabel.rectTransform.anchorMax = Vector2.one;
-            _moneyLabel.rectTransform.offsetMin = new Vector2(120f, 0f);
-            _moneyLabel.rectTransform.offsetMax = new Vector2(-20f, 0f);
+            // Carried cash: the big number.
+            _cashLabel = UIFactory.CreateLabel("CashLabel", _moneyPanel, "$0", 64, TextAnchor.MiddleLeft);
+            PlaceLabel(_cashLabel, CashArt.PlaqueLayout.CashTextLeft, new Vector2(280f, 84f));
+            _cashLabel.resizeTextForBestFit = true;
+            _cashLabel.resizeTextMinSize = 34;
+            _cashLabel.resizeTextMaxSize = 64;
+            _cashLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+            _cashLabel.verticalOverflow = VerticalWrapMode.Truncate;
+
+            // The account: the small one, in the pill beside the bank.
+            _moneyLabel = UIFactory.CreateLabel("AccountLabel", _moneyPanel, "$0", 34, TextAnchor.MiddleLeft);
+            PlaceLabel(_moneyLabel, CashArt.PlaqueLayout.AccountTextLeft, new Vector2(270f, 44f));
+            _moneyLabel.color = new Color(0.78f, 0.9f, 1f);
             _moneyLabel.resizeTextForBestFit = true;
-            _moneyLabel.resizeTextMinSize = 34;
-            _moneyLabel.resizeTextMaxSize = 64;
+            _moneyLabel.resizeTextMinSize = 20;
+            _moneyLabel.resizeTextMaxSize = 34;
             _moneyLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
             _moneyLabel.verticalOverflow = VerticalWrapMode.Truncate;
+        }
+
+        private static void PlaceLabel(Text label, Vector2 left, Vector2 size)
+        {
+            var r = label.rectTransform;
+            r.anchorMin = r.anchorMax = new Vector2(0f, 1f);
+            r.pivot = new Vector2(0f, 0.5f);
+            r.sizeDelta = size;
+            r.anchoredPosition = new Vector2(left.x, -left.y);
         }
 
         private void BuildDebugReadout()
@@ -231,9 +255,33 @@ namespace Tycoon.UI
             if (delta > 0d) _moneyPulse = 1f;
         }
 
+        /// <summary>The player's cash is rebuilt with every scene, so follow whichever one is current.</summary>
+        private void BindCash()
+        {
+            var now = Tycoon.Player.CashStack.Instance;
+            if (now == _cashSub) return;
+
+            if (_cashSub != null) _cashSub.Changed -= OnCashChanged;
+            _cashSub = now;
+            if (_cashSub != null) _cashSub.Changed += OnCashChanged;
+            _lastCash = _cashSub != null ? _cashSub.Amount : 0d;
+            if (_cashLabel != null) _cashLabel.text = MoneyFormat.Short(_lastCash);
+        }
+
+        private void OnCashChanged()
+        {
+            if (_cashSub == null || _cashLabel == null) return;
+            double now = _cashSub.Amount;
+            _cashLabel.text = MoneyFormat.Short(now);
+            if (now > _lastCash) _moneyPulse = 1f;
+            _lastCash = now;
+        }
+
         private void Update()
         {
             if (_safeArea != null) RefreshSafeArea();
+
+            BindCash();
 
             if (_moneyPanel != null && _moneyPulse > 0f)
             {

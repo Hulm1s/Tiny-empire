@@ -175,10 +175,11 @@ namespace Tycoon.UI
             if (!changed) { Close(keepLook: false); return; }
 
             double cost = _station.CurrentPrice;
-            var wallet = GameRoot.Money;
-            if (wallet == null || !wallet.CanAfford(cost)) return;
+            // Paid from the cash in hand, like every other purchase.
+            var cash = Tycoon.Player.CashStack.Instance;
+            if (cash == null || !cash.CanAfford(cost)) return;
 
-            wallet.TrySpend(cost);
+            cash.TrySpend(cost);
             _decor.Commit(_edit);
 
             Vector3 at = _station.transform.position + Vector3.up * 2f;
@@ -626,8 +627,8 @@ namespace Tycoon.UI
             bool first = !_decor.HasPainted;
             bool changed = first || !_edit.SameAs(_original);
             double cost = _station.CurrentPrice;
-            var wallet = GameRoot.Money;
-            bool affordable = wallet != null && wallet.CanAfford(cost);
+            var cash = Tycoon.Player.CashStack.Instance;
+            bool affordable = cash != null && cash.CanAfford(cost);
 
             string what = first ? "FIRST PAINT JOB" : "REPAINT";
 
@@ -638,7 +639,7 @@ namespace Tycoon.UI
             }
             else if (!affordable)
             {
-                _status.text = $"{what} {MoneyFormat.Short(cost)}  -  NOT ENOUGH MONEY";
+                _status.text = $"{what} {MoneyFormat.Short(cost)}  -  NOT ENOUGH CASH";
                 _status.color = Bad;
             }
             else

@@ -31,6 +31,10 @@ namespace Tycoon.Stations
                  "supermarket sells at one and a half times what the same goods fetch on the farm.")]
         public float priceMultiplier = 1.5f;
 
+        [Tooltip("Where the takings land: the cash pile beside the checkout. The cashier never touches it. " +
+                 "Empty pays the account.")]
+        public CashPile pile;
+
         /// <summary>Fired with the money taken per unit, for popups and audio.</summary>
         public event Action<double> Sold;
 
@@ -79,7 +83,8 @@ namespace Tycoon.Stations
             if (!customer.ScanNext(out ItemDefinition item) || item == null) return false;
 
             double price = item.basePrice * priceMultiplier * queue.PriceMultiplier;
-            GameRoot.Money?.Add(price);
+            if (pile != null) pile.Deposit(price);
+            else GameRoot.Money?.Add(price);
             Sold?.Invoke(price);
 
             SoundFx.PlayAt(Sfx.Coin, transform.position);

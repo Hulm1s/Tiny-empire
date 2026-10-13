@@ -15,10 +15,10 @@ MonoBehaviour:
   id: egg
   displayName: Egg
   color: {r: 0.96, g: 0.94, b: 0.86, a: 1}
-  visualPrefab: {fileID: 0}
+  visualPrefab: {fileID: 8224037516867763362, guid: 4c8e4fadff2845147b8ecb0824c7ad9f, type: 3}
   carryMaterial: {fileID: 2100000, guid: 25e1ef5dcd8cd534f996ef7e2834e949, type: 2}
   icon: {fileID: 0}
-  stackHeight: 0.26
+  stackHeight: 0.42
   basePrice: 5
   perishable: 1
   spoilSeconds: 90

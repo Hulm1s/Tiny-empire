@@ -15,10 +15,10 @@ MonoBehaviour:
   id: milk
   displayName: Milk
   color: {r: 0.95, g: 0.96, b: 0.98, a: 1}
-  visualPrefab: {fileID: 0}
+  visualPrefab: {fileID: 3829938440637411823, guid: 77a9d9395ac13ef47a112c0a17a46910, type: 3}
   carryMaterial: {fileID: 2100000, guid: e2af8be022ebbb045bc666ec2ad71a37, type: 2}
   icon: {fileID: 0}
-  stackHeight: 0.3
+  stackHeight: 0.48
   basePrice: 12
   perishable: 1
   spoilSeconds: 120

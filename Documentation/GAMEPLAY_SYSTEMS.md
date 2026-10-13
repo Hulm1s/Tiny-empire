@@ -263,8 +263,11 @@ Saveable, and catches up on offline rot when loaded.
 
 ### `ProducerMachine`
 Consumes `input`, fills `output`, over `secondsPerOutput`, wearing `Durability` as it goes.
-Holds the **livestock headcount** (`units`, up to `maxUnits`). Saveable, with deferred offline
-catch-up.
+Holds the **livestock headcount** (`units`, up to `maxUnits` = 5 on all four farm buildings; hen 7 s, cow 8 s per
+unit; buffers coop 20 feed / 24 eggs, shed 20 / 20). Saveable, with deferred offline catch-up.
+Livestock purchases (`UpgradeStation`): base price coop A 120 / coop B 180 / cow A 450 / cow B 600, `priceGrowth` 1.6
+(4 purchases per building), drain per tick `max(payPerTick = 5, CurrentPrice / 40)` like the gates. Workers carry 6
+(`LevelBuildKit.BuildWorker`).
 
 It also implements `IProducer`, which is what registers it with `ProductRegistry` (§8).
 
@@ -285,12 +288,13 @@ Four short columns side by side on one street. `FarmSceneBuilder.cs:168-173` dra
 
 ```
 CornFieldA / CornFieldB     (HarvestStation, 8 plots, regrow 2.2s)
+CornFieldA2 / CornFieldB2   (second field of each line, north of the first - bought, see "Second fields")
         ↓  player or Farmer carries corn
-CoopA.Feed                  (DepositStation → input ItemBuffer, cap 10)
+CoopA.Feed                  (DepositStation → input ItemBuffer, cap 20)
         ↓
-CoopA ProducerMachine       (6s per egg, per chicken; 1–3 chickens)
+CoopA ProducerMachine       (7s per egg, per chicken; 1–5 chickens)
         ↓
-CoopA output buffer         (cap 12)
+CoopA output buffer         (cap 24)
         ↓
 CoopA.Collect               (CollectStation)
         ↓  player or Cashier carries eggs
@@ -519,13 +523,13 @@ And why piece rates rather than wages (history - fees are now 0, so neither appl
 
 | Role / id | Pickup | Dropoff | Fee/unit | Real price |
 |---|---|---|---|---|
-| Farmer / `HarvesterA` | CornFieldA | CoopA.Feed | 0 | 250 |
+| Farmer / `HarvesterA` | CornFieldA **or CornFieldA2** | CoopA.Feed | 0 | 250 |
 | Cashier / `SellerA` | CoopA.Collect | CounterA | 0 | 400 |
-| Farmer 2 / `HarvesterB` | CornFieldB | CoopB.Feed | 0 | 700 |
+| Farmer 2 / `HarvesterB` | CornFieldB **or CornFieldB2** | CoopB.Feed | 0 | 700 |
 | Cashier 2 / `SellerB` | CoopB.Collect | CounterA | 0 | 800 |
-| Hay Hand / `HayHandA` | HayFieldA | CowShedA.Feed | 0 | 1500 |
+| Hay Hand / `HayHandA` | HayFieldA **or HayFieldA2** | CowShedA.Feed | 0 | 1500 |
 | Milk Run / `MilkRunA` | CowShedA.Collect | CounterB | 0 | 1700 |
-| Hay Hand 2 / `HayHandB` | HayFieldB | CowShedB.Feed | 0 | 2200 |
+| Hay Hand 2 / `HayHandB` | HayFieldB **or HayFieldB2** | CowShedB.Feed | 0 | 2200 |
 | Milk Run 2 / `MilkRunB` | CowShedB.Collect | CounterB | 0 | 2400 |
 
 All defined in `FarmSceneBuilder.cs:370-410`. **All prices currently flattened to $10** — see
@@ -554,12 +558,18 @@ walking away keeps what you have paid.
 
 | Gate | Label | Real price | Reveals |
 |---|---|---|---|
-| `farm.unlock.cornB` | `Field` | 600 | CornFieldB |
-| `farm.unlock.coopB` | `Coop` | 900 | CoopB **+ HarvesterB + SellerB hires** |
-| `farm.unlock.counterB` | `Dairy Till` | 1400 | CounterB |
-| `farm.unlock.cowA` | `Dairy` | 3200 | CowShedA **+ HayFieldA + HayHandA + MilkRunA** |
-| `farm.unlock.hayB` | `Meadow` | 4500 | HayFieldB |
-| `farm.unlock.cowB` | `Cow Shed` | 6000 | CowShedB **+ HayHandB + MilkRunB** |
+| `farm.unlock.cornA2` | `Field` | 350 | CornFieldA2 (on sale from day one) |
+| `farm.unlock.cornB` | `Field` | 400 | CornFieldB |
+| `farm.unlock.coopB` | `Coop` | 500 | CoopB **+ HarvesterB + SellerB hires + the `cornB2` gate** |
+| `farm.unlock.cornB2` | `Field` | 700 | CornFieldB2 (offered once Coop B is bought) |
+| `farm.unlock.counterB` | `Dairy Till` | 800 | CounterB |
+| `farm.unlock.cowA` | `Dairy` | 2200 | CowShedA **+ HayFieldA + HayHandA + MilkRunA + the `hayA2` gate** |
+| `farm.unlock.hayA2` | `Meadow` | 1800 | HayFieldA2 (offered once the Dairy is bought) |
+| `farm.unlock.cowB` | `Cow Shed` | 4500 | CowShedB **+ HayFieldB + HayHandB + MilkRunB + the `hayB2` gate** |
+| `farm.unlock.hayB2` | `Meadow` | 2800 | HayFieldB2 (offered once Cow Shed B is bought) |
+
+(The old stand-alone `farm.unlock.hayB` Meadow gate is gone: meadow B is sold with Cow Shed B.
+Prices in the Field/Coop rows of older notes - 600/900 - were already stale.)
 
 ### The two rules the bundling encodes
 
@@ -577,8 +587,21 @@ walking away keeps what you have paid.
 > first could fill their arms with hay that had nowhere to be put down. A full stack cannot pick
 > up eggs, eggs are the only income, and the shed costs money: no way out except starting over.
 
-Note that the second meadow (`hayB`) *is* sold separately, because by then a shed that eats hay
-already exists.
+The second meadow follows the same rule now: `hayB` is sold with Cow Shed B (one purchase, $4,500)
+instead of as a separate gate. The *second fields* (`hayA2`, `hayB2`) are separate purchases, but
+their gates are only revealed by the shed's own gate, so hay still never exists before a cow.
+
+### Second fields (farm expansion)
+
+Each production line has a bought second field north of the first
+(`FieldRow2 = FieldRow + FieldSize.y + 0.6 = 3.05`, same x column, same 4.5 x 3.5 size and crop,
+saved as `farm.cornA2 / cornB2 / hayA2 / hayB2`). The line's hire carries `WorkerAgent.routes`
+= [field 1 -> feed, field 2 -> feed]; while the arms are empty `WorkerAgent.ChooseField` sends the
+worker to the field with **most crop ready** (inactive = not bought = skipped; the current field
+is kept unless the other has at least 2 more ready or the current one is empty; with every
+field empty the worker waits at the current one). `pickup`/`dropoff` stay equal to route 0, so
+the audit's route checks still hold and `SquareAudit.Progression` additionally checks every field
+route (crop matches the feed square, both ends switchable).
 
 ### How locked content is hidden
 
@@ -811,7 +834,7 @@ list of `UnlockStation`s are bought, `UpgradeStation`s are `IsMaxed`, `ChoreStat
 done, `ItemBuffer`s are `emptied` (the rubbish piles) and `PaintStation`s are `painted` (first job
 confirmed). No state of its own (it re-derives the answer from saved components on load); polls once at
 start and every 0.5 s. The supermarket gate `farm.unlock.market` is revealed by one watching
-**all 6 farm gates, all 8 hire squares and all 4 BuyUnit stations**. Then it costs **$10,000**.
+**all 10 farm gates (incl. the four second fields), all 8 hire squares and all 4 BuyUnit stations** (each building at 5 animals). Then it costs **$7,000**.
 Paying it reveals the market root and the farm-side `TravelToTown` square, which sits on the
 gate's own spot at the east end of the road (x = 23).
 
@@ -822,10 +845,10 @@ The shop is a derelict on arrival. Each stage reveals the next, through `RevealW
 | Stage | What the player does | Cost | Reveals |
 |---|---|---|---|
 | 0 | **Carry the rubbish out.** 4 piles of 4 bags (`BagsPerPile`); each pile is an `ItemBuffer` of `Trash` with a COLLECT square (`market.trash.N`). The player carries 8, so at least two trips to the **bin outside on the forecourt** (`DiscardStation`) | free | Repair gate + PAINT square, when every pile is empty |
-| 1 | **Repair** (`market.unlock.repair`) and the **first paint job** at the PAINT square (`market.paint`, a menu - see below) | $1,500 / $1,000 | Repair swaps the wrecked shelves and desk for working ones; the first confirmed paint job swaps the grubby coat for the painted one |
+| 1 | **Repair** (`market.unlock.repair`) and the **first paint job** at the PAINT square (`market.paint`, a menu - see below) | $3,000 / $2,000 | Repair swaps the wrecked shelves and desk for working ones; the first confirmed paint job swaps the grubby coat for the painted one |
 | 2 | **OPEN** (`market.open`, a `ChoreStation`, 1 ring of 2 s) | free | the whole working shop (stage 3) |
 | 3 | The shop trades | - | sklad1's storage + supply, the first row's STOCK and COLLECT squares, checkout 1 and its queue, the cashier and both sklad1 stockers on sale, lit sign |
-| 4 | **Growth** (below) | $1,000-$3,500 each | a second shelf row, three new products, a second checkout, COMING SOON |
+| 4 | **Growth** (below) | $3,000-$5,500 each | a second shelf row, three new products, a second checkout, COMING SOON |
 
 `Stations/ClearablePile.cs` sits on each trash buffer: it hides litter pieces as the buffer drains
 and switches the COLLECT square off when it is empty. No state of its own - a half-cleared pile is
@@ -891,11 +914,11 @@ along the bottom wall (z -4.7) to the door. COMING SOON sits just inside the doo
 ### Storage and supply
 
 Three crates in each room (`market.storage.<egg|milk|corn|bread|apples|yogurt>`, capacity 20),
-each an `ItemBuffer` plus `Stations/SupplyFeed.cs`: **one unit every 4 s** (15 a minute) while
+each an `ItemBuffer` plus `Stations/SupplyFeed.cs`: **one unit every 6 s** (10 a minute) while
 not full, taking nothing from the farm. A `CollectStation` square per crate - the player collects
 exactly like a coop's COLLECT. Perishables rot in the crate and on the shelf like anywhere else
 (existing `ItemBuffer` behaviour); that is the restock pressure. Offline: `SupplyFeed` saves
-`clock` and `lastUnix` and on the first frame after a load adds `ClampOffline(gap) / 4` units
+`clock` and `lastUnix` and on the first frame after a load adds `ClampOffline(gap) / 6` units
 (capped by capacity). The buffer's own offline spoilage runs first, so a long absence tops the
 crate up with fresh goods.
 
@@ -958,7 +981,7 @@ fetching goods for a shelf the other stocker is already filling. `WillUse` is de
 the CURRENT pair: if it covered all routes a stocker walking past the apple crate would fill its
 arms with apples. Sklad1's stockers only ever carry egg/milk/corn, sklad2's bread/apples/yogurt.
 Workers with no `routes` (every farm hand and cashier) behave exactly as before.
-**Cashiers** ($1,500 each, $0.50/item): pickup = dropoff = the checkout, so the arms never fill
+**Cashiers** ($3,500 each, $0.50/item): pickup = dropoff = the checkout, so the arms never fill
 and it stands scanning; one per checkout; it steps aside whenever the player serves.
 
 ### Growth
@@ -968,11 +991,11 @@ After the shop is staffed it grows one product at a time, every step an ordinary
 
 ```
 cashier 1 + both sklad1 stockers hired                 (RevealWhenAll)
-  -> S21 shelf $1,000 -> "Order Bread" $1,500
+  -> S21 shelf $3,000 -> "Order Bread" $4,000
         ordering reveals: bread's crate, collect and stock squares,
-        sklad2's two stockers, the SECOND CHECKOUT $3,000, and shelf S22
-        checkout 2 reveals its desk, queue and cashier 2 ($1,500)
-  -> S22 $1,500 -> "Order Apples" $2,500 -> S23 $2,000 -> "Order Yogurt" $3,500
+        sklad2's two stockers ($2,500 each), the SECOND CHECKOUT $4,500, and shelf S22
+        checkout 2 reveals its desk, queue and cashier 2 ($3,500)
+  -> S22 $3,500 -> "Order Apples" $5,000 -> S23 $4,000 -> "Order Yogurt" $5,500
 all three shelves and all three orders bought          (RevealWhenAll)
   -> COMING SOON: a locked square (LockedStation) just inside the front door, east side, held for the butcher
 ```
@@ -986,21 +1009,21 @@ three lines trade from the day the shop opens, and every growth step is optional
 
 | What | Constant | Value |
 |---|---|---|
-| Supermarket price | `FarmSceneBuilder.MarketPrice` | $10,000 |
-| Repair | `RepairPrice` | $1,500 |
-| First paint job / repaint | `FirstPaintPrice` / `RepaintPrice` | $1,000 / $200 |
+| Supermarket price | `FarmSceneBuilder.MarketPrice` | $7,000 |
+| Repair | `RepairPrice` | $3,000 |
+| First paint job / repaint | `FirstPaintPrice` / `RepaintPrice` | $2,000 / $200 |
 | Rubbish | `TrashPositions` (4 piles) x `BagsPerPile` | 4 x 4 bags |
-| Supply rate | `SupplySecondsPerUnit` | 4 s |
+| Supply rate | `SupplySecondsPerUnit` | 6 s |
 | Shelf / crate capacity | `ShelfCapacity` / `StorageCapacity` | 12 / 20 |
 | Shopper interval | `ShopperIntervalSeconds` | 6 s at 3 lines |
 | Demand per extra line / cap | `CustomerQueue.demandPerExtraLine` / `maxLineDemand` | +25 % / 2x |
 | Queue slots (each) / max shoppers | `QueueSlots` / `MaxShoppers` | 3 / 8 |
 | Checkout multiplier | `CheckoutStation.priceMultiplier` | 1.5 |
-| Stocker | `StockerPrice` / `StockerFee` | $800 / $0 |
-| Cashier | `CashierPrice` / `CashierFee` | $1,500 / $0 |
-| Shelves S21 / S22 / S23 | `GrowthShelfPrices` | $1,000 / $1,500 / $2,000 |
-| Orders bread / apples / yogurt | `GrowthOrderPrices` | $1,500 / $2,500 / $3,500 |
-| Second checkout | `Checkout2Price` | $3,000 |
+| Stocker | `StockerPrice` / `StockerFee` | $2,500 / $0 |
+| Cashier | `CashierPrice` / `CashierFee` | $3,500 / $0 |
+| Shelves S21 / S22 / S23 | `GrowthShelfPrices` | $3,000 / $3,500 / $4,000 |
+| Orders bread / apples / yogurt | `GrowthOrderPrices` | $4,000 / $5,000 / $5,500 |
+| Second checkout | `Checkout2Price` | $4,500 |
 | Bread / apples / yogurt | `FarmSceneBuilder.CreateItems` | base 7 / 4 / 10 (x1.5 at the till); bread rots 150 s, yogurt 120 s |
 
 All purchase prices go through `FarmSceneBuilder.Price()`, so `TestPriceOverride` flattens the
@@ -1025,3 +1048,36 @@ Extended earlier: `CustomerAgent`/`CustomerQueue` (browsing mode),
 the editor `LevelBuildKit` (boundary and fence by edges, grass/fence mesh names),
 `FarmSceneBuilder` (market link; `Gate`, `BuildHire`, `Price`, `LevelLocal`, `Items` are now
 `internal`), `SquareAudit` (see `EDITING_GUIDE.md` section 25).
+
+---
+
+## 20. Physical cash, the ATM and the account
+
+Money is a thing the player carries. Every number here was read off the code.
+
+- **`Wallet` is the ACCOUNT.** Unchanged (`GameRoot.Money`); an older save's balance stays on it and carried cash starts at 0.
+- **`CashStack`** (`Scripts/Player/CashStack.cs`, on the player, saved as `player.cash`) is the cash in hand: one
+  `double`, unlimited, drawn as banded bundles stacked 2 x 2 per layer on the player's BACK (`CashAnchor`,
+  `CharacterLibrary.BackAnchor`), separate from the goods `CarryStack` in front. `CashStack.Of(carry)` returns the
+  player's cash or null for a worker, so workers can neither pay nor collect.
+- **`BundleStackView`** (same file) draws an amount: one bundle per $10 until the stack would pass `maxLayers`
+  (4 on the back, 15 at a till); past that bundles MERGE (each stands for 10x) so height stays sane while the amount
+  has no limit. Bundles are instances of `Prefabs/CashBundle.prefab` (built by `CashModels.BundlePrefab`; material and
+  texture assets, never runtime Materials).
+- **`CashPile`** (`Stations/CashPile.cs`) is a till's takings, saved as `<till>.cash`. `RegisterStation`/`CheckoutStation`
+  `Deposit` sales there instead of `Wallet.Add`. Exception: a farm till whose `accountWhenUnlocked` (the
+  `farm.unlock.market` gate) is owned pays the ACCOUNT at **`RegisterStation.accountShare` = 0.5** (the farm goes
+  wholesale once the supermarket exists; the farm builder sets 0.5 on both farm tills; default 1). Supermarket
+  checkouts always pile.
+- **`CashCollectStation`** (same file) is the player-only square beside each till that moves the pile into the hand in
+  growing steps (`workerCompatible=false`, so a cashier never touches it).
+- **Paying** (`UnlockStation`, `UpgradeStation` incl. its refund, `RepairStation` paid part, `PaintMenu`) spends from
+  `CashStack`. `RepairStation.freeRepairFraction` is untouched, so a jam with empty pockets is still repairable
+  (the no-money-trap rule).
+- **`AtmStation`** (`Stations/AtmStation.cs`): WITHDRAW square (account into hand) with a smaller DEPOSIT square
+  (`deposit = true`). Stateless. One at the farm market row (`farm.atm`), one just inside the market door (`market.atm`).
+- **Wear off:** `Durability.retireWhen` = the market gate. When it is owned (also on restore) the machine is restored to
+  full, `Wear` does nothing, and `retireDisable` (the repair square) is switched off. Derived from the saved purchase:
+  no save field.
+- **HUD:** the plaque shows cash in hand (big, by the coin) and the account (small, by the bank icon).
+  **TaskBoard** adds "Collect cash at the till" / "Get cash at the ATM" goals when carried cash cannot cover the cheapest purchase.

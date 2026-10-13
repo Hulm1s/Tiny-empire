@@ -150,6 +150,16 @@ namespace Tycoon.EditorTools
         /// Where the butcher will go: a locked bay just inside the front door on the east side,
         /// south-west of the PAINT square, where every shopper and the player walk past it.
         /// </summary>
+        // ---- cash -------------------------------------------------------------------
+        // Each checkout's takings lie on a small square south of its serving square, between it and
+        // the exit lane; the ATM stands just inside the door, east of the entry path.
+        private static readonly Vector3 CashOffset = new Vector3(0f, 0f, -1.65f);
+        private static readonly Vector2 CashSquareSize = new Vector2(1.8f, 1.5f);
+        private static readonly Vector3 AtmPosition = new Vector3(2.75f, 0f, -0.85f);
+        private static readonly Vector2 AtmWithdrawSize = new Vector2(1.6f, 1.6f);
+        private static readonly Vector2 AtmDepositSize = new Vector2(1.3f, 1.5f);
+        private const float AtmDepositDX = -1.9f;
+
         private static readonly Vector3 ComingSoonPosition = new Vector3(5.2f, 0f, -3.2f);
 
         // The checkouts: two counters side by side in the west half of the shop, below the second
@@ -179,11 +189,11 @@ namespace Tycoon.EditorTools
         // stocker) carries from the crate to the shelf; shoppers carry from the shelf to the
         // checkout. The shelf is the only place goods are sold from.
         //
-        // 4 s a unit is 15 a minute a product. A shopper basket averages about three units
-        // every six seconds across all the shelves, so one product sells roughly ten a
-        // minute: supply is comfortably ahead of a kept-up shelf, and short of it only when
-        // the carrying stops.
-        private const float SupplySecondsPerUnit = 4f;
+        // 6 s a unit is 10 a minute a product (it was 4 s, 15 a minute). A shopper basket averages
+        // about three units every six seconds across all the shelves, so one product sells
+        // roughly ten a minute: supply now just keeps pace with a kept-up shelf, so stocking
+        // keeps mattering (farm expansion round, market_sim.py).
+        private const float SupplySecondsPerUnit = 6f;
         private const int ShelfCapacity = 12;
         private const int StorageCapacity = 20;
 
@@ -281,9 +291,9 @@ namespace Tycoon.EditorTools
         // Prices sit between a farm hand (250-700) and a dairy hand (1500-2400): a stocker
         // pays back in a few shelves of sales, the cashier is the bigger step because it
         // frees the player entirely from the till.
-        private const double StockerPrice = 800d;
+        private const double StockerPrice = 2500d;
         private const double StockerFee = 0d;   // staff cost only their hire price
-        private const double CashierPrice = 1500d;
+        private const double CashierPrice = 3500d;
         private const double CashierFee = 0d;
 
         /// <summary>Stocker hire squares: beside each doorway, on the room side, not in it.</summary>
@@ -317,9 +327,9 @@ namespace Tycoon.EditorTools
         // Prices, in order bread / apples / yogurt. Each product costs more than the last, and
         // each shelf-and-order pair roughly pays for itself in a few minutes of its own sales:
         // bread sells for 10, apples for 6, yogurt for 15.
-        private static readonly double[] GrowthShelfPrices = { 1000d, 1500d, 2000d };
-        private static readonly double[] GrowthOrderPrices = { 1500d, 2500d, 3500d };
-        private const double Checkout2Price = 3000d;
+        private static readonly double[] GrowthShelfPrices = { 3000d, 3500d, 4000d };
+        private static readonly double[] GrowthOrderPrices = { 4000d, 5000d, 5500d };
+        private const double Checkout2Price = 4500d;
 
         /// <summary>
         /// The bin is OUTSIDE the shop, on the forecourt at the east end, because the shop's
@@ -354,8 +364,8 @@ namespace Tycoon.EditorTools
         /// The first confirmed paint job is the renovation step; every repaint after it is cheap
         /// enough to try a different look.
         /// </summary>
-        private const double RepairPrice = 1500d;
-        private const double FirstPaintPrice = 1000d;
+        private const double RepairPrice = 3000d;
+        private const double FirstPaintPrice = 2000d;
         private const double RepaintPrice = 200d;
 
         private static readonly Vector3 RepairPosition = new Vector3(-4.0f, 0f, 1.2f);
@@ -398,6 +408,12 @@ namespace Tycoon.EditorTools
             var shop = BuildShop(root);
             BuildStock(root, shop, items);
             BuildCheckout(root, shop);
+
+            // The cash machine just inside the door, east of the entry path. Open from the moment
+            // the market is bought: the repair and the paint have to be paid in cash, and the
+            // account is where the farm's takings now land.
+            LevelBuildKit.BuildAtm("market.atm", "Atm", root, AtmPosition,
+                AtmWithdrawSize, AtmDepositSize, AtmDepositDX);
             BuildStaff(root, shop);
             BuildRenovation(root, shop, items);
             BuildGrowth(root, shop);
@@ -527,6 +543,7 @@ namespace Tycoon.EditorTools
             public GameObject Root;
             public GameObject Desk;
             public CheckoutStation Serve;
+            public Tycoon.Stations.CashPile Pile;
             public Tycoon.Customers.CustomerQueue Queue;
         }
 
@@ -922,7 +939,8 @@ namespace Tycoon.EditorTools
             display.rowsPerBoard = 4;
             display.pitchX = 0.4f;
             display.pitchZ = 0.42f;
-            display.boardHeights = new[] { 0.8f, 1.1f };
+            display.boardHeights = new[] { 0.8f, 1.32f };
+            display.maxUnitHeight = 0.5f;
             display.cubeFootprint = new Vector2(0.34f, 0.38f);
 
             var feed = crate.AddComponent<SupplyFeed>();
@@ -1094,6 +1112,12 @@ namespace Tycoon.EditorTools
             till.Serve = LevelBuildKit.Station<CheckoutStation>($"{id}.serve", "Serve",
                 checkout.transform, Vector3.zero, ServeSize, "Serve",
                 new Color(0.45f, 0.85f, 0.6f), smallestCard: ServeSize);
+
+            // The checkout's takings: a pile of cash on its own square just south of the serving
+            // square. The cashier never touches it; only the player's square gathers it.
+            var cash = LevelBuildKit.BuildCashPoint(id, checkout.transform, CashOffset, CashSquareSize);
+            till.Serve.pile = cash.pile;
+            till.Pile = cash.pile;
 
             // What the queue faces: the counter, from the east side, level with the serving square.
             var counterPoint = Child(checkout.transform, "CounterPoint", new Vector3(-ServeDX, 0f, 0f));

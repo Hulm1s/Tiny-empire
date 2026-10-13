@@ -15,10 +15,10 @@ MonoBehaviour:
   id: corn
   displayName: Corn
   color: {r: 0.96, g: 0.78, b: 0.22, a: 1}
-  visualPrefab: {fileID: 0}
+  visualPrefab: {fileID: 4276036961085081183, guid: 53cfa3ca7d8a61a499f9635b401b0884, type: 3}
   carryMaterial: {fileID: 2100000, guid: 6b822dc6f9c55514ab3e10ca8a287ed9, type: 2}
   icon: {fileID: 0}
-  stackHeight: 0.3
+  stackHeight: 0.48
   basePrice: 1
   perishable: 0
   spoilSeconds: 180

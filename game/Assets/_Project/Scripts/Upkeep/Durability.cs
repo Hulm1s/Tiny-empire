@@ -1,5 +1,6 @@
 using System;
 using Tycoon.Core;
+using Tycoon.Stations;
 using UnityEngine;
 
 namespace Tycoon.Upkeep
@@ -26,13 +27,28 @@ namespace Tycoon.Upkeep
         [Tooltip("Below this fraction the machine raises an alert but still runs.")]
         [Range(0f, 1f)] public float warnBelow = 0.3f;
 
+        [Header("Wear off")]
+        [Tooltip("When this purchase is owned the machine stops wearing for good, is restored to full, " +
+                 "and the objects below are switched off. The farm points this at the supermarket: " +
+                 "after that the player never has to come back to fix anything. Derived from the saved " +
+                 "purchase, so it holds after a reload with no save entry of its own.")]
+        public UnlockStation retireWhen;
+
+        [Tooltip("Switched off (with their triggers) when this retires - the repair square.")]
+        public Behaviour[] retireDisable;
+
         [SerializeField] private float _current = -1f;
+
+        private bool _retired;
 
         public event Action Changed;
 
         public float Current => _current;
         public float Fraction => max <= 0f ? 1f : Mathf.Clamp01(_current / max);
-        public bool IsBroken => _current <= 0f;
+        public bool IsBroken => !_retired && _current <= 0f;
+
+        /// <summary>True once <see cref="retireWhen"/> has been bought: no more wear, ever.</summary>
+        public bool Retired => _retired;
         public bool NeedsAttention => Fraction <= warnBelow;
 
         public string SaveKey => SaveKeys.For(this);
@@ -42,13 +58,46 @@ namespace Tycoon.Upkeep
             if (_current < 0f) _current = max;
         }
 
-        private void OnEnable() => SaveSystem.Register(this);
-        private void OnDisable() => SaveSystem.Unregister(this);
+        private void OnEnable()
+        {
+            SaveSystem.Register(this);
+
+            if (retireWhen != null)
+            {
+                retireWhen.Completed += Retire;
+                if (retireWhen.IsUnlocked) Retire();
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (retireWhen != null) retireWhen.Completed -= Retire;
+            SaveSystem.Unregister(this);
+        }
+
+        /// <summary>Restores the machine to full and switches wear (and its repair square) off for good.</summary>
+        private void Retire()
+        {
+            _retired = true;
+            _current = max;
+
+            if (retireDisable != null)
+            {
+                foreach (var b in retireDisable)
+                {
+                    if (b == null) continue;
+                    var collider = b.GetComponent<Collider>();
+                    if (collider != null) collider.enabled = false;
+                    b.enabled = false;
+                }
+            }
+            Changed?.Invoke();
+        }
 
         /// <summary>Called by the machine each time it completes a unit.</summary>
         public void Wear(float amount)
         {
-            if (amount <= 0f || _current <= 0f) return;
+            if (_retired || amount <= 0f || _current <= 0f) return;
             _current = Mathf.Max(0f, _current - amount);
             Changed?.Invoke();
         }
@@ -70,7 +119,7 @@ namespace Tycoon.Upkeep
         public void RestoreState(string json)
         {
             var s = JsonUtility.FromJson<State>(json);
-            _current = Mathf.Clamp(s.current, 0f, max);
+            _current = _retired ? max : Mathf.Clamp(s.current, 0f, max);
             Changed?.Invoke();
         }
     }

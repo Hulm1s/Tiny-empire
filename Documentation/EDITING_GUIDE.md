@@ -52,8 +52,9 @@ Gate(root, "farm.unlock.coopB", "UnlockCoopB", new Vector3(ColumnB, 0f, Building
 
 **What to change:** the `double` literal (here `900d`).
 
-**Current real prices:** Field 600, Coop 900, Dairy Till 1400, Dairy 3200, Meadow 4500,
-Cow Shed 6000. Total **$16,600**.
+**Current real prices:** Field (corn B) 400, Coop 500, Dairy Till 800, Dairy 2200, Cow Shed B 4500
+(includes meadow B), plus the four second fields: corn A2 350, corn B2 700, hay A2 1800, hay B2 2800.
+Total **$13,250**.
 
 **What it affects:** `payPerTick` is derived — `Mathf.Max(4f, price / 40d)` (`FSB:564`) — so a
 gate always takes roughly **7.2 seconds of standing** to pay off regardless of price. Raising a
@@ -88,23 +89,25 @@ Milk Run 1700, Hay Hand 2 2200, Milk Run 2 2400. Total **$9,950**.
 
 **Where:** `FSB:313-369`, the `unitPrice:` argument on each `BuildWorkshop(...)`.
 
-**Current real:** CoopA chicken $120, CoopB $150, CowShedA cow $400, CowShedB $450.
+**Current real:** CoopA chicken $120, CoopB $180, CowShedA cow $450, CowShedB cow $600.
 
 **What to change:** `unitPrice: Price(120d)`.
 
 **What it affects:** this is the **base** price. Each subsequent purchase multiplies by
-`UpgradeStation.priceGrowth`, default **2.2×**, which the builder never overrides
-(`Stations/UpgradeStation.cs:30`). Since `startUnits=1` and `maxUnits=3`, only two purchases are
+`UpgradeStation.priceGrowth`, default **1.6×**, which the builder never overrides
+(`Stations/UpgradeStation.cs`). Since `startUnits=1` and `maxUnits=5`, four purchases are
 possible per building:
 
-| Building | Purchase 1 | Purchase 2 | Total |
-|---|---|---|---|
-| CoopA | $120 | $264 | $384 |
-| CoopB | $150 | $330 | $480 |
-| CowShedA | $400 | $880 | $1,280 |
-| CowShedB | $450 | $990 | $1,440 |
+| Building | Purchase 1 | 2 | 3 | 4 | Total |
+|---|---|---|---|---|---|
+| CoopA | $120 | $192 | $307 | $492 | $1,111 |
+| CoopB | $180 | $288 | $461 | $737 | $1,666 |
+| CowShedA | $450 | $720 | $1,152 | $1,843 | $4,165 |
+| CowShedB | $600 | $960 | $1,536 | $2,458 | $5,554 |
 
-**To change the growth curve instead:** `UpgradeStation.cs:30`, `priceGrowth`. That is a global
+The square drains `max(payPerTick = 5, currentPrice / 40)` per tick (same rule as the gates).
+
+**To change the growth curve instead:** `UpgradeStation.cs`, `priceGrowth`. That is a global
 default — it affects every building.
 
 ---
@@ -175,7 +178,7 @@ it takes to serve a customer just fills the queue and times people out, which co
 
 **Where:** `FSB:313-369`, `secondsPerOutput:` on each `BuildWorkshop(...)`.
 
-**Current:** coops **6 s** per egg, cow sheds **10 s** per milk.
+**Current:** coops **7 s** per egg, cow sheds **8 s** per milk.
 
 **What it affects:** the effective rate is `secondsPerOutput / max(1, units)` — so three chickens
 produce an egg every 2 s, three cows every 3.33 s.
@@ -183,8 +186,8 @@ produce an egg every 2 s, three cows every 3.33 s.
 **The pacing rationale** (`FSB:315-317`), which you should not casually break:
 
 > Paced against demand: a till takes a shopper every 5s wanting 1-4 items, so one counter absorbs
-> roughly 30 items a minute. One chicken at 6s an egg makes 10 - visibly short, which is what
-> makes the second chicken worth buying.
+> roughly 30 items a minute. One chicken at 7s an egg makes 8.6 - visibly short, which is what
+> makes the next chicken worth buying. (Re-balanced with `plans/econ/econ_sim.py`.)
 
 **Watch out:** faster production also means **faster wear**, because wear is charged per unit, not
 per second. A coop jams after 100 / 0.75 ≈ 133 eggs regardless of speed — so halving
@@ -196,7 +199,7 @@ per second. A coop jams after 100 / 0.75 ≈ 133 eggs regardless of speed — so
 
 **Where:** `FSB:313-369`, `inputCapacity:` and `outputCapacity:`.
 
-**Current:** coops `inputCapacity: 10, outputCapacity: 12`; cow sheds `10 / 10`.
+**Current:** coops `inputCapacity: 20, outputCapacity: 24`; cow sheds `20 / 20`.
 
 **What it affects:**
 - `inputCapacity` is the feed hopper — how much corn/hay one trip can deliver into.
@@ -204,7 +207,7 @@ per second. A coop jams after 100 / 0.75 ≈ 133 eggs regardless of speed — so
   `FULL - COLLECT`.
 - The capacity board over the building shows `CURRENT / MAX` of the **input** buffer.
 
-**Watch out:** the player's carry stack is **8** and a worker's is **4**. An `inputCapacity` below
+**Watch out:** the player's carry stack is **8** and a worker's is **6**. An `inputCapacity` below
 8 means a full player load cannot be deposited in one go, and the remainder stays in their arms.
 That is survivable (mixed stacks, and there are bins), but it feels bad.
 
@@ -219,7 +222,7 @@ trims old saves rather than corrupting them.
 
 **Where:** `FSB:313-369`, `startUnits:` and `maxUnits:`.
 
-**Current:** all four buildings `startUnits: 1, maxUnits: 3`.
+**Current:** all four buildings `startUnits: 1, maxUnits: 5` (pens stagger animals in two rows past three).
 
 **What it affects:** production rate, customer demand (via `ProductRegistry.Capacity`), the number
 of purchases available at the BUY square, and the pen visuals — `BuildPen` creates `maxUnits`
@@ -375,7 +378,7 @@ code in `WorkerAgent` / `CheckoutStation` is kept and does nothing at 0; set a f
 `WorkerAgent.cs:99,102`: `HoldAfterPlayerLeaves = 0.8f`, `HoldDistance = 2.9f`.
 
 ### Worker carry capacity
-`LBK:626`, the `int capacity = 4` default parameter on `BuildWorker`. `BuildHire` never passes it,
+`LevelBuildKit.BuildWorker`, the `int capacity = 6` default parameter. `BuildHire` never passes it,
 so change the default or thread it through.
 
 ---
@@ -979,3 +982,14 @@ has a unique `SaveIdentity`.
 
 Read for success: `[Audit] Nothing overlaps. (farm)`, `[Audit] Nothing overlaps. (market)` and the
 final `[Audit] Nothing overlaps.` Any other final line is a failure; `AUDIT_OK` prints regardless.
+
+---
+
+## 26. Change cash, the ATM or the piles
+
+- Where a pile sits: `LevelBuildKit.AddCounter` (farm: right against the serve square, away from the queue; the hire square on that side moves out) and `MarketBuilder.CashOffset`.
+  Always run `SquareAudit.Run` afterwards.
+- ATM position: `FarmSceneBuilder.AtmX`, `MarketBuilder.AtmPosition` / `AtmDepositDX`. The machine's child `Shell` is audited like a building.
+- Bundle size or look: `CashModels.BundleSize`, `CashArt.BundleTopTexture`; layers before merging: `CashStack.maxLayers`, `CashPile.maxLayers`.
+- Step size of collect / withdraw: the `0.34` factor in `CashCollectStation` and `AtmStation`.
+- Never give a new money sink a path that needs money to earn money: keep `RepairStation.freeRepairFraction` above zero.

@@ -15,10 +15,10 @@ MonoBehaviour:
   id: apples
   displayName: Apples
   color: {r: 0.82, g: 0.2, b: 0.18, a: 1}
-  visualPrefab: {fileID: 0}
+  visualPrefab: {fileID: 5608066888756053536, guid: 08aff8d2fd0413649bfe288d9d8cbe44, type: 3}
   carryMaterial: {fileID: 2100000, guid: a77725f8c60665d46963bf88dce5a21b, type: 2}
   icon: {fileID: 0}
-  stackHeight: 0.28
+  stackHeight: 0.45
   basePrice: 4
   perishable: 0
   spoilSeconds: 180

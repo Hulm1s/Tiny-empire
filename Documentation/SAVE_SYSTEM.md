@@ -147,14 +147,16 @@ of them destroys that object's saved progress for every existing player.**
 | `farm.coopA` | `FarmSceneBuilder.cs:313` | coop A (+ its buffers/machine/durability as suffixed children) |
 | `farm.coopB` | `FarmSceneBuilder.cs:325` | coop B |
 | `farm.hayA` | `FarmSceneBuilder.cs:341` | meadow A |
-| `farm.hayB` | `FarmSceneBuilder.cs:346` | meadow B |
+| `farm.hayB` | `FarmSceneBuilder.cs` | meadow B |
+| `farm.cornA2`, `farm.cornB2`, `farm.hayA2`, `farm.hayB2` | `FarmSceneBuilder.cs` | the four second fields (new in the farm expansion) |
 | `farm.cowA` | `FarmSceneBuilder.cs:352` | cow shed A |
 | `farm.cowB` | `FarmSceneBuilder.cs:362` | cow shed B |
 | `farm.unlock.cornB` | `FarmSceneBuilder.cs:418` | Field purchase progress |
 | `farm.unlock.coopB` | `FarmSceneBuilder.cs:422` | Coop purchase progress |
 | `farm.unlock.counterB` | `FarmSceneBuilder.cs:426` | Dairy Till purchase progress |
 | `farm.unlock.cowA` | `FarmSceneBuilder.cs:442` | Dairy purchase progress |
-| `farm.unlock.hayB` | `FarmSceneBuilder.cs:454` | Meadow purchase progress |
+| `farm.unlock.cornA2`, `.cornB2`, `.hayA2`, `.hayB2` | `FarmSceneBuilder.cs` | second-field purchases (new) |
+| ~~`farm.unlock.hayB`~~ | removed | meadow B is now bought with Cow Shed B; an old entry stays in the blob, unread and harmless |
 | `farm.unlock.cowB` | `FarmSceneBuilder.cs:458` | Cow Shed purchase progress |
 | `farm.hire.<Id>` | `FarmSceneBuilder.cs:589` | one per worker: `farm.hire.HarvesterA`, `.SellerA`, `.HarvesterB`, `.SellerB`, `.HayHandA`, `.MilkRunA`, `.HayHandB`, `.MilkRunB` |
 
@@ -167,7 +169,7 @@ Written in `MarketBuilder.cs` (and `FarmSceneBuilder.BuildMarketLink` for the tw
 | Save id | Carries |
 |---|---|
 | `game.tutorial` | `TutorialProgress` ("Tutorial" object, `FarmSceneBuilder.BuildFarm`): one number, the walkthrough step (0-5; 5 = finished). A save with no `game.tutorial` entry but with money or any purchase starts finished |
-| `farm.unlock.market` | the $10,000 supermarket purchase (`UnlockStation`) |
+| `farm.unlock.market` | the $7,000 supermarket purchase (`UnlockStation`) |
 | `farm.travel.town` | the farm-side travel square (not saveable, but identified) |
 | `market.travel.farm` | the market-side travel square (not saveable, but identified) |
 | `market.trash.1` … `market.trash.4` | the four rubbish piles: an `ItemBuffer` of `Trash` (4 bags each); a half-cleared pile restores with the bags it had left. `ClearablePile` keeps no state |
@@ -496,6 +498,24 @@ Read this before touching anything save-related.
   with a *new* id. Old saves simply have no entry, so it starts fresh.
 - **Removing an object.** Its entry is preserved in the blob but never read. Dead weight, not
   a fault. (See §13 for why it is preserved.)
+- **Merging two purchases (done once: meadow B into Cow Shed B).** `farm.unlock.hayB` was removed and
+  `farm.unlock.cowB` now also reveals `HayFieldB`. Every old-save case ends up consistent, because
+  the field and the hands are *revealed by the shed's gate* (which restores from the unchanged
+  `farm.unlock.cowB` key) and nothing else:
+  both bought -> shed + meadow + hands on, as before; shed only -> the meadow now appears too (a free
+  bonus, and it was the only thing missing); meadow only (old gate state orphaned) -> the meadow is NOT
+  shown, Cow Shed B is offered at the new bundle price and brings the meadow, nothing is half-built;
+  neither -> normal. No refund is given for a meadow bought alone under the old rule (the new bundle
+  costs the same $4,500 that meadow cost), and a partly-paid old meadow loses its partial payment.
+  `HayFieldB`'s own state (`farm.hayB`) keeps its key and restores when it reappears.
+- **Prices / capacities / animal limits of the farm expansion.** `maxUnits` 3 -> 5, buffers doubled,
+  `priceGrowth` 2.2 -> 1.6: `UpgradeStation` keeps only `purchases` and `paid`, so the next price is
+  recomputed from the new formula (a building with 2 purchases simply sells its 3rd at the new
+  price; a part-paid purchase completes when `paid >= newPrice`).
+- **New fields behind new gates.** `farm.cornA2/cornB2/hayA2/hayB2` and `farm.unlock.cornA2/cornB2/
+  hayA2/hayB2` are new ids: old saves have no entries, so the gates start unpaid. The B2/hay gates are
+  revealed by the gates that already exist (coopB / cowA / cowB), and `Register` restores a gate the
+  moment its object is switched on, so a chain of reveals restores correctly on load.
 - **The GameObject's `name`** — as long as it has a `SaveIdentity`. That is the entire reason
   `SaveIdentity` exists.
 - **Reparenting an object** — same reason.
@@ -580,3 +600,18 @@ change to scene loading.
 | Make a new object saveable | implement `ISaveable`, then `LevelBuildKit.Identify(go, "farm.newthing")` |
 | Find why progress vanished | browser console → `[SaveKeys]` / `[SaveSystem]` warnings |
 | Understand a save key | `Core/ISaveable.cs:38` |
+
+---
+
+## 16. Cash save ids (added with physical cash)
+
+New ids only; no existing id changed. `Wallet` is still `blob.money` and is now the ACCOUNT.
+
+| Id | Component | State |
+|---|---|---|
+| `player.cash` | `CashStack` | `{amount}` carried cash |
+| `farm.counterA.cash`, `farm.counterB.cash` | `CashPile` | `{amount}` waiting at the farm tills |
+| `market.checkout.cash`, `market.checkout2.cash` | `CashPile` | `{amount}` waiting at the checkouts |
+
+The collect squares, ATM squares and wear-off are stateless: wear-off is derived from the saved `farm.unlock.market`.
+An old save restores with its balance on the account and `player.cash` absent (0 in hand).

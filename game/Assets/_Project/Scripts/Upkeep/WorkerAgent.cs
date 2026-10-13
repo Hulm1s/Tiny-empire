@@ -238,6 +238,13 @@ namespace Tycoon.Upkeep
         {
             if (routes == null || routes.Length == 0 || !_carry.IsEmpty) return;
 
+            // A farmer with two fields is a different question from a stocker with several shelves.
+            if (routes[0] != null && routes[0].pickup is HarvestStation)
+            {
+                ChooseField();
+                return;
+            }
+
             if (_claimed != null)
             {
                 if (RouteUsable(pickup, dropoff)) return;
@@ -278,6 +285,42 @@ namespace Tycoon.Upkeep
                 _claimed = target;
                 Claims[target] = this;
             }
+        }
+
+        /// <summary>
+        /// A farmer whose line has a second field: go to whichever field has the most crop ready.
+        ///
+        /// Both routes end at the same feed square, so there is no shelf to compare and no claim to
+        /// take (one farmer per line). The field that has not been bought yet is simply not active,
+        /// so it is skipped and the farmer behaves exactly as a one-field farmer. The field the
+        /// worker is already heading for is kept unless the other is clearly fuller (or this one
+        /// is empty), so a farmer does not zig-zag between two fields as they regrow. With every
+        /// field empty it stays put and waits at the current one, as before.
+        /// </summary>
+        private void ChooseField()
+        {
+            StockRoute best = null, current = null;
+            int bestReady = -1, currentReady = -1;
+
+            foreach (var route in routes)
+            {
+                var field = route != null ? route.pickup as HarvestStation : null;
+                if (field == null || route.dropoff == null) continue;
+                if (!field.isActiveAndEnabled || !route.dropoff.isActiveAndEnabled) continue;
+
+                if (route.pickup == pickup) { current = route; currentReady = field.Ready; }
+                if (field.Ready > bestReady) { best = route; bestReady = field.Ready; }
+            }
+
+            if (best == null) return;
+            if (current != null && !(bestReady > currentReady && (currentReady == 0 || bestReady >= currentReady + 2)))
+                best = current;
+
+            if (best.pickup == pickup && best.dropoff == dropoff) return;
+
+            pickup = best.pickup;
+            dropoff = best.dropoff;
+            _routedTo = null;
         }
 
         private void ChooseTarget()

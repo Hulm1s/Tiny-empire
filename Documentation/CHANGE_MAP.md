@@ -17,17 +17,17 @@ resized or added anything.
 | I want to change… | Go to | Current |
 |---|---|---|
 | **ALL prices at once (test mode)** | **FSB:44 `TestPriceOverride`** | **`10d` — set to `0d` for the real economy** |
-| Unlock price — Field | FSB:419 | 600 |
-| Unlock price — Coop | FSB:423 | 900 |
-| Unlock price — Dairy Till | FSB:427 | 1400 |
-| Unlock price — Dairy | FSB:443 | 3200 |
-| Unlock price — Meadow | FSB:455 | 4500 |
-| Unlock price — Cow Shed | FSB:459 | 6000 |
+| Unlock price — Field (corn B) | FSB `farm.unlock.cornB` | 400 |
+| Unlock price — Coop B | FSB `farm.unlock.coopB` | 500 |
+| Unlock price — Dairy Till | FSB `farm.unlock.counterB` | 800 |
+| Unlock price — Dairy | FSB `farm.unlock.cowA` | 2200 |
+| Unlock price — Cow Shed B (**includes meadow B**; the old Meadow gate is gone) | FSB `farm.unlock.cowB` | 4500 |
+| Unlock price — second fields corn A2 / corn B2 / hay A2 / hay B2 | FSB `farm.unlock.cornA2/cornB2/hayA2/hayB2` | 350 / 700 / 1800 / 2800 |
 | Hire prices (all 8) | FSB:379-410, `price:` | 250 / 400 / 700 / 800 / 1500 / 1700 / 2200 / 2400 |
-| Animal base price | FSB:320, 329, 357, 366, `unitPrice:` | 120 / 150 / 400 / 450 |
-| Animal price growth per purchase | `Stations/UpgradeStation.cs:30` `priceGrowth` | 2.2× (global) |
+| Animal base price | FSB `unitPrice:` on the four `BuildWorkshop` calls | 120 / 180 / 450 / 600 |
+| Animal price growth per purchase | `Stations/UpgradeStation.cs` `priceGrowth` | 1.6× (global) |
 | How fast a purchase square drains money | FSB:564 (gates), FSB:595 (hires) | `max(4, price/40)` / `max(6, price/40)` |
-| Animal purchase drain rate | `Stations/UpgradeStation.cs:33` `payPerTick` | 5 |
+| Animal purchase drain rate | `Stations/UpgradeStation.cs` `payPerTick` (minimum) | `max(5, currentPrice/40)` |
 | **What a product sells for** | **FSB:129-147 `price:`** | corn 1, egg 5, hay 1, milk 12 |
 | Repair cost per point | FSB:322, 331, 359, 368 | 0.25 coops / 0.35 sheds |
 | Free repair fraction (**never 0**) | `Stations/RepairStation.cs:33` | 0.25 |
@@ -44,10 +44,13 @@ resized or added anything.
 
 | I want to change… | Go to | Current |
 |---|---|---|
-| Production speed | FSB:318, 327, 355, 364, `secondsPerOutput:` | 6 s egg, 10 s milk |
-| Feed hopper capacity | same lines, `inputCapacity:` | 10 everywhere |
-| Output basket capacity | same lines, `outputCapacity:` | 12 coops, 10 sheds |
-| Animals per building | same lines, `startUnits:` / `maxUnits:` | 1 / 3 |
+| Production speed | FSB `secondsPerOutput:` | 7 s egg, 8 s milk |
+| Feed hopper capacity | same lines, `inputCapacity:` | 20 everywhere |
+| Output basket capacity | same lines, `outputCapacity:` | 24 coops, 20 sheds |
+| Animals per building | same lines, `startUnits:` / `maxUnits:` | 1 / 5 |
+| Second field position / farm north edge | FSB `FieldRow2` / `EdgeNorth` (+ grass keep-clear rect in `BuildGroundCover`) | 3.05 / 9 |
+| Which field a farmer cuts | `Upkeep/WorkerAgent.cs` `ChooseField` | most crop ready |
+| Farm takings share after the supermarket | FSB `accountShare` in `BuildMarketLink` | 0.5 |
 | Input units per output | `LBK:686` `inputPerOutput` | 1 |
 | Field plot count | FSB:305, 309, 342, 347, `plots:` | 8 |
 | Field regrow time | same lines, `regrowSeconds:` | 2.2 corn, 2.6 hay |
@@ -97,7 +100,7 @@ resized or added anything.
 | Player start position | FSB:67 | (−10.5, 0.2, −11) |
 | Player acceleration / turn | `Player/PlayerMotor.cs` | 40 / 900°/s |
 | **Worker speed (all of them)** | `Upkeep/WorkerAgent.cs:31` `moveSpeed` | 3.1 |
-| Worker carry capacity | `LBK:626` `capacity = 4` | 4 |
+| Worker carry capacity | `LBK` `BuildWorker` `capacity = 6` | 6 |
 | Worker route | FSB:379-410, `pickup:` / `dropoff:` | see `GAMEPLAY_SYSTEMS.md` §10 |
 | Worker stand-off distance / delay | `Upkeep/WorkerAgent.cs:99,102` | 2.9 m / 0.8 s |
 | Where carried goods sit on a character | `Editor/CharacterLibrary.cs` `HandAnchor` | (0, 0.86, 0.42) |
@@ -295,14 +298,14 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 
 | I want to change… | Go to | Current |
 |---|---|---|
-| **Supermarket price** | FSB `MarketPrice` | $10,000 (test override applies) |
+| **Supermarket price** | FSB `MarketPrice` | $7,000 (test override applies) |
 | What must be owned before it appears | FSB `BuildMarketLink` → `RevealWhenAll` | all 6 gates, 8 hires, 4 BuyUnit at max |
 | Where the market stands | FSB `MarketOffsetX` | 75 m along the road axis |
 | Farm-side To Town square / gate | FSB `TownSquareX`, `TownSquarePosition` | x = 23 on the road |
 | Where the player lands back at the farm | FSB `ReturnFromTown` | (19.8, -15.8) |
 | Where the player lands in town | MB `ArrivalPoint` | (8, -6.3) |
 | Travel hold time / fade | `TravelStation` `taskDuration`, `fadeOutSeconds`, `fadeInSeconds` | 1.2 s / 0.25 / 0.3 |
-| Repair price | MB `RepairPrice` | $1,500 |
+| Repair price | MB `RepairPrice` | $3,000 |
 | First paint job / repaint | MB `FirstPaintPrice`, `RepaintPrice` | $1,000 / $200 |
 | Rubbish piles and bags | MB `TrashPositions`, `BagsPerPile` | 4 piles x 4 bags |
 | Where the bin is | MB `BinPosition` (outside, `squareToSouth`) | (10.5, -6.4) |
@@ -312,7 +315,7 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 | Storage rooms: walls and doors | MB `RoomWest`, `RoomMid`, `RoomSouth`, `Door1From/To`, `Door2From/To` | x 5, z 7.8 / 0, doors z 10.4-13.0 and 4.8-7.6 |
 | Crates and their squares | MB `CrateX`, `CollectX`, `Crate<Product>Z` | 11.1 / 9.1; sklad1 corn 11.6 milk 9.2 egg 14.0, sklad2 bread 6.3 apples 3.9 yogurt 1.5 |
 | Stocking square / shopper stand, from the shelf's z | MB `StockOffset`, `StockSquareDepth`, `BrowseOffset` | 2.0 / 1.8 / 0.75 |
-| Supply rate | MB `SupplySecondsPerUnit` | 4 s per unit per product |
+| Supply rate | MB `SupplySecondsPerUnit` | 6 s per unit per product |
 | Shelf / crate capacity | MB `ShelfCapacity`, `StorageCapacity` | 12 / 20 |
 | Shelf positions | MB `ShelfX`, `Row1Z`, `Row2Z` | x -7.2 / -2.4 / 2.4, rows z 14.9 and 9.6 |
 | COMING SOON bay | MB `ComingSoonPosition` | (5.2, -3.2) |
@@ -327,13 +330,29 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 | Market sell price multiplier | `CheckoutStation.priceMultiplier` | 1.5 |
 | Stocker price / fee (two per room) | MB `StockerPrice`, `StockerFee` | $800 / $0 |
 | Stocker hire squares | MB `Stocker1Hires`, `Stocker2Hires` | beside each doorway |
-| Growth: shelf / order / 2nd checkout prices | MB `GrowthShelfPrices`, `GrowthOrderPrices`, `Checkout2Price` | 1,000 1,500 2,000 / 1,500 2,500 3,500 / 3,000 |
+| Growth: shelf / order / 2nd checkout prices | MB `GrowthShelfPrices`, `GrowthOrderPrices`, `Checkout2Price` | 3,000 3,500 4,000 / 4,000 5,000 5,500 / 4,500 |
 | New products | FSB `CreateItems` (Bread, Apples, Yogurt) | base 7 / 4 / 10 |
 | Product order and what each step reveals | MB `BuildGrowth` | bread -> apples -> yogurt |
-| Cashier price / fee | MB `CashierPrice`, `CashierFee` | $1,500 / $0 |
+| Cashier price / fee | MB `CashierPrice`, `CashierFee` | $3,500 / $0 |
 | Shop walls / door | MB `Shop*`, `DoorHalf`, `TallWall`, `LowWall` | 24 x 21 m, door 3.6 m |
 | Market boundary / fence | MB `EdgeWest/East/North/South` | -17 / 17 / 18.6 / -13 |
 | Shopper waypoints | MB `EntryRoute`, `ExitRoute`, `QueueApproach` | through the door at x = 0 |
 | Which squares appear at OPEN | MB `Shop.Opening` (filled in `BuildStock`, `BuildCheckout`, `BuildStaff`) | |
 | How a stocker picks a shelf | `WorkerAgent.routes`, `ChooseRoute`, `RouteUsable` | emptiest usable, unclaimed |
 | Icons for the new squares | `UI/IconFactory.cs` `DrawSignpost/Broom/Door/Shelf` | Travel, Clean, Open, Stock |
+
+---
+
+## Physical cash, ATM, wear off
+
+| Want to change | Where |
+|---|---|
+| Cash in hand, its stack on the back, merge height | `Scripts/Player/CashStack.cs` (`CashStack`, `BundleStackView`); back anchor `CharacterLibrary.BackAnchor` |
+| A till's cash pile / collect square | `Scripts/Stations/CashPile.cs`; built by `LevelBuildKit.BuildCashPoint` (farm: `AddCounter`, market: `MarketBuilder.BuildTill`) |
+| Where a sale lands | `RegisterStation.Pay`, `CheckoutStation.TickWithPlayer`; `RegisterStation.accountWhenUnlocked` wired in `FarmSceneBuilder.BuildMarketLink` |
+| ATM behaviour / placement | `Scripts/Stations/AtmStation.cs`; `LevelBuildKit.BuildAtm`; `FarmSceneBuilder.AtmX`, `MarketBuilder.AtmPosition` |
+| Bundle / ATM 3D models and materials | `Editor/CashPreview.cs` (`CashModels`), preview via `Tycoon > Export Cash 3D Preview` |
+| Money plaque art and layout | `CashArt.PlaqueTexture` / `PlaqueLayout`, `HudRoot.BuildMoneyReadout` |
+| What buying pays from | `UnlockStation`/`UpgradeStation`/`RepairStation`/`PaintMenu` (`CashStack.Of(Carry)`) |
+| Farm wear switching off | `Durability.retireWhen` / `retireDisable`, wired in `FarmSceneBuilder.BuildMarketLink` |
+| Cash goals in the task list | `TaskBoard.AddCashGoals` |

@@ -6,7 +6,7 @@ using UnityEngine;
 namespace Tycoon.Stations
 {
     /// <summary>
-    /// The progression square: stand on it and money drains out of your wallet until the next
+    /// The progression square: stand on it and money drains out of your hand (the cash you carry) until the next
     /// plot, machine or doorway is paid off. Partial payment is kept, so the player can chip
     /// away at something expensive across several visits.
     ///
@@ -85,14 +85,15 @@ namespace Tycoon.Stations
         {
             if (_unlocked) return false;
 
-            var wallet = GameRoot.Money;
-            if (wallet == null) return false;
+            // Paid from the cash in hand, not the account: the ATM is where the account turns into cash.
+            var cash = Tycoon.Player.CashStack.Of(Carry);
+            if (cash == null) return false;
 
             double want = Math.Min(payPerTick, Remaining);
             if (want <= 0d) { Apply(true); return false; }
 
-            double spent = wallet.TrySpend(want);
-            if (spent <= 0d) return false; // broke: stand here all day, nothing happens
+            double spent = cash.TrySpend(want);
+            if (spent <= 0d) return false; // nothing in hand: stand here all day, nothing happens
 
             _paid += spent;
             if (_paid >= price) Apply(true);

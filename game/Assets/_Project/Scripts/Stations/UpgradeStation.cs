@@ -28,9 +28,11 @@ namespace Tycoon.Stations
         public double basePrice = 120d;
 
         [Tooltip("Each purchase multiplies the price by this. 1 makes every one cost the same.")]
-        [Min(1f)] public float priceGrowth = 2.2f;
+        [Min(1f)] public float priceGrowth = 1.6f;
 
-        [Tooltip("Money drained per tick while standing here.")]
+        [Tooltip("Least money drained per tick while standing here. The real drain is the larger of " +
+                 "this and the CURRENT price / 40 (the same rule as the gates), so a dear unit is " +
+                 "still paid off in about the same number of ticks as a cheap one.")]
         public double payPerTick = 5d;
 
         [Header("Naming")]
@@ -96,14 +98,15 @@ namespace Tycoon.Stations
         {
             if (SoldOut) return false;
 
-            var wallet = GameRoot.Money;
-            if (wallet == null) return false;
+            // Paid from the cash in hand; the account is reached through the ATM.
+            var cash = Tycoon.Player.CashStack.Of(Carry);
+            if (cash == null) return false;
 
-            double want = Math.Min(payPerTick, Remaining);
+            double want = Math.Min(Math.Max(payPerTick, CurrentPrice / 40d), Remaining);
             if (want <= 0d) { Complete(); return false; }
 
-            double spent = wallet.TrySpend(want);
-            if (spent <= 0d) return false; // broke: standing here simply does nothing
+            double spent = cash.TrySpend(want);
+            if (spent <= 0d) return false; // nothing in hand: standing here simply does nothing
 
             _paid += spent;
             if (_paid >= CurrentPrice) Complete();
@@ -116,7 +119,7 @@ namespace Tycoon.Stations
             if (target == null || !target.TryAddUnit())
             {
                 // Nothing to buy after all - hand the money back rather than pocketing it.
-                if (_paid > 0d) GameRoot.Money?.Add(_paid);
+                if (_paid > 0d) Tycoon.Player.CashStack.Instance?.Add(_paid);
                 _paid = 0d;
                 return;
             }

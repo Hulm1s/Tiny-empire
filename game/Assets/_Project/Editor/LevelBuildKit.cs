@@ -83,6 +83,10 @@ namespace Tycoon.EditorTools
             // built-in default material, which is magenta in a URP build.
             item.carryMaterial = Mat($"Item_{id}", color);
 
+            // The modelled goods (GoodsModels) replace the cube wherever one exists for this id;
+            // items without one (trash) keep the cube as the fallback.
+            item.visualPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(GoodsModels.PrefabPath(id));
+
             EditorUtility.SetDirty(item);
             return item;
         }
@@ -659,7 +663,10 @@ namespace Tycoon.EditorTools
                 animal.transform.SetParent(holder.transform, false);
 
                 float z = maxUnits <= 1 ? 0f : Mathf.Lerp(-hz * 0.55f, hz * 0.55f, i / (float)(maxUnits - 1));
-                animal.transform.localPosition = new Vector3(0.5f, 0f, z);
+                // Five animals do not fit in one file along a 3.6-4.2 m pen: past three they stand
+                // in two staggered rows instead (alternating either side of the pen's centre line).
+                float stagger = maxUnits > 3 ? (i % 2 == 0 ? -0.4f : 0.4f) : 0f;
+                animal.transform.localPosition = new Vector3(0.5f + stagger, 0f, z);
                 // A little scatter so a row of animals does not look stamped out.
                 animal.transform.localRotation = Quaternion.Euler(0f, (i * 53) % 360, 0f);
 
@@ -702,7 +709,7 @@ namespace Tycoon.EditorTools
 
         public static WorkerAgent BuildWorker(string name, Transform parent, Vector3 position,
             StationBase pickup, StationBase dropoff, Color color, double feePerDelivery,
-            int capacity = 4, string role = null)
+            int capacity = 6, string role = null)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
@@ -1093,6 +1100,11 @@ namespace Tycoon.EditorTools
             public GameObject Root;
             public RegisterStation Register;
             public Tycoon.Customers.CustomerQueue Queue;
+            public CashPile Pile;
+            public CashCollectStation Collect;
+
+            /// <summary>Which side of the till the cash square is on: +1 east, -1 west.</summary>
+            public float CashSide;
         }
 
         /// <summary>
@@ -1204,7 +1216,59 @@ namespace Tycoon.EditorTools
             queue.register = register;
             register.queue = queue;
 
-            return new Counter { Root = root, Register = register, Queue = queue };
+            // The till's takings: a pile of cash on its own square, on the side AWAY from the queue
+            // (shoppers come in from one end, so the other is clear), past the cashier's hire square.
+            // The cashier never touches it; only the player's square gathers it.
+            float cashSide = enterFromWest ? 1f : -1f;
+            var cash = BuildCashPoint(id, root.transform, new Vector3(cashSide * CashDX, 0f, 0f),
+                new Vector2(2.0f, 1.8f));
+            register.pile = cash.pile;
+
+            return new Counter { Root = root, Register = register, Queue = queue, Pile = cash.pile, Collect = cash.collect, CashSide = cashSide };
+        }
+
+        /// <summary>How far the cash square is from the till's centre: against the serve square's card.</summary>
+        public const float CashDX = 1.8f + 0.15f + 1.0f;
+
+        /// <summary>
+        /// A cash pile (saved as <c>{id}.cash</c>) and the player-only square that gathers it, at one spot.
+        /// The pile is the bundle prefab stacked two by two; the square is an ordinary interaction square.
+        /// </summary>
+        public static (CashPile pile, CashCollectStation collect) BuildCashPoint(string id, Transform parent,
+            Vector3 position, Vector2 size)
+        {
+            var spot = new GameObject("CashPile");
+            spot.transform.SetParent(parent, false);
+            spot.transform.localPosition = position;
+            Identify(spot, $"{id}.cash");
+            var pile = spot.AddComponent<CashPile>();
+            pile.bundlePrefab = CashModels.BundlePrefab();
+
+            var collect = Station<CashCollectStation>($"{id}.collect", "CollectCash", parent, position, size,
+                "Cash", new Color(0.55f, 0.9f, 0.5f), smallestCard: size);
+            collect.pile = pile;
+            return (pile, collect);
+        }
+
+        /// <summary>
+        /// The cash machine with its normal interaction squares in front: WITHDRAW (account into hand) and a
+        /// smaller DEPOSIT beside it (hand back onto the account). Front faces -z, toward the camera.
+        /// </summary>
+        public static AtmStation BuildAtm(string id, string name, Transform parent, Vector3 position,
+            Vector2 withdrawSize, Vector2 depositSize, float depositDX, float depositDZ = 0f)
+        {
+            CashModels.Atm(name, parent, position);
+
+            // Squares lie in front of the machine (z = -1.85 from it).
+            Vector3 front = position + new Vector3(0f, 0f, -1.85f);
+            var withdraw = Station<AtmStation>($"{id}.withdraw", "AtmWithdraw", parent, front, withdrawSize,
+                "ATM", new Color(0.35f, 0.8f, 1f), smallestCard: withdrawSize);
+
+            var deposit = Station<AtmStation>($"{id}.deposit", "AtmDeposit", parent,
+                front + new Vector3(depositDX, 0f, depositDZ), depositSize,
+                "Deposit", new Color(0.55f, 0.7f, 1f), smallestCard: depositSize);
+            deposit.deposit = true;
+            return withdraw;
         }
 
         private static void BuildStall(Transform parent, Vector3 position)

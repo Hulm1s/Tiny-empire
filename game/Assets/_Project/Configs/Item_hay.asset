@@ -15,10 +15,10 @@ MonoBehaviour:
   id: hay
   displayName: Hay
   color: {r: 0.85, g: 0.72, b: 0.33, a: 1}
-  visualPrefab: {fileID: 0}
+  visualPrefab: {fileID: 8486264225565149346, guid: 71adc3e53c6551c4c889dc771f3c01b3, type: 3}
   carryMaterial: {fileID: 2100000, guid: 8b6d1d2a5d55f574d81a4dd12f37dbca, type: 2}
   icon: {fileID: 0}
-  stackHeight: 0.32
+  stackHeight: 0.51
   basePrice: 1
   perishable: 0
   spoilSeconds: 180

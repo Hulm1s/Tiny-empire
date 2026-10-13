@@ -73,8 +73,8 @@ Everything in QUICK, plus:
 - [ ] Carry stack is visible above/in front of the character and grows item by item.
 - [ ] Stack stops at **8** items (player capacity).
 - [ ] Stand in coop A's **FEED** square → corn drains out of your arms into the hopper.
-- [ ] The coop's capacity board shows `N / 10` and counts up.
-- [ ] Wait → the board stops saying `NEEDS FEED` and shows `1/3 working`.
+- [ ] The coop's capacity board shows `N / 20` and counts up.
+- [ ] Wait → the board stops saying `NEEDS FEED` and shows `1/5 working`.
 - [ ] Eggs accumulate; stand in **COLLECT** → eggs fill your arms, `+N Egg` popup.
 - [ ] Walk to the **egg till (counter A)** and stand in SERVE → the front customer is served one
       egg at a time, `+$N` popups appear, money goes up.
@@ -242,7 +242,7 @@ With `TestPriceOverride` at 10 the whole progression takes a few minutes. Use a 
       walled room with a doorway in its west wall; sklad2 below it is empty until bread is
       ordered. Walk in and out of each door several times: you never step into a hire square by
       accident (they are beside the door), and stockers pass the doorway without snagging.
-- [ ] **Supply:** the opening crates fill by themselves, one unit every 4 s each, with cubes on top.
+- [ ] **Supply:** the opening crates fill by themselves, one unit every 6 s each, with cubes on top.
       Collect from one and stock its shelf: cubes appear on the shelf board.
 - [ ] **Shoppers:** they walk in through the door, stand at a shelf, take goods one at a time (the
       shelf visibly thins), go round the end of the counter to the queue, and are scanned at the
@@ -304,3 +304,28 @@ Do not publish if any of these is true:
 - [ ] Any `[SaveKeys]` warning appears.
 - [ ] Red console errors in the built player.
 - [ ] A save does not survive a reload.
+
+---
+
+## CASH (after any change to CashStack, piles, ATM, paying stations or the money plaque)
+
+- Sell eggs: the pile beside the till grows, the HUD big number does not move; collect: it empties into the hand, bundles appear on the back.
+- Buy a gate with cash in hand; stand in it with empty hands: nothing is taken from the account.
+- ATM withdraw / deposit at the farm and in the market; the plaque's small number is the account.
+- An old save: balance on the account, 0 in hand; the task list says "Get cash at the ATM".
+- Jam a machine with empty pockets: the FIX square still repairs (slowly).
+- After the supermarket: farm sales go to the account, wear stops, FIX squares are gone, still so after a reload.
+- A hired cashier serves without ever collecting a pile.
+- Run the layout audit: farm, market and overall 0 faults.
+
+---
+
+## FARM EXPANSION (second fields, 5 animals, wholesale farm)
+
+- A second FIELD gate (corn A2, $350) is on sale north of corn A from the start; corn B2 appears only after Coop B is bought; hay A2 only after the Dairy; hay B2 only after Cow Shed B (which now brings meadow B too - there is no separate Meadow gate).
+- Buy a second field; the line's farmer (once hired) goes to whichever of its two fields has more crop ready, never stands at an unbought one, and carries 6 per trip.
+- Each building takes 5 animals (4 purchases, price x1.6 each); the pen shows them in two rows; hopper reads `N / 20`.
+- Standing in a BUY square for a dear animal takes about 7 s, like a gate (drain = max(5, price/40) per tick).
+- After the supermarket: farm sales reach the account at HALF value (a $5 egg adds $2.50); market sales unchanged.
+- Market: supply 6 s per unit; Repair $3,000 / Paint $2,000; supermarket gate $7,000 (all x10-flat while `TestPriceOverride` is on).
+- Old save: hay B gate gone; a save with Cow Shed B bought shows meadow B; walking the north fence at z 9 never shows the edge of the ground.

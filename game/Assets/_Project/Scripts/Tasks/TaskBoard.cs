@@ -95,6 +95,8 @@ namespace Tycoon.Tasks
         private CollectStation[] _collects;
         private DepositStation[] _deposits;
         private DiscardStation[] _bins;
+        private AtmStation[] _atms;
+        private CashCollectStation[] _tillCash;
         private TravelStation[] _travels;
         private Location[] _locations;
 
@@ -196,6 +198,8 @@ namespace Tycoon.Tasks
             _collects = FindObjectsByType<CollectStation>(inactive, none);
             _deposits = FindObjectsByType<DepositStation>(inactive, none);
             _bins = FindObjectsByType<DiscardStation>(inactive, none);
+            _atms = FindObjectsByType<AtmStation>(inactive, none);
+            _tillCash = FindObjectsByType<CashCollectStation>(inactive, none);
             _travels = FindObjectsByType<TravelStation>(inactive, none);
             _locations = FindObjectsByType<Location>(inactive, none);
         }
@@ -409,6 +413,7 @@ namespace Tycoon.Tasks
             _bestPrice = _secondPrice = double.MaxValue;
             _bestDist = _secondDist = float.MaxValue;
             _bestLabel = _secondLabel = null;
+            _cheapest = double.MaxValue;
 
             for (int i = 0; i < _unlocks.Length; i++)
             {
@@ -420,6 +425,7 @@ namespace Tycoon.Tasks
                     ? $"Repair the shop - {MoneyFormat.Short(u.Remaining)}"
                     : $"{verb}{u.label} - {MoneyFormat.Short(u.Remaining)}";
                 Consider(u, u.price, label);
+                _cheapest = Math.Min(_cheapest, u.Remaining);
             }
 
             for (int i = 0; i < _upgrades.Length; i++)
@@ -428,6 +434,7 @@ namespace Tycoon.Tasks
                 if (!Live(u) || u.SoldOut) continue;
 
                 Consider(u, u.CurrentPrice, $"Buy {u.unitName} - {MoneyFormat.Short(u.Remaining)}");
+                _cheapest = Math.Min(_cheapest, u.Remaining);
             }
 
             for (int i = 0; i < _paints.Length; i++)
@@ -436,6 +443,7 @@ namespace Tycoon.Tasks
                 if (!Live(p) || p.IsPainted) continue;
 
                 Consider(p, p.firstPrice, $"Paint the shop - {MoneyFormat.Short(p.firstPrice)}");
+                _cheapest = Math.Min(_cheapest, p.firstPrice);
             }
 
             for (int i = 0; i < _chores.Length; i++)
@@ -457,10 +465,63 @@ namespace Tycoon.Tasks
                 Consider(c, 0d, "Clear out the rubbish");
             }
 
+            AddCashGoals();
+
             if (_best != null)
                 Goals.Add(new TaskItem { kind = TaskKind.Goal, label = _bestLabel, target = _best });
             if (_second != null)
                 Goals.Add(new TaskItem { kind = TaskKind.Goal, label = _secondLabel, target = _second, dim = true });
+        }
+
+        private double _cheapest;
+
+        /// <summary>
+        /// Purchases are paid from the cash in hand, so a goal the player cannot cover from their
+        /// pockets needs a step first: gather the takings waiting at a till, or draw on the account
+        /// at the ATM. Both are free steps, so they sort ahead of the purchase they unlock.
+        /// </summary>
+        private void AddCashGoals()
+        {
+            if (_cheapest == double.MaxValue) return;
+
+            var cashStack = CashStack.Instance;
+            double inHand = cashStack != null ? cashStack.Amount : 0d;
+            if (inHand >= _cheapest) return;
+
+            CashCollectStation pile = null;
+            float pileD = float.MaxValue;
+            double waiting = 0d;
+            for (int i = 0; i < _tillCash.Length; i++)
+            {
+                var c = _tillCash[i];
+                if (!Live(c) || c.pile == null || c.pile.Amount < 1d) continue;
+                waiting += c.pile.Amount;
+                float d = DistanceToPlayer(c);
+                if (d < pileD) { pileD = d; pile = c; }
+            }
+
+            if (pile != null)
+                Consider(pile, 0d, "Collect cash at the till");
+
+            var wallet = GameRoot.Money;
+            double account = wallet != null ? wallet.Balance : 0d;
+            if (account >= 1d && inHand + account >= _cheapest)
+            {
+                // The ATM in the player's own location when there is one; otherwise any, and the
+                // arrow leads them across by the travel square.
+                var here = PlayerLocation();
+                AtmStation best = null;
+                float bestD = float.MaxValue;
+                for (int i = 0; i < _atms.Length; i++)
+                {
+                    var a = _atms[i];
+                    if (!Live(a) || a.deposit) continue;
+                    float d = DistanceToPlayer(a);
+                    if (here != null && a.GetComponentInParent<Location>() != here) d += 1e6f;
+                    if (d < bestD) { bestD = d; best = a; }
+                }
+                if (best != null) Consider(best, 0d, "Get cash at the ATM");
+            }
         }
 
         private void Consider(StationBase station, double price, string label)
