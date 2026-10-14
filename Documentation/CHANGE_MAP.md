@@ -19,8 +19,7 @@ resized or added anything.
 | **ALL prices at once (test mode)** | **FSB:44 `TestPriceOverride`** | **`10d` — set to `0d` for the real economy** |
 | Unlock price — Field (corn B) | FSB `farm.unlock.cornB` | 400 |
 | Unlock price — Coop B | FSB `farm.unlock.coopB` | 500 |
-| Unlock price — Dairy Till | FSB `farm.unlock.counterB` | 800 |
-| Unlock price — Dairy | FSB `farm.unlock.cowA` | 2200 |
+| Unlock price — Dairy (now includes the milk till) | FSB `farm.unlock.cowA` | 3000 |
 | Unlock price — Cow Shed B (**includes meadow B**; the old Meadow gate is gone) | FSB `farm.unlock.cowB` | 4500 |
 | Unlock price — second fields corn A2 / corn B2 / hay A2 / hay B2 | FSB `farm.unlock.cornA2/cornB2/hayA2/hayB2` | 350 / 700 / 1800 / 2800 |
 | Hire prices (all 8) | FSB:379-410, `price:` | 250 / 400 / 700 / 800 / 1500 / 1700 / 2200 / 2400 |
@@ -200,7 +199,8 @@ resized or added anything.
 | Guide arrow behaviour / size | `Tasks/GuideArrow.cs` constants; sprite `IconFactory.GuideArrow`; sheet `Tycoon → Export Arrow Sheet` |
 | Tutorial steps / text | `Tasks/TaskBoard.cs` `StepLabels`, `Tasks/TutorialProgress.cs`; wired in `FarmSceneBuilder.BuildFarm` ("Tutorial" object, id `game.tutorial`) |
 | Debug readout (`?debug=1`) | `UI/HudRoot.cs:158-168` |
-| HUD reference resolution | `UI/HudRoot.cs:115-117` (1080 × 1920, match 0.35) |
+| HUD reference resolution (portrait 1080 × 1920 match 0.35; wide = fixed canvas height, match height) | `UI/HudRoot.cs` `ApplyScaler`, constants `WideAspect`, `WideHeightUnits` |
+| Task card top-row vs under-plaque rule (wide screens) | `UI/HudRoot.cs` `ApplyLayout` -> `UI/TaskPanel.cs` `SetTopRow` |
 | Pause board / rows / title / armed-delete text ("TAP TO CONFIRM") | `UI/PauseMenu.cs` `Build`, `MakeRow` |
 | Task card collapse (minimize medallion, `-`/`+`) | `UI/TaskPanel.cs` `ToggleCollapsed`; PlayerPrefs `tycoon.taskPanelCollapsed` (0/1) |
 | Guide arrow on/off (pause menu `ARROW: ON/OFF` row) | `UI/PauseMenu.cs` `ToggleArrow`, `Tasks/GuideArrow.cs` `Enabled`; PlayerPrefs `tycoon.guideArrow` (default 1) |
@@ -318,7 +318,9 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 | Supply rate | MB `SupplySecondsPerUnit` | 6 s per unit per product |
 | Shelf / crate capacity | MB `ShelfCapacity`, `StorageCapacity` | 12 / 20 |
 | Shelf positions | MB `ShelfX`, `Row1Z`, `Row2Z` | x -7.2 / -2.4 / 2.4, rows z 14.9 and 9.6 |
-| COMING SOON bay | MB `ComingSoonPosition` | (5.2, -3.2) |
+| Butcher extension gate / shell / slots | MB `ButcherGatePosition`, `ButcherExtensionPrice`, `BuildButcher`, `ButcherWest`/`ButcherBackWest`/`ButcherFrontNorth`/`ButcherBackNorth`, `ShopDoorFrom/To`, `BackGapFrom/To`, `VanDoorFrom/To`, `Butcher*` slots | gate (-16.5, -2.0) $5,500; front room x -21..-12 z -5.4..4.6; back room x -17.5..-12 z 4.6..11.6 |
+| Staff door in the market's west wall (plug) | MB `StaffDoorFrom/To`, `Wall.Plug`, `Shop.StaffDoorPlug` | z 2.0..4.2 |
+| Meat van driveway | MB `LaneWest/East`, `LaneSouthZ/NorthZ` | x -27..-23 up from the street, z 7..11 east to the back room |
 | Counters, serving squares, hires, queues | MB `CounterZ`, `Counter1X`/`Counter2X`, `ServeDX`, `ServeZ`, `HireZ`, `QueueDX`, `QueuePitch`, `ExitLaneZ` | counters x -8.5 / -3.9 z -2.3; serve at counter -1.9, z -3.55; hire z -1.3; queue counter +0.85 running north every 1.35; exit lane z -4.7 |
 | Shopper arrival rate | MB `ShopperIntervalSeconds` | 6 s |
 | Queue length (each) / people in shop | MB `QueueSlots`, `MaxShoppers` | 3 / 8 |
@@ -335,7 +337,7 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 | Product order and what each step reveals | MB `BuildGrowth` | bread -> apples -> yogurt |
 | Cashier price / fee | MB `CashierPrice`, `CashierFee` | $3,500 / $0 |
 | Shop walls / door | MB `Shop*`, `DoorHalf`, `TallWall`, `LowWall` | 24 x 21 m, door 3.6 m |
-| Market boundary / fence | MB `EdgeWest/East/North/South` | -17 / 17 / 18.6 / -13 |
+| Market boundary / fence | MB `EdgeWest/East/North/South` | -30 / 17 / 18.6 / -13 (west moved out for the butcher and its driveway) |
 | Shopper waypoints | MB `EntryRoute`, `ExitRoute`, `QueueApproach` | through the door at x = 0 |
 | Which squares appear at OPEN | MB `Shop.Opening` (filled in `BuildStock`, `BuildCheckout`, `BuildStaff`) | |
 | How a stocker picks a shelf | `WorkerAgent.routes`, `ChooseRoute`, `RouteUsable` | emptiest usable, unclaimed |
@@ -350,9 +352,35 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 | Cash in hand, its stack on the back, merge height | `Scripts/Player/CashStack.cs` (`CashStack`, `BundleStackView`); back anchor `CharacterLibrary.BackAnchor` |
 | A till's cash pile / collect square | `Scripts/Stations/CashPile.cs`; built by `LevelBuildKit.BuildCashPoint` (farm: `AddCounter`, market: `MarketBuilder.BuildTill`) |
 | Where a sale lands | `RegisterStation.Pay`, `CheckoutStation.TickWithPlayer`; `RegisterStation.accountWhenUnlocked` wired in `FarmSceneBuilder.BuildMarketLink` |
-| ATM behaviour / placement | `Scripts/Stations/AtmStation.cs`; `LevelBuildKit.BuildAtm`; `FarmSceneBuilder.AtmX`, `MarketBuilder.AtmPosition` |
+| ATM behaviour / placement | `Scripts/Stations/AtmStation.cs`; `LevelBuildKit.BuildAtm`; `FarmSceneBuilder.AtmX`, `MarketBuilder.AtmPosition` / `AtmFrontDistance` (market: outside on the street, (-9.8, -6.2)) |
 | Bundle / ATM 3D models and materials | `Editor/CashPreview.cs` (`CashModels`), preview via `Tycoon > Export Cash 3D Preview` |
 | Money plaque art and layout | `CashArt.PlaqueTexture` / `PlaqueLayout`, `HudRoot.BuildMoneyReadout` |
 | What buying pays from | `UnlockStation`/`UpgradeStation`/`RepairStation`/`PaintMenu` (`CashStack.Of(Carry)`) |
 | Farm wear switching off | `Durability.retireWhen` / `retireDisable`, wired in `FarmSceneBuilder.BuildMarketLink` |
 | Cash goals in the task list | `TaskBoard.AddCashGoals` |
+
+
+## Butcher
+
+| I want to change... | Edit |
+|---|---|
+| Butcher prices, positions, queue, demand | `Editor/ButcherBuilder.cs` (constants at the top) |
+| Pig pen numbers (speed, corn, buffers, max pigs), pig hand, van route/stops | `FarmSceneBuilder.BuildPigFarm` |
+| Van speed, batch size, wait | `Scripts/Stations/MeatVan.cs` fields (set in `BuildPigFarm`) |
+| What gets cut or ground / times / sausages per joint | `Scripts/Stations/CutStation.cs`, `ButcherBuilder.BuildCut` / `BuildGrinder` |
+| Which bench the butcher walks to | `WorkerAgent.ChooseBench` |
+| Back room size, van door, driveway | `MarketBuilder` butcher constants (`ButcherBackWest/North`, `VanDoor*`, `Lane*`, `Butcher*Square`) |
+| Counter serving/restocking | `RegisterStation.TickCounter` (`stock` list) |
+| Pig prices | `ButcherBuilder.PigPrices` (`UpgradeStation.tierPrices`) |
+| Van model detail (about 4,000 vertices) | `ButcherModels.VanModel` (resolutions per part) |
+| Butcher audit coverage | `SquareAudit.ButcherChain`, `SquareAudit.VanRoute`, `ButcherShell` legs |
+
+## Town (third location, empty)
+
+| I want to change... | Edit |
+|---|---|
+| Town price, size, road, plaza, COMING SOON square | `Editor/TownBuilder.cs` (constants at the top; `TownPrice`, `Offset`, `Edge*`) |
+| Where the town is on the map (farm-grid offset) | `TownBuilder.Offset` (stay inside the +-80 m walkable ground plane) |
+| Where the supermarket's gate / travel square stand | `TownBuilder.MarketSquarePosition`; the market grass keep-clear rect in `MarketBuilder.BuildGround` must cover it |
+| What unlocks the town | `TownBuilder.Build` (`RevealWhenAll` "TownUnlock" over `MarketBuilder.Result.ButcherExtension/ButcherUnlocks/ButcherMaxed`, filled by `ButcherBuilder.Build`'s `Purchases`) |
+| Put real content in the town | build it in `TownBuilder` as children of the town root and remove the placeholder (`BuildPlaceholder`) |

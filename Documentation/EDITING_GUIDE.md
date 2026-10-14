@@ -52,7 +52,7 @@ Gate(root, "farm.unlock.coopB", "UnlockCoopB", new Vector3(ColumnB, 0f, Building
 
 **What to change:** the `double` literal (here `900d`).
 
-**Current real prices:** Field (corn B) 400, Coop 500, Dairy Till 800, Dairy 2200, Cow Shed B 4500
+**Current real prices:** Field (corn B) 400, Coop 500, Dairy 3000 (includes the milk till; the separate Dairy Till gate is gone), Cow Shed B 4500
 (includes meadow B), plus the four second fields: corn A2 350, corn B2 700, hay A2 1800, hay B2 2800.
 Total **$13,250**.
 
@@ -856,13 +856,13 @@ hour of debugging once.
 |---|---|
 | Money plaque | `HudRoot.cs` `BuildMoneyReadout` — top-centre, 420 × 116 visible, coin 92, font 64 (best-fit down to 34) |
 | Money format | `Core/Wallet.cs:48-60` — `$950`, `$1.2K`, `$3.4M` |
-| Task list card | `UI/TaskPanel.cs` — top-left under the money readout, max 3 lines, tabs Problems / Goals; data swept every 0.25 s by `Tasks/TaskBoard.cs` |
+| Task list card | `UI/TaskPanel.cs` — top-left under the money readout (portrait / narrow) or on the top row left of it (wide screens that fit, `SetTopRow`), max 3 lines, tabs Problems / Goals; data swept every 0.25 s by `Tasks/TaskBoard.cs` |
 | Guide arrow | `Tasks/GuideArrow.cs` — one screen-space arrow; edge-pinned when the target is off screen, bounces above it when on screen |
 | Pause medallion | `UI/PauseMenu.cs` `Build` — top-right, 110 units, pressed sprite swap |
 | HUD art | `UI/HudArt.cs` (sprites drawn in code at 0.75 px/unit, ~10 unit shadow margin; `Looks.*` hold the colours), `UI/UIFactory.cs` (`CreatePlate` returns the VISIBLE rect), `UI/LetterSpacing.cs` (tracking for the legacy font; add before `Outline`). Preview with `Tycoon > Export HUD Sheet` and get approval before restyling |
 | Joystick | `UI/VirtualJoystick.cs` — `radius 170`, `deadZone 0.08` |
 | Debug readout | `HudRoot.cs:158-168` — off unless `?debug=1` |
-| Reference resolution | `HudRoot.cs:115-117` — 1080 × 1920 portrait, match 0.35 |
+| Reference resolution / responsive layout | `HudRoot.cs` `ApplyScaler` / `ApplyLayout` — portrait (w/h <= 0.75): 1080 × 1920, match 0.35. Wide: canvas 1080 units tall (900 if screen < 600 px tall), match height. Card goes top-row when `W/2 - 210 >= 28 + 600 + 20` canvas units. Re-run from `ApplySafeArea` (screen resize / safe-area change) |
 
 ### ⚠ The no-HUD-buttons rule
 
@@ -989,7 +989,7 @@ final `[Audit] Nothing overlaps.` Any other final line is a failure; `AUDIT_OK` 
 
 - Where a pile sits: `LevelBuildKit.AddCounter` (farm: right against the serve square, away from the queue; the hire square on that side moves out) and `MarketBuilder.CashOffset`.
   Always run `SquareAudit.Run` afterwards.
-- ATM position: `FarmSceneBuilder.AtmX`, `MarketBuilder.AtmPosition` / `AtmDepositDX`. The machine's child `Shell` is audited like a building.
+- ATM position: `FarmSceneBuilder.AtmX`, `MarketBuilder.AtmPosition` / `AtmDepositDX` / `AtmFrontDistance` (the market's is outside on the street). The machine's child `Shell` is audited like a building.
 - Bundle size or look: `CashModels.BundleSize`, `CashArt.BundleTopTexture`; layers before merging: `CashStack.maxLayers`, `CashPile.maxLayers`.
 - Step size of collect / withdraw: the `0.34` factor in `CashCollectStation` and `AtmStation`.
 - Never give a new money sink a path that needs money to earn money: keep `RepairStation.freeRepairFraction` above zero.

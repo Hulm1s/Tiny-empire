@@ -146,7 +146,7 @@ Walk the whole unlock chain. In test-price mode this takes a couple of minutes.
 - [ ] `Field` (corn B) — a second corn field appears.
 - [ ] `Coop` (coop B) — **the coop and both of its hire squares appear together.** A hire must
       never be purchasable before the building its worker delivers into exists.
-- [ ] `Dairy Till` (counter B) — the milk counter appears and stands empty.
+- [ ] `Dairy` ($3,000) also brings the milk till (counter B), which stands empty until milk exists. Old save with the till bought but not Dairy: till still visible.
 - [ ] `Dairy` (cow shed A) — **the shed, meadow A, and both dairy hire squares appear together.**
       Hay must never be obtainable before something that eats it exists (this was a softlock).
 - [ ] Milk now starts appearing in orders at counter B, and only now.
@@ -259,8 +259,9 @@ With `TestPriceOverride` at 10 the whole progression takes a few minutes. Use a 
       other order, and no crate yet). Order it: the bread crate, collect and stocking squares,
       sklad2's two stockers, the **second checkout** and **S22** all appear. Bread sells; stockers
       carry it. Buy checkout 2 (a second north-south counter beside the first, queue on its east side) and cashier 2. Then
-      S22 -> Apples -> S23 -> Yogurt, one at a time. **COMING SOON** (a padlock square just inside
-      the front door, east side) appears only after all of those, and standing in it does nothing.
+      S22 -> Apples -> S23 -> Yogurt, one at a time. The **Butcher** gate ($5,500, a buy square on the lot
+      west of the shop, reached from the forecourt) appears only after all of those; paying it reveals the empty
+      butcher shell and opens the staff door in the shop's west wall. The ATM is outside on the street.
 - [ ] **Two checkouts (phone):** with both open shoppers choose the shorter queue and neither
       queue ever blocks the door lane; shoppers walk round the island shelves along the aisles (no
       walking through shelves), come back along the same aisle, and leave through the door.
@@ -329,3 +330,16 @@ Do not publish if any of these is true:
 - After the supermarket: farm sales reach the account at HALF value (a $5 egg adds $2.50); market sales unchanged.
 - Market: supply 6 s per unit; Repair $3,000 / Paint $2,000; supermarket gate $7,000 (all x10-flat while `TestPriceOverride` is on).
 - Old save: hay B gate gone; a save with Cow Shed B bought shows meadow B; walking the north fence at z 9 never shows the edge of the ground.
+
+
+## Butcher
+
+- Buy the extension, then each step in order (see GAMEPLAY_SYSTEMS "The butcher"); only the next step is offered.
+- Pig farm bought: pen with 1 pig, field E1, pig hand and van appear on the farm; the supermarket gate never
+  waited for it. The van drives out, backs up to the back-room door, unloads, returns, and never blocks you.
+- Cut table: ring fills, steaks appear in your arms (table = steaks only). Sausages purchase brings the grinder: GRIND makes 3 sausages per joint.
+- Counter: standing there restocks the case and serves; takings land on the cash pile; steak $25, sausage $9.
+- Pigs cost 3,500 / 5,000 / 7,000; corn E2 6,000; butcher offered only when both are done; the butcher cuts, grinds and
+  restocks on its own, choosing by the emptier case and takes part loads when the pile is empty.
+- Reload: every purchase, the case stock, the drop pile, the pile of cash and the pen's pigs survive.
+- Layout audit: `[Audit] Nothing overlaps.` for farm, market and overall (includes `butcher chain`).

@@ -61,6 +61,13 @@ namespace Tycoon.Upkeep
                  "walking, standing off for the player, piece-rate pay - is unchanged.")]
         public StockRoute[] routes;
 
+        [Tooltip("Off for every farm hand, stocker and cashier, which fill up before they deliver. " +
+                 "On for the butcher: its pickup is the cutting table, which can run dry, and a worker " +
+                 "that waited there for a FULL load would leave the counter empty while it did. With " +
+                 "this on, a part load is taken to the dropoff as soon as the pickup (a CutStation) " +
+                 "has nothing left to do for it.")]
+        public bool deliverPartialLoads;
+
         [Header("Movement")]
         public float moveSpeed = 3.1f;
         public float turnSpeed = 720f;
@@ -245,6 +252,13 @@ namespace Tycoon.Upkeep
                 return;
             }
 
+            // The butcher: a cutting table and a grinder, one counter.
+            if (routes[0] != null && routes[0].pickup is CutStation)
+            {
+                ChooseBench();
+                return;
+            }
+
             if (_claimed != null)
             {
                 if (RouteUsable(pickup, dropoff)) return;
@@ -278,6 +292,7 @@ namespace Tycoon.Upkeep
             pickup = best.pickup;
             dropoff = best.dropoff;
             _routedTo = null;
+            AdoptRoute();
 
             var target = (best.dropoff as DepositStation)?.target;
             if (target != null)
@@ -321,6 +336,48 @@ namespace Tycoon.Upkeep
             pickup = best.pickup;
             dropoff = best.dropoff;
             _routedTo = null;
+            AdoptRoute();
+        }
+
+        /// <summary>See <see cref="StationBase.AdoptIfInside"/>: a route may be adopted from inside its square.</summary>
+        private void AdoptRoute()
+        {
+            if (pickup != null) pickup.AdoptIfInside(_carry);
+            if (dropoff != null) dropoff.AdoptIfInside(_carry);
+        }
+
+        /// <summary>
+        /// The butcher, arms empty: go to whichever bench the counter needs most - the cutting table for
+        /// steaks or the grinder for sausages, by which counter case is the emptier (steak wins a tie).
+        /// A bench is skipped while it is not bought, has no meat to work or the counter has no room for
+        /// what it makes. With nothing to do the butcher stays where it is. The route is only re-chosen
+        /// when the arms are empty (ChooseRoute), so a load is always finished before the next choice.
+        /// </summary>
+        private void ChooseBench()
+        {
+            StockRoute best = null;
+            float bestFill = float.MaxValue;
+
+            foreach (var route in routes)
+            {
+                var bench = route != null ? route.pickup as CutStation : null;
+                if (bench == null || route.dropoff == null) continue;
+                if (!bench.isActiveAndEnabled || !route.dropoff.isActiveAndEnabled) continue;
+                if (bench.HasNothingToDo(_carry)) continue;
+
+                float fill = bench.CaseFill;
+                if (fill >= bestFill) continue;
+
+                best = route;
+                bestFill = fill;
+            }
+
+            if (best == null || (best.pickup == pickup && best.dropoff == dropoff)) return;
+
+            pickup = best.pickup;
+            dropoff = best.dropoff;
+            _routedTo = null;
+            AdoptRoute();
         }
 
         private void ChooseTarget()
@@ -333,6 +390,9 @@ namespace Tycoon.Upkeep
             // between means carry on with whatever leg is already underway.
             if (_carry.IsFull) _headingToDropoff = true;
             else if (_carry.IsEmpty) _headingToDropoff = false;
+            else if (deliverPartialLoads && !_headingToDropoff &&
+                     pickup is CutStation cutter && cutter.HasNothingToDo(_carry))
+                _headingToDropoff = true;
         }
 
         /// <summary>

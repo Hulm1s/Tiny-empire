@@ -68,7 +68,7 @@ publish.*
 Everything in MEDIUM, plus the full `TESTING_CHECKLIST.md` regression pass:
 
 ```
-[ ] Full progression walk: Field -> Coop -> Dairy Till -> Dairy -> Meadow -> Cow Shed
+[ ] Full progression walk: Field -> Coop -> Dairy (with the milk till) -> Meadow -> Cow Shed
 [ ] Every hire bought; every worker completes a full round trip; none stuck
 [ ] Counter A never shows milk; counter B never shows eggs
 [ ] Counter B silent until a cow shed exists

@@ -1,0 +1,100 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1070442539192920806
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4984448763023622884}
+  - component: {fileID: 1794120818664750593}
+  - component: {fileID: 2820139648848347059}
+  m_Layer: 0
+  m_Name: DeliveryVan
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4984448763023622884
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1070442539192920806}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!33 &1794120818664750593
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1070442539192920806}
+  m_Mesh: {fileID: 4300000, guid: 69f1856d858f11143b042e6392e9240e, type: 2}
+--- !u!23 &2820139648848347059
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1070442539192920806}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: 6ad687a517116a04a966d73fb3cee5da, type: 2}
+  - {fileID: 2100000, guid: 3f4b1cd1f88819c45935fc33ffd242cd, type: 2}
+  - {fileID: 2100000, guid: 3c32111bf92eaf643b15ef649fb3903a, type: 2}
+  - {fileID: 2100000, guid: e1f74efa13fec0a498670df7419061c2, type: 2}
+  - {fileID: 2100000, guid: db65934aae423044d8a6a9c13da37813, type: 2}
+  - {fileID: 2100000, guid: 0b13a188264f1344397ecfe9db8657ea, type: 2}
+  - {fileID: 2100000, guid: 7a9fbd47f2f0f814f869f4ffabdbf2f1, type: 2}
+  - {fileID: 2100000, guid: d00491eb08840944387fa30bc8e48612, type: 2}
+  - {fileID: 2100000, guid: 8c4320c3b40bc264aa59b93a53fe3458, type: 2}
+  - {fileID: 2100000, guid: 6c54073677e399849b525e2082393bea, type: 2}
+  - {fileID: 2100000, guid: b3f255a59f40a90488cc35b30473d289, type: 2}
+  - {fileID: 2100000, guid: 2c3ed371f54dfe94796517494c3cb9b4, type: 2}
+  - {fileID: 2100000, guid: b4f422addcb02bc4e9a77637ecbcfe1e, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_AdditionalVertexStreams: {fileID: 0}

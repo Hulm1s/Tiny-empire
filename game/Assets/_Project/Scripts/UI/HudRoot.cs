@@ -31,6 +31,24 @@ namespace Tycoon.UI
         private Rect _lastSafeArea;
         private int _lastScreenW, _lastScreenH;
         private float _safeAreaTimer;
+        private CanvasScaler _scaler;
+        private TaskPanel _tasks;
+
+        /// <summary>Screen width / height above which the HUD uses the wide layout (portrait phones stay below).</summary>
+        private const float WideAspect = 0.75f;
+
+        /// <summary>
+        /// Wide screens: the canvas is this many units tall (width follows the aspect), so
+        /// the HUD keeps a constant share of the screen height. Short screens (a landscape phone,
+        /// under 600 px tall) use the smaller number so the HUD is not a postage stamp.
+        /// </summary>
+        private const float WideHeightUnits = 1080f;
+        private const float WideShortHeightUnits = 900f;
+        private const float ShortScreenPx = 600f;
+
+        /// <summary>Gap between the task card and the money plaque when they share the top row.</summary>
+        private const float TopRowGap = 20f;
+        private const float CardMargin = 28f;
 
         /// <summary>
         /// How often the safe area is re-read. A rotation or a collapsing toolbar can move it at
@@ -94,9 +112,11 @@ namespace Tycoon.UI
             // only read what it found.
             gameObject.AddComponent<TaskBoard>();
             var tasks = TaskPanel.Create(_safeArea);
+            _tasks = tasks;
             var arrow = GuideArrow.Create(_safeArea);
             arrow.AddAvoid(_moneyPanel);
             arrow.AddAvoid(tasks.Card);
+            ApplyLayout();
 
             // Built last so the panel sits above the joystick area and swallows its taps.
             PauseMenu.Create(_safeArea, joystick.gameObject);
@@ -144,12 +164,9 @@ namespace Tycoon.UI
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             _canvas.sortingOrder = 100;
 
-            var scaler = canvasGo.GetComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            // Portrait reference resolution: the game is designed to be held one-handed.
-            scaler.referenceResolution = new Vector2(1080f, 1920f);
-            // Bias toward matching width so the HUD keeps its proportions on tall phones.
-            scaler.matchWidthOrHeight = 0.35f;
+            _scaler = canvasGo.GetComponent<CanvasScaler>();
+            _scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            ApplyScaler();
 
             _safeArea = UIFactory.CreateRect("SafeArea", (RectTransform)canvasGo.transform);
             _safeArea.anchorMin = Vector2.zero;
@@ -353,6 +370,60 @@ namespace Tycoon.UI
             _safeArea.anchorMax = max;
             _safeArea.offsetMin = Vector2.zero;
             _safeArea.offsetMax = Vector2.zero;
+
+            ApplyScaler();
+            ApplyLayout();
+        }
+
+        private static bool IsWide() => Screen.height > 0 && (float)Screen.width / Screen.height > WideAspect;
+
+        private static float WideReferenceHeight() => Screen.height < ShortScreenPx ? WideShortHeightUnits : WideHeightUnits;
+
+        /// <summary>
+        /// Portrait keeps the one-handed phone reference (1080 x 1920, biased to width). Wide
+        /// screens match height against a fixed canvas height, so the HUD is sized by the screen's
+        /// height and the extra width becomes room, not bigger buttons.
+        /// </summary>
+        private void ApplyScaler()
+        {
+            if (_scaler == null) return;
+            if (IsWide())
+            {
+                float h = WideReferenceHeight();
+                _scaler.referenceResolution = new Vector2(h * 16f / 9f, h);
+                _scaler.matchWidthOrHeight = 1f;
+            }
+            else
+            {
+                _scaler.referenceResolution = new Vector2(1080f, 1920f);
+                _scaler.matchWidthOrHeight = 0.35f;
+            }
+        }
+
+        /// <summary>Canvas scale the CanvasScaler will settle on, worked out here so the layout need not wait a frame for it.</summary>
+        private float ExpectedScale()
+        {
+            float w = Screen.width, h = Screen.height;
+            if (IsWide()) return h / WideReferenceHeight();
+            float match = 0.35f;
+            return Mathf.Exp(Mathf.Lerp(Mathf.Log(w / 1080f), Mathf.Log(h / 1920f), match));
+        }
+
+        /// <summary>
+        /// Puts the task card on the top row, left of the money plaque, when the safe area (in
+        /// canvas units) is wide enough for card + gap + plaque; otherwise under the plaque.
+        /// Re-run whenever the safe area or screen size changes.
+        /// </summary>
+        private void ApplyLayout()
+        {
+            if (_tasks == null) return;
+            float scale = ExpectedScale();
+            if (scale <= 0f) return;
+
+            float widthUnits = _lastSafeArea.width / scale;
+            float plaqueLeft = widthUnits * 0.5f - CashArt.PlaqueWidth * 0.5f;
+            bool topRow = IsWide() && plaqueLeft >= CardMargin + TaskPanel.Width + TopRowGap;
+            _tasks.SetTopRow(topRow);
         }
     }
 }

@@ -66,6 +66,20 @@ namespace Tycoon.UI
 
         public RectTransform Card => _card;
 
+        /// <summary>Width of the card in canvas units; HudRoot uses it to decide if the top row has room.</summary>
+        public const float Width = CardWidth;
+
+        /// <summary>
+        /// Moves the card between its two homes: under the money plaque (portrait, and wide
+        /// screens too narrow for one row) or up on the top row, left of the plaque. Only the
+        /// anchored position changes, so the collapsed state and the text are untouched.
+        /// </summary>
+        public void SetTopRow(bool topRow)
+        {
+            if (_card == null) return;
+            _card.anchoredPosition = new Vector2(28f, topRow ? -28f : -196f);
+        }
+
         public static TaskPanel Create(RectTransform safeArea)
         {
             var panel = safeArea.gameObject.AddComponent<TaskPanel>();

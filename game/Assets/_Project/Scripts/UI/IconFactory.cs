@@ -81,6 +81,10 @@ namespace Tycoon.UI
                 case "bread": return Get("bread", DrawBread, Supersample);
                 case "apples": return Get("apples", DrawApple, Supersample);
                 case "yogurt": return Get("yogurt", DrawYogurt, Supersample);
+                case "meat": return Get("meat", DrawMeat, Supersample);
+                case "steak": return Get("steak", DrawSteak, Supersample);
+                case "sausage": return Get("sausage", DrawSausage, Supersample);
+                case "pig": return Get("pig", DrawPig, Supersample);
             }
 
             // Unknown product: the old behaviour, a plain disc the caller tints.
@@ -92,7 +96,8 @@ namespace Tycoon.UI
             item != null && (item.icon != null ||
                 item.id == "egg" || item.id == "milk" || item.id == "corn" || item.id == "hay" ||
                 item.id == "trash" || item.id == "bread" || item.id == "apples" ||
-                item.id == "yogurt");
+                item.id == "yogurt" || item.id == "meat" || item.id == "steak" ||
+                item.id == "sausage" || item.id == "pig");
 
         public static Sprite Action(SquareIcon kind)
         {
@@ -317,6 +322,121 @@ namespace Tycoon.UI
             // Gloss.
             p.Fill((x, y) => Sd.Capsule(x, y, 17f, 57f, 24f, 60f, 2.6f), Rgb(1f, 1f, 1f, 0.5f), bale, 1.4f);
             p.Fill((x, y) => Sd.Capsule(x, y, 40f, 62f, 56f, 62f, 2.2f), Rgb(1f, 1f, 0.9f, 0.45f), bale, 1.4f);
+            p.GroundShadow();
+        }
+
+        /// <summary>
+        /// Raw meat: a glossy pink-red joint with a cream fat edge, white marbling and a cartoon
+        /// bone sticking out. Pinker and bonier than the steak so the two never get mixed up.
+        /// </summary>
+        private static void DrawMeat(Painter p)
+        {
+            // Bone first, behind the joint: a shaft with a knuckle at the end.
+            Painter.Shape shaft = (x, y) => Sd.Capsule(x, y, 58f, 54f, 76f, 72f, 4.6f);
+            Painter.Shape knuckle = (x, y) => Mathf.Max(Sd.Circle(x, y, 75f, 78f, 6.4f), Sd.Circle(x, y, 82f, 70f, 6.4f));
+            var boneLit = Rgb(1f, 0.98f, 0.92f);
+            var boneShade = Rgb(0.72f, 0.66f, 0.56f);
+            p.Blob(shaft, boneLit, boneShade, outline: 2.8f, inflate: 5f, spec: 0.4f);
+            p.Blob(knuckle, boneLit, boneShade, outline: 2.8f, inflate: 6f, spec: 0.4f);
+
+            Painter.Shape joint = (x, y) => Sd.Smooth(
+                Sd.Ellipse(x, y, 40f, 38f, 29f, 23f, 12f),
+                Sd.Circle(x, y, 58f, 46f, 18f), 12f);
+            p.Blob(joint, Rgb(1f, 0.50f, 0.54f), Rgb(0.66f, 0.07f, 0.20f), outline: 3.4f, inflate: 17f, spec: 0.55f);
+
+            // Fat edge: the crescent of the joint that is not covered by a copy nudged down-left.
+            p.Fill((x, y) => Sd.Sub(joint(x, y), joint(x + 5f, y + 5f)), Rgb(1f, 0.93f, 0.86f), joint, 0.9f);
+
+            // Marbling.
+            var fat = Rgb(1f, 0.88f, 0.84f, 0.8f);
+            p.Fill((x, y) => Sd.Capsule(x, y, 26f, 36f, 44f, 44f, 1.5f), fat, joint, 0.8f);
+            p.Fill((x, y) => Sd.Capsule(x, y, 36f, 26f, 56f, 36f, 1.4f), fat, joint, 0.8f);
+            p.Fill((x, y) => Sd.Capsule(x, y, 48f, 50f, 60f, 58f, 1.3f), fat, joint, 0.8f);
+
+            // Gloss.
+            p.Fill((x, y) => Sd.Capsule(x, y, 23f, 44f, 30f, 55f, 3f), Rgb(1f, 1f, 1f, 0.7f), joint, 1.5f);
+            p.GroundShadow();
+        }
+
+        /// <summary>A seared steak: brown, grill-marked, ringed with a cream fat rim, with a bone circle.</summary>
+        private static void DrawSteak(Painter p)
+        {
+            Painter.Shape steak = (x, y) => Sd.Smooth(
+                Sd.Ellipse(x, y, 38f, 42f, 28f, 22f, 20f),
+                Sd.Ellipse(x, y, 60f, 46f, 22f, 25f, -10f), 10f);
+            // Fat rim = the whole steak in cream, then the browned meat over it, smaller.
+            p.Blob(steak, Rgb(1f, 0.95f, 0.84f), Rgb(0.80f, 0.64f, 0.46f), outline: 3.4f, inflate: 15f, spec: 0.4f);
+
+            Painter.Shape meat = (x, y) => steak(x, y) - 5.5f;
+            p.Blob(meat, Rgb(0.94f, 0.50f, 0.34f), Rgb(0.46f, 0.15f, 0.08f), outline: 2.2f, inflate: 14f, spec: 0.45f);
+
+            // Grill marks.
+            var grill = Rgb(0.26f, 0.08f, 0.04f, 0.65f);
+            for (int i = -1; i <= 1; i++)
+            {
+                float o = i * 15f;
+                p.Fill((x, y) => Sd.Capsule(x, y, 28f + o, 28f, 52f + o, 66f, 2.4f), grill, meat, 0.8f);
+            }
+
+            // The bone, as a small cream ring in the lower left.
+            Painter.Shape bone = (x, y) => Sd.Circle(x, y, 30f, 30f, 6.2f);
+            p.Blob(bone, Rgb(1f, 0.99f, 0.93f), Rgb(0.74f, 0.67f, 0.56f), outline: 2.2f, inflate: 5f, spec: 0.4f);
+
+            // Gloss.
+            p.Fill((x, y) => Sd.Capsule(x, y, 24f, 56f, 36f, 66f, 3f), Rgb(1f, 1f, 1f, 0.55f), meat, 1.5f);
+            p.GroundShadow();
+        }
+
+        /// <summary>A pair of sausages side by side, plump, glossy, with darker pinched ends.</summary>
+        private static void DrawSausage(Painter p)
+        {
+            var lit = Rgb(1f, 0.64f, 0.46f);
+            var shade = Rgb(0.62f, 0.18f, 0.10f);
+            var tip = Rgb(0.45f, 0.12f, 0.06f, 0.75f);
+            Painter.Shape back = (x, y) => Sd.Capsule(x, y, 38f, 16f, 74f, 52f, 11.5f);
+            Painter.Shape front = (x, y) => Sd.Capsule(x, y, 22f, 30f, 58f, 66f, 11.5f);
+
+            p.Blob(back, lit, shade, outline: 3.3f, inflate: 11f, spec: 0.6f);
+            p.Fill((x, y) => Sd.Circle(x, y, 38f, 16f, 3.2f), tip, back, 1f);
+            p.Fill((x, y) => Sd.Circle(x, y, 74f, 52f, 3.2f), tip, back, 1f);
+            p.Blob(front, lit, shade, outline: 3.3f, inflate: 11f, spec: 0.6f);
+            p.Fill((x, y) => Sd.Circle(x, y, 22f, 30f, 3.2f), tip, front, 1f);
+            p.Fill((x, y) => Sd.Circle(x, y, 58f, 66f, 3.2f), tip, front, 1f);
+
+            // Gloss along each one.
+            p.Fill((x, y) => Sd.Capsule(x, y, 30f, 41f, 48f, 59f, 2.2f), Rgb(1f, 1f, 1f, 0.75f), front, 1.4f);
+            p.Fill((x, y) => Sd.Capsule(x, y, 46f, 27f, 64f, 45f, 2.2f), Rgb(1f, 1f, 1f, 0.65f), back, 1.4f);
+            p.GroundShadow();
+        }
+
+        /// <summary>A pig's face: round, pink, floppy ears, a big snout.</summary>
+        private static void DrawPig(Painter p)
+        {
+            var lit = Rgb(1f, 0.78f, 0.82f);
+            var shade = Rgb(0.84f, 0.38f, 0.52f);
+            p.Blob((x, y) => Sd.Poly(x, y, new[] { new Vector2(17f, 76f), new Vector2(38f, 80f), new Vector2(28f, 58f) }, 4f),
+                Rgb(1f, 0.70f, 0.76f), Rgb(0.76f, 0.30f, 0.44f), outline: 3f, inflate: 7f, spec: 0.3f);
+            p.Blob((x, y) => Sd.Poly(x, y, new[] { new Vector2(79f, 76f), new Vector2(58f, 80f), new Vector2(68f, 58f) }, 4f),
+                Rgb(1f, 0.70f, 0.76f), Rgb(0.76f, 0.30f, 0.44f), outline: 3f, inflate: 7f, spec: 0.3f);
+
+            Painter.Shape head = (x, y) => Sd.Ellipse(x, y, 48f, 46f, 33f, 29f);
+            p.Blob(head, lit, shade, outline: 3.4f, inflate: 20f, spec: 0.55f);
+
+            // Snout with two nostrils.
+            Painter.Shape snout = (x, y) => Sd.Ellipse(x, y, 48f, 35f, 16f, 12f);
+            p.Blob(snout, Rgb(1f, 0.64f, 0.70f), Rgb(0.80f, 0.30f, 0.42f), outline: 2.4f, inflate: 9f, spec: 0.45f, clip: head);
+            var dark = Rgb(0.42f, 0.12f, 0.20f);
+            p.Fill((x, y) => Sd.Ellipse(x, y, 42.5f, 35f, 2.6f, 4.2f), dark, snout, 0.8f);
+            p.Fill((x, y) => Sd.Ellipse(x, y, 53.5f, 35f, 2.6f, 4.2f), dark, snout, 0.8f);
+
+            // Eyes with a glint.
+            var eye = Rgb(0.16f, 0.10f, 0.12f);
+            p.Fill((x, y) => Sd.Circle(x, y, 34f, 55f, 4f), eye, head, 0.8f);
+            p.Fill((x, y) => Sd.Circle(x, y, 62f, 55f, 4f), eye, head, 0.8f);
+            p.Fill((x, y) => Sd.Circle(x, y, 35.2f, 56.6f, 1.3f), Rgb(1f, 1f, 1f, 0.95f), head, 0.5f);
+            p.Fill((x, y) => Sd.Circle(x, y, 63.2f, 56.6f, 1.3f), Rgb(1f, 1f, 1f, 0.95f), head, 0.5f);
+
+            p.Fill((x, y) => Sd.Capsule(x, y, 28f, 62f, 38f, 70f, 2.8f), Rgb(1f, 1f, 1f, 0.6f), head, 1.4f);
             p.GroundShadow();
         }
 

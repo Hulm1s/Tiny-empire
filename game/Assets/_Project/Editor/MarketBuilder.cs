@@ -34,10 +34,14 @@ namespace Tycoon.EditorTools
     ///                    a shelf, then that shelf's goods ordered, then the next shelf ...
     ///                    with a second checkout arriving alongside the first new product
     ///
+    /// The butcher is an extension on the WEST side (see "the butcher extension" and BuildButcher):
+    /// an empty shell, hidden until the extension is bought, with a staff door through the shop's
+    /// west wall and a driveway lane for the meat van. The ATM stands outside on the street.
+    ///
     /// Two rows of three shelves on the shop floor and two storage rooms up the east wall:
     /// sklad1 (north) supplies the first row, sklad2 (south) the second. The checkouts stand
     /// side by side in the south-west, below the second row; the paint corner is under the
-    /// south room and COMING SOON just inside the front door.
+    /// south room; the butcher extension is bought from the lot west of the front door.
     /// </summary>
     internal static class MarketBuilder
     {
@@ -45,19 +49,28 @@ namespace Tycoon.EditorTools
         {
             public GameObject Root;
             public Location Location;
+
+            // For the town gate: the butcher extension and everything sold inside it.
+            public UnlockStation ButcherExtension;
+            public UnlockStation[] ButcherUnlocks;
+            public UpgradeStation[] ButcherMaxed;
         }
 
         // ---- where the world ends --------------------------------------------------
         // The fence, the invisible wall and the grass all read these. The shop itself spans
-        // x -12..12, z -5.4..15.6; the edge is held three metres clear of it, with the road
-        // running through the south end exactly as it does on the farm.
-        private const float EdgeWest = -17f;
+        // x -12..12, z -5.4..15.6; the edge is held three metres clear of it on the north and
+        // east, with the road running through the south end exactly as it does on the farm.
+        // The west edge sits 18 m out so the butcher extension (x -21..-12) and the meat van's
+        // driveway lane (x -27..-23) fit inside the fence, with a little grass beyond the lane.
+        private const float EdgeWest = -30f;
+        /// <summary>Where the market's road starts, in the market's grid (the farm's link road joins it here).</summary>
+        internal const float RoadWestX = EdgeWest - 1f;
         private const float EdgeEast = 17f;
         private const float EdgeNorth = 18.6f;
         private const float EdgeSouth = -13f;
 
         /// <summary>Where the tarmac lies, in the market's grid. The road box is 2.8 m deep.</summary>
-        private const float RoadZ = -9f;
+        internal const float RoadZ = -9f;
 
         // ---- the building ----------------------------------------------------------
         // No roof: the camera looks down into the shop, so the interior is always visible.
@@ -68,7 +81,7 @@ namespace Tycoon.EditorTools
         // height without hiding anything, while the south and west walls are in FRONT of it
         // and are cut down to a low kerb. Stood at full height they would hide the checkout and
         // the whole west end of the floor.
-        private const float ShopWest = -12f;
+        internal const float ShopWest = -12f;
         private const float ShopEast = 12f;
         private const float ShopSouth = -5.4f;
         private const float ShopNorth = 15.6f;
@@ -129,8 +142,7 @@ namespace Tycoon.EditorTools
         //
         // The columns are 4.8 m apart with 1.2 m of walkway between shelves, and the middle gap
         // lines up with the front door, so there is a straight lane from the door to the north
-        // aisle. West of the first column is a bay against the north wall left empty on purpose:
-        // the COMING SOON square goes there.
+        // aisle. West of the first column is a bay against the north wall, left empty.
         //
         // Order, west to east: corn, milk, egg in the north row (storage is on the east wall,
         // so the dearest product has the shortest carry); bread, apples, yogurt in the south row
@@ -146,21 +158,94 @@ namespace Tycoon.EditorTools
         private const float StockSquareDepth = 1.8f;
         private const float BrowseOffset = 0.75f;
 
-        /// <summary>
-        /// Where the butcher will go: a locked bay just inside the front door on the east side,
-        /// south-west of the PAINT square, where every shopper and the player walk past it.
-        /// </summary>
         // ---- cash -------------------------------------------------------------------
         // Each checkout's takings lie on a small square south of its serving square, between it and
-        // the exit lane; the ATM stands just inside the door, east of the entry path.
+        // the exit lane; the ATM stands outside on the street (see AtmPosition).
         private static readonly Vector3 CashOffset = new Vector3(0f, 0f, -1.65f);
         private static readonly Vector2 CashSquareSize = new Vector2(1.8f, 1.5f);
-        private static readonly Vector3 AtmPosition = new Vector3(2.75f, 0f, -0.85f);
+        // The ATM stands OUTSIDE on the street frontage (Filip's butcher sketch), against the south
+        // wall west of the door. The machine's plinth is 1.05 deep and the wall's face is at
+        // z -5.6, so z -6.2 leaves it a hand's breadth clear; its squares are brought in to 1.65 m
+        // (not the usual 1.85) so they stay on the forecourt and short of the shoppers' road.
+        private static readonly Vector3 AtmPosition = new Vector3(-9.8f, 0f, -6.2f);
+        private const float AtmFrontDistance = 1.65f;
         private static readonly Vector2 AtmWithdrawSize = new Vector2(1.6f, 1.6f);
         private static readonly Vector2 AtmDepositSize = new Vector2(1.3f, 1.5f);
         private const float AtmDepositDX = -1.9f;
 
-        private static readonly Vector3 ComingSoonPosition = new Vector3(5.2f, 0f, -3.2f);
+        // ---- the butcher extension -----------------------------------------------------
+        // Filip's sketch: the butcher is an extension on the shop's WEST side, entered from the
+        // street (never through the shop). Everything below is in the market's grid. The shell is
+        // built here, inactive, and revealed by the extension purchase (the old COMING SOON
+        // square, now the gate "market.unlock.butcher"); what goes INSIDE it is the next step's.
+        //
+        //   z 11.8  ============================== north wall (tall)
+        //           |  back room            |         x -17.5 .. -12.2, z 4.8 .. 11.4
+        //   van --> |  drop   [table]       |         the lane enters through the west wall,
+        //   door    |  square [table]       |         z 7.4 .. 10.6
+        //           |   CUT   [table]       |
+        //   z  4.6  ====   ======= gap ====+--  <-- back-room gap  x -14.8 .. -12.8
+        //           | behind-counter strip  |= STAFF DOOR in the market's west wall, z 2.0 .. 4.2
+        //   z  1.2  |-- display counter ----|         (x -20.8 .. -12.4)
+        //           |  customers' side      |
+        //   z -5.4  ==========   ==========         customers' door gap x -18.0 .. -15.0
+        //          x -21                  x -12  (the market's west wall)
+        //
+        // Walls: north tall (the camera looks at it from the south), the rest low kerbs like the
+        // shop's own west and south walls, so nothing inside is hidden from the camera.
+        private const float ButcherWest = -21f;        // centre line of the front room's west wall
+        // The back room is the big one: 7.3 m wide and 11.6 m deep so the drop pile, the cutting table, the grinder and the
+        // staff-door walkway all fit with room between them (it was 5.3 x 6.6, and squares touched).
+        internal const float ButcherBackWest = -19.0f;  // centre line of the back room's west wall
+        internal const float ButcherFrontNorth = 4.6f;  // front room's north wall = back room's south wall
+        private const float ButcherBackNorth = 16.6f;  // centre line of the back room's north wall
+
+        internal const float ShopDoorFrom = -18.0f;     // customers' gap in the south wall (x)
+        internal const float ShopDoorTo = -15.0f;
+        // Moved 1.0 m east of the shell's first cut (-15.5 .. -13.0) so the staff strip has room for its three
+        // squares (cash, hire, counter) between the west wall and the opening.
+        internal const float BackGapFrom = -14.8f;      // opening from the staff strip into the back room (x)
+        internal const float BackGapTo = -12.8f;
+        internal const float VanDoorFrom = 11.9f;       // van opening in the back room's west wall (z)
+        internal const float VanDoorTo = 15.1f;
+
+        /// <summary>The staff door: an opening in the market's west wall, closed by a plug until the extension is bought.</summary>
+        internal const float StaffDoorFrom = 2.0f;
+        internal const float StaffDoorTo = 4.2f;
+
+        // The meat van's driveway: from the street's tarmac up the west side, then east to the back
+        // room's door. Four metres wide, drawn flat with no colliders (a road, not a wall).
+        internal const float LaneWest = -27f;
+        internal const float LaneEast = -23f;
+        internal const float LaneNorthZ = 15.5f;
+        internal const float LaneSouthZ = 11.5f;
+
+        private const double ButcherExtensionPrice = 5500d;
+        private static readonly Vector3 ButcherGatePosition = new Vector3(-16.5f, 0f, -2.0f);
+
+        // The butcher's slots. What stands on them is ButcherBuilder's; the layout audit reads the same
+        // numbers (its walks are the ones the butcher, its worker and its shoppers actually make).
+        internal static readonly Vector3 ButcherDropSquare = new Vector3(-15.4f, 0f, 13.4f);     // 2.2 x 2.2, the van unloads here
+        internal static readonly Vector3 ButcherCutSquare = new Vector3(-15.1f, 0f, 6.9f);       // 2.4 x 2.4, at the table
+        internal static readonly Vector3 ButcherTable = new Vector3(-13.1f, 0f, 6.9f);           // 1.2 (x) by 1.9 (z), against the market wall, beside the cut square
+        internal static readonly Vector3 ButcherGrindSquare = new Vector3(-15.1f, 0f, 10.1f);    // 2.4 x 2.4, at the grinder
+        internal static readonly Vector3 ButcherGrinder = new Vector3(-13.1f, 0f, 10.1f);        // 1.1 (x) by 1.3 (z), against the market wall, north of the table
+        /// <summary>The back room's walkway: down the west wall, 2.5 m wide, clear of every square (market grid).</summary>
+        internal const float BackWalkX = -17.6f;
+        /// <summary>The row just inside the opening that leads to the walkway, south of the first square.</summary>
+        internal const float BackEntryZ = 5.2f;
+        internal static readonly Vector3 ButcherCounter = new Vector3(-16.6f, 0f, 1.2f);         // east-west, x -20.8 .. -12.4
+        internal static readonly Vector3 ButcherCounterSquare = new Vector3(-15.8f, 0f, 3.1f);   // where the counter is served and stocked from
+        internal static readonly Vector3 ButcherCashPile = new Vector3(-19.8f, 0f, 3.1f);        // behind the counter, west end
+        internal static readonly Vector3 ButcherHire = new Vector3(-17.9f, 0f, 3.1f);            // behind the counter
+        internal static readonly Vector3 ButcherQueueFront = new Vector3(-16.6f, 0f, 0.1f);      // customers face the counter here
+        internal static readonly Vector3 ButcherCustomerDoor = new Vector3(-16.5f, 0f, -5.4f);   // customers walk in from the street here
+
+        /// <summary>The bin behind the butcher: on the grass between the driveway (x -23) and the back room's west wall (x -19).</summary>
+        internal static readonly Vector3 ButcherBinPosition = new Vector3(-21.0f, 0f, 6.4f);
+
+        /// <summary>The van backs up the driveway arm to here (market grid): rear to the back-room door.</summary>
+        internal const float VanUnloadX = -22.4f;
 
         // The checkouts: two counters side by side in the west half of the shop, below the second
         // shelf row, each running north-south. Each has its serving square on the counter's WEST
@@ -239,6 +324,9 @@ namespace Tycoon.EditorTools
         /// <summary>Outside the door, then just inside it.</summary>
         private static readonly Vector3[] EntryRoute =
         {
+            // Along the road first, so a shopper never cuts the corner across the street ATM's
+            // squares on the forecourt, then up to the door.
+            new Vector3(0f, 0f, RoadZ),
             new Vector3(0f, 0f, -7.2f),
             new Vector3(0f, 0f, -4.7f),
         };
@@ -322,7 +410,7 @@ namespace Tycoon.EditorTools
         // goods' order offered; ordering reveals its crate, collect square, stocking square and
         // the NEXT shelf. So there is never a product without a shelf to stand on, and only one
         // order is ever open at a time. The second checkout arrives with the first order, and
-        // its cashier with it. COMING SOON appears once all three are in.
+        // its cashier with it. The butcher extension is offered once all three are in.
         //
         // Prices, in order bread / apples / yogurt. Each product costs more than the last, and
         // each shelf-and-order pair roughly pays for itself in a few minutes of its own sales:
@@ -374,7 +462,7 @@ namespace Tycoon.EditorTools
         private static readonly Vector3 OpenPosition = new Vector3(0f, 0f, 1.2f);
 
         internal static Result Build(Transform farmRoot, FarmSceneBuilder.Items items,
-            Location farm, float offsetX)
+            Location farm, float offsetX, FarmSceneBuilder.PigFarm pigs)
         {
             // Same yaw as the farm, so "up the screen" is local +Z here too. Placed by the
             // farm's own rotation, because offsetX is measured along the farm's road axis.
@@ -406,19 +494,152 @@ namespace Tycoon.EditorTools
             LevelBuildKit.BuildBin("market.bin", "Bin", root, BinPosition, squareToSouth: true);
 
             var shop = BuildShop(root);
+            shop.Butcher = BuildButcher(root);
+            // Everything that stands inside the shell is a child of it, so none of it exists until the
+            // extension is bought; its own purchases then bring it in one step at a time.
+            var butcherSales = ButcherBuilder.Build(root, shop.Butcher.transform, items, pigs);
             BuildStock(root, shop, items);
             BuildCheckout(root, shop);
 
-            // The cash machine just inside the door, east of the entry path. Open from the moment
-            // the market is bought: the repair and the paint have to be paid in cash, and the
-            // account is where the farm's takings now land.
+            // The cash machine on the street, in front of the shop's south wall west of the door.
+            // Open from the moment the market is bought: the repair and the paint have to be paid
+            // in cash, and the account is where the farm's takings now land.
             LevelBuildKit.BuildAtm("market.atm", "Atm", root, AtmPosition,
-                AtmWithdrawSize, AtmDepositSize, AtmDepositDX);
+                AtmWithdrawSize, AtmDepositSize, AtmDepositDX, frontDistance: AtmFrontDistance);
             BuildStaff(root, shop);
             BuildRenovation(root, shop, items);
-            BuildGrowth(root, shop);
+            var extension = BuildGrowth(root, shop);
 
-            return new Result { Root = go, Location = location };
+            return new Result
+            {
+                Root = go, Location = location,
+                ButcherExtension = extension,
+                ButcherUnlocks = butcherSales.Unlocks,
+                ButcherMaxed = butcherSales.Maxed,
+            };
+        }
+
+        // ---- the butcher shell ---------------------------------------------------------
+
+        /// <summary>A wall piece as the rectangle it covers in the market's grid.</summary>
+        private struct Piece
+        {
+            public float X0, X1, Z0, Z1, Height;
+        }
+
+        private static Piece Slab(float x0, float x1, float z0, float z1, float height) =>
+            new Piece { X0 = x0, X1 = x1, Z0 = z0, Z1 = z1, Height = height };
+
+        /// <summary>
+        /// The butcher extension's empty shell: floors, walls (solid, carving the navmesh, and
+        /// drawn as boxes named "Wall" so the layout audit measures them even while hidden),
+        /// the staff door's frame and the meat van's driveway. One inactive object; the extension
+        /// purchase switches it on. Nothing is inside it yet - see the Butcher* slots above.
+        /// </summary>
+        private static GameObject BuildButcher(Transform root)
+        {
+            var butcher = new GameObject("Butcher");
+            butcher.transform.SetParent(root, false);
+
+            float half = WallThickness * 0.5f;
+            float marketFace = ShopWest - half;   // the market's west wall, outer face (-12.2)
+
+            var pieces = new List<Piece>
+            {
+                // Front room (the shop floor): south wall with the customers' gap, west wall, and
+                // the north wall that is also the back room's south wall, with the staff strip's
+                // gap into the back room.
+                Slab(ButcherWest - half, ShopDoorFrom, ShopSouth - half, ShopSouth + half, LowWall),
+                Slab(ShopDoorTo, marketFace, ShopSouth - half, ShopSouth + half, LowWall),
+                Slab(ButcherWest - half, ButcherWest + half, ShopSouth + half, ButcherFrontNorth - half, LowWall),
+                Slab(ButcherWest - half, BackGapFrom, ButcherFrontNorth - half, ButcherFrontNorth + half, LowWall),
+                Slab(BackGapTo, marketFace, ButcherFrontNorth - half, ButcherFrontNorth + half, LowWall),
+
+                // Back room: west wall round the van's opening, and the tall north wall.
+                Slab(ButcherBackWest - half, ButcherBackWest + half, ButcherFrontNorth + half, VanDoorFrom, LowWall),
+                Slab(ButcherBackWest - half, ButcherBackWest + half, VanDoorTo, ButcherBackNorth - half, LowWall),
+                Slab(ButcherBackWest - half, marketFace, ButcherBackNorth - half, ButcherBackNorth + half, TallWall),
+            };
+
+            var colliders = new GameObject("WallColliders");
+            colliders.transform.SetParent(butcher.transform, false);
+            var walls = new GameObject("Walls");
+            walls.transform.SetParent(butcher.transform, false);
+
+            var wall = LevelBuildKit.Mat("Butcher_Wall", new Color(0.95f, 0.80f, 0.80f));
+            var trim = LevelBuildKit.Mat("Butcher_Trim", new Color(0.62f, 0.16f, 0.18f));
+            var floor = LevelBuildKit.Mat("Butcher_Floor", new Color(0.90f, 0.90f, 0.92f));
+            var door = LevelBuildKit.Mat("Butcher_StaffDoor", new Color(0.96f, 0.55f, 0.16f));
+
+            foreach (var p in pieces)
+            {
+                var centre = new Vector3((p.X0 + p.X1) * 0.5f, 0f, (p.Z0 + p.Z1) * 0.5f);
+                var footprint = new Vector3(p.X1 - p.X0, 0f, p.Z1 - p.Z0);
+
+                // Collision at full height, as the shop's own walls: a kerb must stop the player.
+                var size = new Vector3(footprint.x, TallWall, footprint.z);
+                var piece = new GameObject("Collider");
+                piece.transform.SetParent(colliders.transform, false);
+                piece.transform.localPosition = new Vector3(centre.x, TallWall * 0.5f, centre.z);
+                piece.AddComponent<BoxCollider>().size = size;
+                var obstacle = piece.AddComponent<UnityEngine.AI.NavMeshObstacle>();
+                obstacle.shape = UnityEngine.AI.NavMeshObstacleShape.Box;
+                obstacle.size = size;
+                obstacle.carving = true;
+
+                // "Wall" is the name the layout audit measures building footprints by.
+                LevelBuildKit.Box("Wall", walls.transform,
+                    new Vector3(centre.x, p.Height * 0.5f, centre.z),
+                    new Vector3(footprint.x, p.Height, footprint.z), wall, castShadow: p.Height > LowWall);
+                LevelBuildKit.Box("Skirting", walls.transform,
+                    new Vector3(centre.x, 0.18f, centre.z),
+                    new Vector3(footprint.x + 0.04f, 0.36f, footprint.z + 0.04f), trim, castShadow: false);
+            }
+
+            // Floors, run on to the market's own floor edge (x = ShopWest) so there is no bare
+            // strip in the staff doorway. 6 cm thick: the street's paving is 5 cm and reaches
+            // into the south wall line.
+            float frontSouth = ShopSouth - half, frontNorth = ButcherFrontNorth - half;
+            LevelBuildKit.Box("FrontFloor", butcher.transform,
+                new Vector3((ButcherWest + ShopWest) * 0.5f, 0.03f, (frontSouth + frontNorth) * 0.5f),
+                new Vector3(ShopWest - ButcherWest, 0.06f, frontNorth - frontSouth), floor, castShadow: false);
+            float backNorth = ButcherBackNorth - half, backSouth = ButcherFrontNorth + half;
+            LevelBuildKit.Box("BackFloor", butcher.transform,
+                new Vector3((ButcherBackWest + ShopWest) * 0.5f, 0.03f, (backSouth + backNorth) * 0.5f),
+                new Vector3(ShopWest - ButcherBackWest, 0.06f, backNorth - backSouth), floor, castShadow: false);
+
+            // The staff door: an orange frame inside the market's west wall (posts and a lintel
+            // over the opening), so the player can tell it is a door and not a gap. Posts stand on
+            // the butcher side of the wall line and are drawn only; the opening itself is the wall's.
+            float doorMid = (StaffDoorFrom + StaffDoorTo) * 0.5f;
+            float doorWidth = StaffDoorTo - StaffDoorFrom;
+            LevelBuildKit.Box("StaffDoorLintel", butcher.transform,
+                new Vector3(ShopWest, 2.05f, doorMid), new Vector3(WallThickness + 0.06f, 0.22f, doorWidth + 0.2f),
+                door, castShadow: false);
+            foreach (float postZ in new[] { StaffDoorFrom, StaffDoorTo })
+                LevelBuildKit.Box("StaffDoorPost", butcher.transform,
+                    new Vector3(ShopWest, 1.05f, postZ), new Vector3(WallThickness + 0.06f, 2.1f, 0.12f),
+                    door, castShadow: false);
+
+            // The driveway: tarmac laid flat from the street up the west side, then east along
+            // the back room's van door. Drawn above the grass, with no collider.
+            var tarmac = LevelBuildKit.Mat("Road", new Color(0.36f, 0.36f, 0.39f));
+            float laneStart = RoadZ + 1.4f;
+            LevelBuildKit.Box("DrivewayStem", butcher.transform,
+                new Vector3((LaneWest + LaneEast) * 0.5f, 0.02f, (laneStart + LaneNorthZ) * 0.5f),
+                new Vector3(LaneEast - LaneWest, 0.04f, LaneNorthZ - laneStart), tarmac, castShadow: false);
+            float laneEndX = ButcherBackWest - half;
+            LevelBuildKit.Box("DrivewayArm", butcher.transform,
+                new Vector3((LaneEast + laneEndX) * 0.5f, 0.02f, (LaneSouthZ + LaneNorthZ) * 0.5f),
+                new Vector3(laneEndX - LaneEast, 0.04f, LaneNorthZ - LaneSouthZ), tarmac, castShadow: false);
+
+            // A bin on the green strip between the driveway and the back room's west wall, level with the
+            // staff-side walkway: nobody should have to cross the shop to throw something away. A child of
+            // the shell, so it arrives with the extension. Its square lies to the north of the can.
+            LevelBuildKit.BuildBin("market.bin.butcher", "ButcherBin", butcher.transform, ButcherBinPosition);
+
+            butcher.SetActive(false);
+            return butcher;
         }
 
         // ---- ground, road, edges -----------------------------------------------------
@@ -432,19 +653,24 @@ namespace Tycoon.EditorTools
             // The farm's road comes out of the shopfront helper, whose dashes run twice as far
             // as the tarmac does; this one is drawn to its own length so the market's road
             // ends where it says it does.
-            const float roadHalfLength = 24f;
-            LevelBuildKit.Box("Road", root, new Vector3(0f, 0.02f, RoadZ),
-                new Vector3(roadHalfLength * 2f, 0.04f, 2.8f), tarmac, castShadow: false);
+            // It runs from the west edge (the butcher's driveway leaves it there) to x = 24.
+            const float roadWest = EdgeWest - 1f;
+            const float roadEast = 24f;
+            LevelBuildKit.Box("Road", root, new Vector3((roadWest + roadEast) * 0.5f, 0.02f, RoadZ),
+                new Vector3(roadEast - roadWest, 0.04f, 2.8f), tarmac, castShadow: false);
 
-            for (int x = -(int)roadHalfLength; x <= (int)roadHalfLength; x += 2)
+            for (int x = (int)roadWest; x <= (int)roadEast; x += 2)
             {
                 LevelBuildKit.Box($"Line_{x}", root, new Vector3(x, 0.05f, RoadZ),
                     new Vector3(0.9f, 0.04f, 0.14f), markings, castShadow: false);
             }
 
-            // The forecourt between the road and the door.
-            LevelBuildKit.Box("Forecourt", root, new Vector3(0f, 0.025f, -6.3f),
-                new Vector3(28f, 0.05f, 2.6f), paving, castShadow: false);
+            // The forecourt between the road and the door; it runs on west past the butcher's front.
+            const float forecourtWest = -22.5f;
+            const float forecourtEast = 14f;
+            LevelBuildKit.Box("Forecourt", root,
+                new Vector3((forecourtWest + forecourtEast) * 0.5f, 0.025f, -6.3f),
+                new Vector3(forecourtEast - forecourtWest, 0.05f, 2.6f), paving, castShadow: false);
 
             // Grass everywhere the shop, the road and the squares are not. Kept clear of a
             // tuft's 40 cm height poking through any interaction square painted 9 cm up.
@@ -455,10 +681,16 @@ namespace Tycoon.EditorTools
 
             var keepClear = new[]
             {
-                // The shop and everything standing inside it.
-                new Rect(-14f, -7f, 28f, 26f),
+                // The shop and everything standing inside it, and the forecourt's east end where the
+                // town's gate and travel square stand.
+                new Rect(-14f, -7f, 30.5f, 26f),
+                // The butcher's plot and the driveway lane round it, bare until it is built.
+                new Rect(-28.5f, -7f, 17f, 26f),
                 // The road, the forecourt between it and the shop, and the travel square.
                 new Rect(EdgeWest - 1f, -11.5f, (EdgeEast - EdgeWest) + 2f, 5f),
+                // The farm's road end and the link to this road that the delivery van drives (they lie in
+                // the gap between the two fences, which this location's grass also covers).
+                new Rect(-39f, -21f, 10f, 14f),
             };
 
             LevelBuildKit.BuildGrass(root, area, keepClear, tufts: 900, seed: 20261007,
@@ -507,6 +739,11 @@ namespace Tycoon.EditorTools
             public readonly List<UnlockStation> Stock1Hires = new List<UnlockStation>();
             public readonly List<UnlockStation> Stock2Hires = new List<UnlockStation>();
             public UnlockStation Cashier1Hire, Cashier2Hire;
+
+            // The butcher extension's shell (inactive until the extension is bought), and the
+            // pieces of the market's west wall that close the staff door until then.
+            public GameObject Butcher;
+            public readonly List<GameObject> StaffDoorPlug = new List<GameObject>();
         }
 
         /// <summary>One product line, end to end: crate, collect square, shelf, stocking square.</summary>
@@ -570,6 +807,7 @@ namespace Tycoon.EditorTools
                 var size = new Vector3(wall.Size.x, TallWall, wall.Size.z);
                 var box = piece.AddComponent<BoxCollider>();
                 box.size = size;
+                if (wall.Plug) shop.StaffDoorPlug.Add(piece);
 
                 // Carves its own hole in the navmesh. The market is saved inactive, so the
                 // runtime bake never sees these walls; the obstacle cuts them in the moment
@@ -613,15 +851,17 @@ namespace Tycoon.EditorTools
                 // "Wall" is the name the layout audit looks for when it measures what the
                 // squares must keep clear of. The grubby set is deliberately named differently:
                 // both coats occupy the same ground and must not be counted twice.
-                LevelBuildKit.Box("DirtyWall", grubby.transform,
+                var dirtyFace = LevelBuildKit.Box("DirtyWall", grubby.transform,
                     new Vector3(wall.Centre.x, wall.Height * 0.5f, wall.Centre.z),
                     new Vector3(wall.Size.x, wall.Height, wall.Size.z), dirtyWall,
                     castShadow: wall.Height > LowWall);
+                if (wall.Plug) shop.StaffDoorPlug.Add(dirtyFace);
 
                 var face = LevelBuildKit.Box("Wall", fresh.transform,
                     new Vector3(wall.Centre.x, wall.Height * 0.5f, wall.Centre.z),
                     new Vector3(wall.Size.x, wall.Height, wall.Size.z), cleanWall,
                     castShadow: wall.Height > LowWall);
+                if (wall.Plug) shop.StaffDoorPlug.Add(face);
 
                 // The long face of a wall is the one the pattern is measured over, so a brick is
                 // the same size on every piece: the pattern is tiled by the piece's real length
@@ -643,6 +883,7 @@ namespace Tycoon.EditorTools
                     new Vector3(wall.Centre.x, 0.18f, wall.Centre.z),
                     new Vector3(wall.Size.x + 0.04f, 0.36f, wall.Size.z + 0.04f), trim,
                     castShadow: false);
+                if (wall.Plug) shop.StaffDoorPlug.Add(skirting);
                 shop.Surfaces.Add(new DecorSurface
                 {
                     renderer = skirting.GetComponent<Renderer>(),
@@ -683,6 +924,9 @@ namespace Tycoon.EditorTools
             public Vector3 Centre;   // at ground level
             public Vector3 Size;     // footprint; the height is separate
             public float Height;
+
+            /// <summary>The staff door's plug: part of the wall until the butcher extension is bought.</summary>
+            public bool Plug;
         }
 
         /// <summary>
@@ -710,13 +954,25 @@ namespace Tycoon.EditorTools
             float partitionRun = eastInner - westFace;
             float partitionCentreX = westFace + partitionRun * 0.5f;
 
+            Wall WestPiece(float from, float to, bool plug) => new Wall
+            {
+                Centre = new Vector3(ShopWest, 0f, (from + to) * 0.5f),
+                Size = new Vector3(WallThickness, 0f, to - from),
+                Height = LowWall,
+                Plug = plug
+            };
+
             var walls = new List<Wall>
             {
                 new Wall { Centre = new Vector3(partitionCentreX, 0f, RoomSouth), Size = new Vector3(partitionRun, 0f, WallThickness), Height = LowWall },
                 new Wall { Centre = new Vector3(partitionCentreX, 0f, RoomMid), Size = new Vector3(partitionRun, 0f, WallThickness), Height = LowWall },
                 new Wall { Centre = new Vector3(0f, 0f, ShopNorth), Size = new Vector3(spanX, 0f, WallThickness), Height = TallWall },
                 new Wall { Centre = new Vector3(ShopEast, 0f, midZ), Size = new Vector3(WallThickness, 0f, spanZ), Height = TallWall },
-                new Wall { Centre = new Vector3(ShopWest, 0f, midZ), Size = new Vector3(WallThickness, 0f, spanZ), Height = LowWall },
+                // The west wall, in three pieces: the staff door (see StaffDoorFrom) is closed by a
+                // plug that the butcher extension's purchase removes.
+                WestPiece(ShopSouth - half, StaffDoorFrom, false),
+                WestPiece(StaffDoorFrom, StaffDoorTo, true),
+                WestPiece(StaffDoorTo, ShopNorth + half, false),
                 new Wall { Centre = new Vector3(southCentre, 0f, ShopSouth), Size = new Vector3(runLength, 0f, WallThickness), Height = LowWall },
                 new Wall { Centre = new Vector3(-southCentre, 0f, ShopSouth), Size = new Vector3(runLength, 0f, WallThickness), Height = LowWall },
             };
@@ -1204,13 +1460,13 @@ namespace Tycoon.EditorTools
         ///                       stockers, the SECOND CHECKOUT offered, and shelf S22 offered
         ///                          checkout 2 bought -> its desk, queue, and its cashier's hire
         ///        S22 -> "Order Apples" -> S23 -> "Order Yogurt"
-        ///     all six purchases made (RevealWhenAll) -> COMING SOON
+        ///     all six purchases made (RevealWhenAll) -> the butcher extension ($5,500)
         ///
         /// Every step is an ordinary UnlockStation, and a gate's reveal list is what keeps the
         /// order: a product is only ever offered once its shelf is standing, and the next shelf
         /// only once the last product's goods are in.
         /// </summary>
-        private static void BuildGrowth(Transform root, Shop shop)
+        private static UnlockStation BuildGrowth(Transform root, Shop shop)
         {
             var lines = shop.Shelves.FindAll(l => l.Growth);
             var shelfGates = new UnlockStation[lines.Count];
@@ -1255,10 +1511,15 @@ namespace Tycoon.EditorTools
             foreach (var hire in shop.Stock2Hires) Reveal(orderGates[0], hire.gameObject);
             Reveal(orderGates[0], checkout2.gameObject);
 
-            // COMING SOON: locked, not for sale, and last.
-            var soon = LevelBuildKit.Station<LockedStation>("market.comingsoon", "ComingSoon", root,
-                ComingSoonPosition, new Vector2(3.0f, 2.6f), "Coming soon", new Color(0.75f, 0.75f, 0.8f));
-            soon.gameObject.SetActive(false);
+            // The butcher extension: last, and out on the lot west of the shop (where COMING SOON
+            // used to sit inside the door). Paying reveals the whole shell and removes the plug
+            // from the staff door; its contents are separate purchases made inside it.
+            var butcher = FarmSceneBuilder.Gate(root, "market.unlock.butcher", "UnlockButcher",
+                ButcherGatePosition, new Vector2(3.0f, 2.6f), "Butcher", ButcherExtensionPrice,
+                shop.Butcher);
+            butcher.icon = SquareIcon.Buy;
+            butcher.hideOnUnlock = shop.StaffDoorPlug.ToArray();
+            butcher.gameObject.SetActive(false);
 
             var progress = new GameObject("Growth");
             progress.transform.SetParent(root, false);
@@ -1276,7 +1537,8 @@ namespace Tycoon.EditorTools
             var everything = new List<UnlockStation>(shelfGates);
             everything.AddRange(orderGates);
             complete.unlocks = everything.ToArray();
-            complete.reveal = new[] { soon.gameObject };
+            complete.reveal = new[] { butcher.gameObject };
+            return butcher;
         }
 
         /// <summary>Adds objects to what a purchase switches on, keeping them off until it does.</summary>

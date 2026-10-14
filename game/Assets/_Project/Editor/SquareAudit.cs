@@ -168,9 +168,11 @@ namespace Tycoon.EditorTools
 
             clashes += SpawnClear(location, entries, solids, tag);
             clashes += ShopperPaths(root, solids, tag);
+            clashes += ButcherShell(root, solids, tag);
             clashes += EdgeOfWorld(root, tag);
             clashes += Progression(root, firstLive, tag);
             clashes += GrowthRules(root, firstLive, firstBuffer, tag);
+            clashes += ButcherChain(root, solids, entries, firstLive, tag);
             ReportLayout(root, solids, tag);
 
             return clashes;
@@ -269,6 +271,18 @@ namespace Tycoon.EditorTools
             var switched = new Dictionary<GameObject, bool>();
             var done = new HashSet<StationBase>();
             var fired = new HashSet<RevealWhenAll>();
+
+            // A purchase made in ANOTHER location that switches something on in this one - the butcher's
+            // pig farm reveals the farm's pig column - is taken as made from the start here: that
+            // location's own replay is what proves the purchase itself is reachable, and without this the
+            // pig column would be reported as never switched on.
+            foreach (var gate in Object.FindObjectsByType<UnlockStation>(
+                         FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (gate.revealOnUnlock == null || gate.transform.IsChildOf(root)) continue;
+                foreach (var go in gate.revealOnUnlock)
+                    if (go != null && go.transform.IsChildOf(root)) switched[go] = true;
+            }
 
             int clashes = 0;
             int round = 0;
@@ -502,6 +516,7 @@ namespace Tycoon.EditorTools
             foreach (var worker in root.GetComponentsInChildren<Tycoon.Upkeep.WorkerAgent>(true))
             {
                 if (worker.routes == null || worker.routes.Length == 0) continue;
+                if (worker.routes[0] != null && worker.routes[0].pickup is CutStation) continue;   // the butcher: see ButcherChain
 
                 var carried = new List<string>();
                 foreach (var route in worker.routes)
@@ -885,6 +900,432 @@ namespace Tycoon.EditorTools
             }
 
             Debug.Log($"[Audit] {tag} shopper paths: {faults} faults.");
+            return faults;
+        }
+
+        // ---------------------------------------------------------------- the butcher's chain
+
+        /// <summary>
+        /// The butcher as a whole, which the generic checks cannot see: that the goods can actually go from
+        /// the pigs to a paying shopper, that the purchases come in the order the design wants, and that
+        /// every walk and drive it relies on is clear.
+        ///
+        /// Market only (it needs a cutting table to start from). It checks, in order: the chain is wired
+        /// (pen -> van -> drop pile -> cutting table -> counter -> shoppers, and the butcher worker's two
+        /// ends); the pig pen really has no repair or buy square and no wear; the purchases are live in
+        /// the intended order (extension, pig farm, table, steak counter, pigs and corn field E2, butcher,
+        /// sausages); the pig farm is not something the supermarket asks to see owned; the shoppers' way in
+        /// and out is clear of walls and of every square; and the van's route stays on the road and clear
+        /// of anything solid in either location.
+        /// </summary>
+        private static int ButcherChain(Transform root, List<Solid> solids, List<Entry> entries,
+            Dictionary<StationBase, int> firstLive, string tag)
+        {
+            // The cutting table (1 meat -> 1 steak) and the grinder (1 meat -> 3 sausages).
+            CutStation cut = null, grinder = null;
+            foreach (var bench in root.GetComponentsInChildren<CutStation>(true))
+            {
+                if (bench.makes > 1) grinder = bench;
+                else cut = bench;
+            }
+            if (cut == null) return 0;
+
+            int faults = 0;
+            void Fault(string what)
+            {
+                faults++;
+                Debug.LogWarning($"[Audit] BUTCHER {tag} {what}");
+            }
+
+            // ---- the counter and what is cut for it --------------------------------------
+            RegisterStation counter = null;
+            foreach (var r in root.GetComponentsInChildren<RegisterStation>(true))
+                if (r.HasDisplay) counter = r;
+            if (counter == null) { Fault("there is no display counter"); return faults; }
+
+            if (cut.meat == null || cut.meat.item == null) Fault("the cutting table has no drop pile to cut from.");
+            if (grinder == null) Fault("there is no sausage grinder.");
+
+            foreach (var bench in new[] { cut, grinder })
+            {
+                if (bench == null) continue;
+                if (bench.output == null || bench.outputCase == null)
+                {
+                    Fault($"{bench.name} does not know what it makes or which case it is for.");
+                    continue;
+                }
+
+                var product = bench.output;
+                if (bench.meat != cut.meat) Fault($"{bench.name} cuts from a different pile than the table.");
+                if (bench.makes != (product.id == "sausage" ? 3 : 1))
+                    Fault($"{bench.name} makes {bench.makes} {product.displayName} from a joint.");
+
+                bool cased = false;
+                foreach (var shelf in counter.stock) if (shelf == bench.outputCase && shelf.item == product) cased = true;
+                if (!cased) Fault($"{bench.name} makes {product.displayName} but the counter has no case for it.");
+                if (!counter.CanFulfill(product)) Fault($"shoppers may not ask for {product.displayName}, which the counter stocks.");
+
+                bool offered = false;
+                foreach (var offer in root.GetComponentsInChildren<ProductOffer>(true))
+                    if (offer.item == product) offered = true;
+                if (!offered) Fault($"nothing advertises {product.displayName}, so shoppers would never ask for it.");
+            }
+
+            // The sausage line: the grinder and the sausage case are both brought by ONE purchase, and are
+            // saved off until then.
+            if (grinder != null && grinder.outputCase != null)
+            {
+                var benchRoot = grinder.transform.parent != null ? grinder.transform.parent.gameObject : null;
+                GameObject line = null;
+                foreach (var gate in root.GetComponentsInChildren<UnlockStation>(true))
+                {
+                    if (gate.revealOnUnlock == null || benchRoot == null) continue;
+                    if (System.Array.IndexOf(gate.revealOnUnlock, benchRoot) < 0) continue;
+                    foreach (var go in gate.revealOnUnlock)
+                        if (go != null && grinder.outputCase.transform.IsChildOf(go.transform)) line = go;
+                }
+
+                if (benchRoot != null && benchRoot.activeSelf) Fault("the grinder must be saved inactive.");
+                if (line == null) Fault("no single purchase brings both the grinder and the sausage case.");
+                else if (line.activeSelf) Fault("the sausage line must be saved inactive.");
+            }
+
+            var queue = counter.queue;
+            if (queue == null || queue.register != counter) Fault("the counter and its shopper queue do not point at each other.");
+
+            // ---- the butcher worker -------------------------------------------------------
+            Tycoon.Upkeep.WorkerAgent butcher = null;
+            foreach (var worker in root.GetComponentsInChildren<Tycoon.Upkeep.WorkerAgent>(true))
+                if (worker.pickup is CutStation) butcher = worker;
+            if (butcher == null) Fault("no worker cuts at the table.");
+            else
+            {
+                if (butcher.dropoff != counter) Fault("the butcher does not take what it cuts to the counter.");
+                if (!butcher.deliverPartialLoads) Fault("the butcher would wait at an empty table for a full load.");
+
+                // Both benches, each to the counter; the first route is also pickup/dropoff.
+                bool hasCut = false, hasGrind = false;
+                if (butcher.routes != null)
+                    foreach (var route in butcher.routes)
+                    {
+                        if (route == null || route.dropoff != counter) continue;
+                        if (route.pickup == cut) hasCut = true;
+                        if (route.pickup == grinder && grinder != null) hasGrind = true;
+                    }
+                if (!hasCut || !hasGrind) Fault("the butcher does not run both the cutting table and the grinder to the counter.");
+                if (butcher.routes == null || butcher.routes.Length == 0 ||
+                    butcher.routes[0].pickup != butcher.pickup || butcher.routes[0].dropoff != butcher.dropoff)
+                    Fault("the butcher's pickup/dropoff is not its first route.");
+            }
+
+            // ---- the pig farm side ---------------------------------------------------------
+            var van = Object.FindFirstObjectByType<MeatVan>(FindObjectsInactive.Include);
+            if (van == null) { Fault("there is no delivery van."); return faults; }
+
+            if (van.destination != cut.meat) Fault("the van unloads somewhere the cutting table does not cut from.");
+            if (van.route == null || van.route.Length < 2) Fault("the van has no route.");
+
+            ProducerMachine pen = null;
+            foreach (var machine in Object.FindObjectsByType<ProducerMachine>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (machine.output == van.source) pen = machine;
+            if (pen == null) Fault("the van collects from something no pig pen makes.");
+            else
+            {
+                if (pen.output.item != cut.meat.item) Fault($"the pen makes {pen.output.item.displayName}, the table cuts {cut.meat.item.displayName}.");
+                if (pen.input == null || pen.input.item == null || pen.input.item.id != "corn") Fault("the pigs are not fed corn.");
+                if (pen.durability != null || pen.GetComponentInChildren<RepairStation>(true) != null ||
+                    pen.GetComponentInChildren<UpgradeStation>(true) != null)
+                    Fault("the pig pen has wear, a repair square or a buy square; it should have none.");
+
+                var pigBuy = root.GetComponentInChildren<UpgradeStation>(true);
+                if (pigBuy == null || pigBuy.target != pen) Fault("pigs cannot be bought for the pen.");
+                else if (pigBuy.tierPrices == null || pigBuy.tierPrices.Length != pen.maxUnits - pen.units)
+                    Fault($"the pig purchase has {(pigBuy.tierPrices == null ? 0 : pigBuy.tierPrices.Length)} prices " +
+                          $"for {pen.maxUnits - pen.units} pigs to buy.");
+
+                // The pig hand: it feeds the pen from corn.
+                Tycoon.Upkeep.WorkerAgent hand = null;
+                foreach (var worker in Object.FindObjectsByType<Tycoon.Upkeep.WorkerAgent>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                    if (worker.dropoff is DepositStation feed && feed.target == pen.input) hand = worker;
+                if (hand == null) Fault("nobody feeds the pig pen.");
+
+                // The pig farm is not part of the farm the supermarket asks to see owned.
+                var group = van.transform.parent;
+                foreach (var watcher in Object.FindObjectsByType<RevealWhenAll>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                {
+                    // The town gate is the one thing that SHOULD wait on the whole butcher, pig farm included.
+                    if (watcher.unlocks == null || watcher.name == "TownUnlock" || watcher.name == "ButcherProgress") continue;
+                    foreach (var gate in watcher.unlocks)
+                    {
+                        if (gate == null || gate.revealOnUnlock == null) continue;
+                        foreach (var go in gate.revealOnUnlock)
+                            if (go != null && group != null && (go.transform == group || go.transform.IsChildOf(group)))
+                                Fault($"{watcher.name} waits on {gate.name}, which brings the pig farm: the supermarket must not ask for it.");
+                    }
+                }
+            }
+
+            // ---- the order the purchases come in ----------------------------------------
+            var named = new Dictionary<string, StationBase>();
+            foreach (var station in root.GetComponentsInChildren<StationBase>(true))
+                if (!named.ContainsKey(station.name)) named[station.name] = station;
+
+            int Round(string name)
+            {
+                if (named.TryGetValue(name, out var s) && firstLive.TryGetValue(s, out int r)) return r;
+                Fault($"{name} is never live.");
+                return -1;
+            }
+
+            int extension = Round("UnlockButcher"), pigFarm = Round("UnlockPigFarm"), table = Round("UnlockTable"),
+                steaks = Round("UnlockSteaks"), pigs = Round("BuyPig"), field = Round("UnlockCornE2"),
+                hire = Round("Hirebutcher"), sausages = Round("UnlockSausages");
+
+            void Order(string earlier, int a, string later, int b)
+            {
+                if (a >= 0 && b >= 0 && a >= b)
+                    Fault($"{later} (stage {b}) is on offer no later than {earlier} (stage {a}); one step at a time.");
+            }
+
+            Order("the extension", extension, "the pig farm", pigFarm);
+            Order("the pig farm", pigFarm, "the cutting table", table);
+            Order("the cutting table", table, "the steak counter", steaks);
+            Order("the steak counter", steaks, "pigs", pigs);
+            Order("the steak counter", steaks, "corn field E2", field);
+            Order("pigs", pigs, "the butcher", hire);
+            Order("corn field E2", field, "the butcher", hire);
+            Order("the butcher", hire, "sausages", sausages);
+
+            // ---- shoppers: the way in, the queue, the way out ------------------------------
+            if (queue != null && queue.spawnPoint != null && queue.slots != null && queue.slots.Length > 0)
+            {
+                var legs = new List<Leg>();
+                Vector2 at = Flat(root, queue.spawnPoint);
+                if (queue.entryRoute != null)
+                    foreach (var t in queue.entryRoute) { var p = Flat(root, t); legs.Add(new Leg(at, p, "in")); at = p; }
+                legs.Add(new Leg(at, Flat(root, queue.slots[0]), "in to the counter"));
+
+                foreach (var slot in queue.slots)
+                {
+                    Vector2 from = Flat(root, slot);
+                    if (queue.exitRoute != null)
+                        foreach (var t in queue.exitRoute) { var p = Flat(root, t); legs.Add(new Leg(from, p, "out")); from = p; }
+                    legs.Add(new Leg(from, Flat(root, queue.exitPoint), "out to the street"));
+                }
+
+                for (int i = 0; i + 1 < queue.slots.Length; i++)
+                    legs.Add(new Leg(Flat(root, queue.slots[i]), Flat(root, queue.slots[i + 1]), "along the queue"));
+
+                // Customers are not solid, but they are drawn: no walking through walls or the counter.
+                foreach (var leg in legs)
+                    foreach (var solid in solids)
+                    {
+                        if (!SegmentHits(leg.A, leg.B, Grow(solid.Area, 0.25f))) continue;
+                        Fault($"a shopper walking {leg.Label} ({leg.A.x:0.0},{leg.A.y:0.0}) to ({leg.B.x:0.0},{leg.B.y:0.0}) " +
+                              $"goes through {solid.Name}.");
+                    }
+
+                // And the lane they queue in is not somebody's square, or the player would pay for a
+                // purchase by standing among the shoppers. The extension's own gate is on the lane by
+                // design and gone once the extension is bought, so only squares that stay are counted.
+                var lane = new List<Vector2>();
+                foreach (var slot in queue.slots) lane.Add(Flat(root, slot));
+                if (queue.entryRoute != null) foreach (var t in queue.entryRoute) lane.Add(Flat(root, t));
+                foreach (var e in entries)
+                {
+                    if (!e.ActiveWhenBuilt || e.Name.Contains("UnlockButcher")) continue;
+                    foreach (var p in lane)
+                        if (e.Card.Contains(p))
+                        {
+                            Fault($"the shoppers' queue passes through {e.Name}.");
+                            break;
+                        }
+                }
+            }
+
+            // ---- the van's drive --------------------------------------------------------
+            faults += VanRoute(van, tag);
+
+            Debug.Log($"[Audit] {tag} butcher chain: {faults} faults.");
+            return faults;
+        }
+
+        /// <summary>
+        /// The van's route, in whichever location each leg is in: every stop on the tarmac (the bay and
+        /// the door, where it parks, excepted), and no leg through a wall, a pen or a counter (grown by the
+        /// van's half width and a little more). The van has no collider and cannot block anyone; this is
+        /// about it looking like it drives, not like it cuts across a field.
+        /// </summary>
+        private static int VanRoute(MeatVan van, string tag)
+        {
+            if (van.route == null || van.route.Length < 2) return 0;
+
+            int faults = 0;
+            var locations = new List<Location>(Object.FindObjectsByType<Location>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None));
+            if (locations.Count == 0) return 0;
+            locations.Sort((a, b) => string.CompareOrdinal(a.locationId, b.locationId));
+            Transform frame = locations.Find(l => l.locationId == "farm")?.transform ?? locations[0].transform;
+
+            // The tarmac, in the farm's grid. Both roads, the link between them and the driveway.
+            var tarmac = new List<Rect>();
+            foreach (var renderer in Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                string n = renderer.name;
+                if (!(n == "Road" || n.StartsWith("RoadLink") || n.StartsWith("Driveway"))) continue;
+                if (TryFootprint(frame, renderer.transform, out Rect r)) tarmac.Add(r);
+            }
+
+            for (int i = 0; i < van.route.Length; i++)
+            {
+                var stop = van.route[i];
+                if (stop.point == null) { faults++; Debug.LogWarning($"[Audit] BUTCHER {tag} a van stop is missing."); continue; }
+
+                // The two ends are where it parks, not where it drives.
+                if (i == 0 || i == van.route.Length - 1) continue;
+
+                Vector3 local = frame.InverseTransformPoint(stop.point.position);
+                bool onRoad = false;
+                foreach (var r in tarmac) if (r.Contains(new Vector2(local.x, local.z))) { onRoad = true; break; }
+                if (!onRoad)
+                {
+                    faults++;
+                    Debug.LogWarning($"[Audit] BUTCHER {tag} the van's stop {stop.point.name} " +
+                                     $"({local.x:0.0},{local.z:0.0}) is not on a road.");
+                }
+            }
+
+            foreach (var location in locations)
+            {
+                var solids = CollectSolids(location.transform);
+                for (int i = 0; i + 1 < van.route.Length; i++)
+                {
+                    if (van.route[i].point == null || van.route[i + 1].point == null) continue;
+                    Vector3 a = location.transform.InverseTransformPoint(van.route[i].point.position);
+                    Vector3 b = location.transform.InverseTransformPoint(van.route[i + 1].point.position);
+
+                    foreach (var solid in solids)
+                    {
+                        if (!SegmentHits(new Vector2(a.x, a.z), new Vector2(b.x, b.z), Grow(solid.Area, 0.9f))) continue;
+                        faults++;
+                        Debug.LogWarning($"[Audit] BUTCHER {tag} the van driving {van.route[i].point.name} to " +
+                                         $"{van.route[i + 1].point.name} goes through {location.locationId}'s {solid.Name}.");
+                    }
+                }
+            }
+
+            return faults;
+        }
+
+        /// <summary>
+        /// The butcher extension's shell (market only). It is saved inactive and bought with one
+        /// gate, so the audit checks the three things that can go quietly wrong: the gate really
+        /// hides the staff door's plug (otherwise the shop's back door is a wall for ever), and,
+        /// with the plug gone, every opening the butcher needs is wide enough for a person to
+        /// walk through with room to spare. Walls are grown by 0.35 m, a body's radius, and the
+        /// walks are the ones the butcher will use: street to counter, staff door to back room,
+        /// back room to the drop square, and the driveway to the van door.
+        /// </summary>
+        private static int ButcherShell(Transform root, List<Solid> solids, string tag)
+        {
+            UnlockStation gate = null;
+            foreach (var g in root.GetComponentsInChildren<UnlockStation>(true))
+            {
+                if (g.revealOnUnlock == null) continue;
+                foreach (var go in g.revealOnUnlock)
+                    if (go != null && go.name == "Butcher") gate = g;
+            }
+            if (gate == null) return 0;
+
+            int faults = 0;
+            var shell = root.Find("Butcher");
+            if (shell == null || shell.gameObject.activeSelf)
+            {
+                faults++;
+                Debug.LogWarning($"[Audit] BUTCHER {tag} the shell must be saved inactive.");
+            }
+
+            // The plug: what the gate hides, measured as the solids it takes away.
+            var plugAreas = new List<Rect>();
+            if (gate.hideOnUnlock != null)
+                foreach (var go in gate.hideOnUnlock)
+                    if (go != null && go.name == "Wall" && TryFootprint(root, go.transform, out Rect r))
+                        plugAreas.Add(r);
+
+            if (plugAreas.Count == 0)
+            {
+                faults++;
+                Debug.LogWarning($"[Audit] BUTCHER {tag} the extension gate hides no wall: the staff door is never opened.");
+            }
+
+            var open = new List<Rect>();
+            foreach (var solid in solids)
+            {
+                bool plug = false;
+                foreach (var area in plugAreas)
+                    if (Mathf.Approximately(area.xMin, solid.Area.xMin) && Mathf.Approximately(area.yMin, solid.Area.yMin) &&
+                        Mathf.Approximately(area.xMax, solid.Area.xMax) && Mathf.Approximately(area.yMax, solid.Area.yMax))
+                        plug = true;
+                if (!plug) open.Add(Grow(solid.Area, 0.35f));
+            }
+
+            float doorMid = (MarketBuilder.StaffDoorFrom + MarketBuilder.StaffDoorTo) * 0.5f;
+            float gapMid = (MarketBuilder.BackGapFrom + MarketBuilder.BackGapTo) * 0.5f;
+            float shopDoorMid = (MarketBuilder.ShopDoorFrom + MarketBuilder.ShopDoorTo) * 0.5f;
+            float vanMid = (MarketBuilder.VanDoorFrom + MarketBuilder.VanDoorTo) * 0.5f;
+            float stripZ = doorMid;   // the staff strip behind the counter, level with the door
+
+            // The back room: in through the opening, along the entry row south of the first square, then up
+            // the walkway along the west wall; every square is a short step east of it.
+            float northX = MarketBuilder.BackGapFrom + 0.6f;
+            float walkX = MarketBuilder.BackWalkX, entryZ = MarketBuilder.BackEntryZ;
+
+            Vector2 V(Vector3 p) => new Vector2(p.x, p.z);
+            var walks = new List<Leg>
+            {
+                // Street in through the customers' gap to the counter.
+                new Leg(new Vector2(shopDoorMid, -8f), new Vector2(shopDoorMid, V(MarketBuilder.ButcherQueueFront).y), "street to counter"),
+                // Market floor through the staff door, along the strip, up through the gap into the back room.
+                new Leg(new Vector2(MarketBuilder.ShopWest + 1.5f, doorMid), new Vector2(northX, stripZ), "staff door to strip"),
+                new Leg(new Vector2(northX, stripZ), new Vector2(northX, entryZ), "strip to back room"),
+                new Leg(new Vector2(northX, entryZ), new Vector2(walkX, entryZ), "back room entry row"),
+                new Leg(new Vector2(walkX, entryZ), new Vector2(walkX, V(MarketBuilder.ButcherDropSquare).y), "back room walkway"),
+                new Leg(new Vector2(walkX, V(MarketBuilder.ButcherCutSquare).y), V(MarketBuilder.ButcherCutSquare), "walkway to the cutting table"),
+                new Leg(new Vector2(walkX, V(MarketBuilder.ButcherGrindSquare).y), V(MarketBuilder.ButcherGrindSquare), "walkway to the grinder"),
+                new Leg(new Vector2(walkX, V(MarketBuilder.ButcherDropSquare).y), V(MarketBuilder.ButcherDropSquare), "walkway to the drop square"),
+                // The butcher's round: each bench to the counter and back.
+                new Leg(V(MarketBuilder.ButcherCutSquare), new Vector2(northX, entryZ), "cutting table to the opening"),
+                new Leg(V(MarketBuilder.ButcherGrindSquare), new Vector2(walkX, V(MarketBuilder.ButcherGrindSquare).y), "grinder to the walkway"),
+                // The strip itself, end to end (cash pile, hire, counter service).
+                new Leg(new Vector2(northX, stripZ), V(MarketBuilder.ButcherCashPile), "strip to the cash pile"),
+                new Leg(new Vector2(northX, stripZ), V(MarketBuilder.ButcherHire), "strip to the butcher's hire square"),
+                new Leg(new Vector2(northX, stripZ), V(MarketBuilder.ButcherCounterSquare), "strip to the counter"),
+                // The customers' side: the door to the pig purchase and the second corn field's.
+                new Leg(new Vector2(shopDoorMid, -6.5f), new Vector2(shopDoorMid, -2.5f), "street to the middle of the shop"),
+                new Leg(new Vector2(shopDoorMid, -2.5f), new Vector2(-19.3f, -1.2f), "shop to the pig purchase"),
+                new Leg(new Vector2(shopDoorMid, -2.5f), new Vector2(-19.3f, -3.5f), "shop to the corn field purchase"),
+                // The van's lane to its door and the drop square.
+                new Leg(new Vector2((MarketBuilder.LaneWest + MarketBuilder.LaneEast) * 0.5f, -8.5f),
+                        new Vector2((MarketBuilder.LaneWest + MarketBuilder.LaneEast) * 0.5f, vanMid), "driveway up"),
+                new Leg(new Vector2((MarketBuilder.LaneWest + MarketBuilder.LaneEast) * 0.5f, vanMid),
+                        new Vector2(walkX, vanMid), "driveway through the van door"),
+                new Leg(new Vector2(walkX, vanMid), V(MarketBuilder.ButcherDropSquare), "van door to the drop square"),
+            };
+
+            foreach (var leg in walks)
+            {
+                foreach (var wall in open)
+                {
+                    if (!SegmentHits(leg.A, leg.B, wall)) continue;
+                    faults++;
+                    Debug.LogWarning($"[Audit] BUTCHER {tag} walking {leg.Label} " +
+                                     $"({leg.A.x:0.0},{leg.A.y:0.0}) to ({leg.B.x:0.0},{leg.B.y:0.0}) " +
+                                     $"is blocked by a wall (plug removed).");
+                    break;
+                }
+            }
+
+            Debug.Log($"[Audit] {tag} butcher shell: {faults} faults.");
             return faults;
         }
 

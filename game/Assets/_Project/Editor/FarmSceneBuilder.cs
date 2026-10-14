@@ -60,13 +60,16 @@ namespace Tycoon.EditorTools
             var root = CreateLevelRoot();
 
             var parts = BuildFarm(root, items);
+            // Hidden until the butcher sells it, and deliberately NOT in `parts`: the supermarket asks
+            // the player to own the whole farm, and the butcher only exists once the supermarket does.
+            var pigs = BuildPigFarm(root, items);
             BuildGroundCover(root);
             BuildBoundary(root);
             BuildFence(root);
 
             // The second location, and the road that joins it to this one. Built after the
             // farm so the gate that sells it can watch every purchase the farm has.
-            BuildMarketLink(root, items, parts);
+            BuildMarketLink(root, items, parts, pigs);
             BuildNavigation();
             // Between the first coop's collect square and the egg till, so the opening shot
             // shows a complete chain - birds above, counter below - without the player having
@@ -134,6 +137,12 @@ namespace Tycoon.EditorTools
             public ItemDefinition Bread;
             public ItemDefinition Apples;
             public ItemDefinition Yogurt;
+
+            // The butcher's goods: raw meat comes off the farm's pigs by van, and is cut by hand
+            // into steaks or sausages, which only the butcher's counter sells.
+            public ItemDefinition Meat;
+            public ItemDefinition Steak;
+            public ItemDefinition Sausage;
         }
 
         private static Items CreateItems()
@@ -179,7 +188,23 @@ namespace Tycoon.EditorTools
 
                 Yogurt = LevelBuildKit.Item(
                     "yogurt", "Yogurt", new Color(0.93f, 0.78f, 0.86f),
-                    price: 10d, perishable: true, spoilSeconds: 120f, stackHeight: 0.45f)
+                    price: 10d, perishable: true, spoilSeconds: 120f, stackHeight: 0.45f),
+
+                // Raw meat is worth nothing: it is only ever cut. Steak and sausage are the counter's
+                // prices (the real ones - TestPriceOverride changes what is BOUGHT, never what is sold).
+                // Stack heights are the measured heights of the approved models (ButcherModels, which
+                // already carry the 1.6 x goods scale), so carried stacks close up exactly.
+                Meat = LevelBuildKit.Item(
+                    "meat", "Raw Meat", new Color(0.93f, 0.36f, 0.42f),
+                    price: 0d, perishable: false, stackHeight: 0.23f),
+
+                Steak = LevelBuildKit.Item(
+                    "steak", "Steak", new Color(0.76f, 0.30f, 0.22f),
+                    price: 25d, perishable: false, stackHeight: 0.20f),
+
+                Sausage = LevelBuildKit.Item(
+                    "sausage", "Sausage", new Color(0.86f, 0.38f, 0.26f),
+                    price: 9d, perishable: false, stackHeight: 0.31f)
             };
         }
 
@@ -236,6 +261,13 @@ namespace Tycoon.EditorTools
         private const float ColumnC = 5.25f;     // hay  -> cows     -> milk
         private const float ColumnD = 15.75f;    // hay  -> cows     -> milk
 
+        /// <summary>
+        /// The pig farm: a fifth column east of the dairy (ColumnD + ColumnSpacing), built hidden and
+        /// revealed by buying the pig farm in the BUTCHER. Not part of the farm the supermarket asks
+        /// to see owned - the supermarket comes first.
+        /// </summary>
+        private const float ColumnPig = ColumnD + ColumnSpacing;   // 26.25
+
         // Each half's till sits between its two columns, so both chains above it come down
         // the same short distance to sell.
         private const float EggTill = (ColumnA + ColumnB) * 0.5f;
@@ -280,7 +312,9 @@ namespace Tycoon.EditorTools
         // sits inside roughly x -21..21 and z -20..5, and the edge is held a couple of metres
         // clear of that so the fence never crowds a square.
         private const float EdgeWest = -25.5f;
-        private const float EdgeEast = 25.5f;
+        // Was 25.5. The fifth column (the pig farm, see ColumnPig) stands east of the dairy and its
+        // pen reaches x 30.35, so the fence, the walls, the east bin and the road all move out with it.
+        private const float EdgeEast = 36f;
         private const float EdgeNorth = 9f;   // was 7: the second fields reach z 4.8
         private const float EdgeSouth = -23f;
 
@@ -317,7 +351,7 @@ namespace Tycoon.EditorTools
             // is what a road does. Shoppers still arrive from inside the boundary, because a
             // shopper spawned out on the far tarmac would be outside the navmesh entirely.
             var street = LevelBuildKit.BuildShopfront("farm.market", "Market", root,
-                new Vector3(0f, 0f, MarketRow), roadHalfLength: 34f, walkHalfLength: 19f);
+                new Vector3(0f, 0f, MarketRow), roadHalfLength: 46f, walkHalfLength: 19f);
 
             // One till per product line, and this is load-bearing.
             //
@@ -559,10 +593,6 @@ namespace Tycoon.EditorTools
                 new Vector2(3.4f, 2.6f), "Coop", 500d,
                 coopB.Root, hireFarmerB.gameObject, hireCashierB.gameObject, gateCornB2.gameObject));
 
-            parts.Unlocks.Add(Gate(root, "farm.unlock.counterB", "UnlockCounterB", new Vector3(MilkTill, 0f, MarketRow),
-                new Vector2(3.4f, 2.2f), "Dairy Till", 800d,
-                counterB.Root));
-
             // The meadow comes with the cow shed, deliberately, and this is a softlock fix
             // rather than a tidy-up.
             //
@@ -573,8 +603,20 @@ namespace Tycoon.EditorTools
             // starting over. Selling the two together means hay can never exist before
             // something that eats it.
             parts.Unlocks.Add(Gate(root, "farm.unlock.cowA", "UnlockCowA", new Vector3(ColumnC, 0f, BuildingRow),
-                new Vector2(3.4f, 2.6f), "Dairy", 2200d,
-                cowA.Root, hayA.gameObject, hireHayA.gameObject, hireMilkA.gameObject, gateHayA2.gameObject));
+                new Vector2(3.4f, 2.6f), "Dairy", 3000d,
+                cowA.Root, hayA.gameObject, hireHayA.gameObject, hireMilkA.gameObject, gateHayA2.gameObject,
+                counterB.Root));
+
+            // The milk till comes with the Dairy (it was its own $800 gate, "farm.unlock.counterB"). The
+            // retired gate's save entry is still honoured: a save that had bought the till but not the
+            // Dairy keeps its till (this reads the old entry and reveals counterB); a save that had bought
+            // the Dairy gets the till from the Dairy gate itself. See SAVE_SYSTEM.md.
+            var legacyTill = new GameObject("LegacyDairyTill");
+            legacyTill.transform.SetParent(root, false);
+            LevelBuildKit.Identify(legacyTill, "farm.legacy.dairyTill");   // identity only; the key it reads is legacyKey
+            var legacyReveal = legacyTill.AddComponent<LegacyUnlockReveal>();
+            legacyReveal.legacyKey = "farm.unlock.counterB#UnlockStation";
+            legacyReveal.reveal = new[] { counterB.Root };
 
             // The second shed takes its meadow with it, exactly like the first. The meadow used to
             // be a separate gate (farm.unlock.hayB, $4,500) bought ahead of the shed ($6,000);
@@ -601,6 +643,150 @@ namespace Tycoon.EditorTools
             walkthrough.till = counterA.Register;
 
             return parts;
+        }
+
+        // ---- the pig farm -----------------------------------------------------------
+        // The fifth column, east of the dairy at x 26.25 (ColumnPig). Built here, saved HIDDEN, and
+        // switched on by the butcher's "Pig Farm" purchase, which also brings the corn hand and the
+        // delivery van with it. Laid out exactly like a coop's column - field, building, feed square
+        // above, collect square below - so the pig hand's loop and the player's are the same short
+        // walk as everywhere else on the farm.
+        //
+        //   corn field E2   (26.25,  3.05)   bought in the butcher ($6,000), same size as every field
+        //   corn field E1   (26.25, -1.05)
+        //   feed square     (26.25, -5.05)   the pig hand (or the player) tips corn in
+        //   pig pen         (26.25, -7.85)   building, fenced pen to x 30.35, up to four pigs
+        //   collect square  (26.25, -10.65)  the van's pickup - and the player's, by hand
+        //
+        // No repair and no buy-a-pig squares on the pen, and no wear: the pigs are bought in the butcher
+        // and the supermarket (which comes first) already retired the farm's upkeep, so nothing on the
+        // farm side would ever be fixed.
+
+        /// <summary>One pig farm, as the butcher's purchases and the layout audit need to find it.</summary>
+        internal class PigFarm
+        {
+            /// <summary>The pen, field E1, the pig hand, the van and the road link. Saved inactive.</summary>
+            public GameObject Group;
+
+            /// <summary>Corn field E2, bought in the butcher. Saved inactive, a sibling of the group.</summary>
+            public GameObject FieldTwo;
+
+            public LevelBuildKit.Workshop Pen;
+            public HarvestStation FieldOne;
+            public HarvestStation FieldTwoStation;
+            public Tycoon.Upkeep.WorkerAgent Hand;
+            public MeatVan Van;
+        }
+
+        // The van stops, in the farm's own grid. The market stands MarketOffsetX along the road axis,
+        // so a market coordinate is the same point here plus that offset in x.
+        private const float VanBayZ = -13.8f;          // parked south of the pickup square, rear to the pen
+        private const float RoadLinkX = 41f;           // where the link to town turns north, between the two fences
+
+        private static PigFarm BuildPigFarm(Transform root, Items items)
+        {
+            var pig = new PigFarm();
+
+            var group = new GameObject("PigFarm");
+            group.transform.SetParent(root, false);
+            pig.Group = group;
+
+            // One pig makes a joint every 10 s (units divide it, so four make one every 2.5 s) and eats
+            // two corn doing it; the hopper holds 20 corn and the pen 24 joints. maintenance: false is
+            // what leaves the pen without wear, repair and buy squares.
+            pig.Pen = LevelBuildKit.BuildWorkshop(
+                "farm.pigA", "PigPen", group.transform, new Vector3(ColumnPig, 0f, BuildingRow),
+                input: items.Corn, output: items.Meat,
+                secondsPerOutput: 10f, inputCapacity: 20, outputCapacity: 24,
+                bodyColor: new Color(0.93f, 0.66f, 0.64f), wearPerOutput: 0f, inputPerOutput: 2,
+                startUnits: 1, maxUnits: 4, unitPrice: 0d,
+                unitName: "Pig", livestock: LevelBuildKit.Livestock.Pig, maintenance: false);
+            pig.Pen.Beacon.businessName = "Pig Pen";
+
+            // Its own corn, so feeding the pigs never competes with the chickens. 8 plots every 2.2 s
+            // is the same 27 corn a minute as every other field.
+            pig.FieldOne = LevelBuildKit.BuildField("farm.cornE1", "CornFieldE1", group.transform,
+                new Vector3(ColumnPig, 0f, FieldRow), items.Corn,
+                plots: 8, regrowSeconds: 2.2f, size: FieldSize);
+
+            // The second field is bought in the butcher, so it is NOT in the group (the pig-farm
+            // purchase would switch it on with the rest).
+            pig.FieldTwoStation = LevelBuildKit.BuildField("farm.cornE2", "CornFieldE2", root,
+                new Vector3(ColumnPig, 0f, FieldRow2), items.Corn,
+                plots: 8, regrowSeconds: 2.2f, size: FieldSize);
+            pig.FieldTwo = pig.FieldTwoStation.gameObject;
+            pig.FieldTwo.SetActive(false);
+
+            // The pig hand comes with the farm (no hire square: the butcher sells the farm, and a
+            // farm with nobody to feed it would be a trap). It cuts whichever field has more ready,
+            // exactly as every farmer does, and E2 is simply not chosen until it is bought.
+            pig.Hand = LevelBuildKit.BuildWorker("PigHand", group.transform,
+                BesideField(root, pig.FieldOne, -1), pig.FieldOne, pig.Pen.Feed,
+                new Color(0.95f, 0.70f, 0.76f), 0d, role: CharacterLibrary.Farmer);
+            pig.Hand.routes = new[]
+            {
+                new Tycoon.Upkeep.StockRoute { pickup = pig.FieldOne, dropoff = pig.Pen.Feed },
+                new Tycoon.Upkeep.StockRoute { pickup = pig.FieldTwoStation, dropoff = pig.Pen.Feed },
+            };
+            pig.Pen.Beacon.worker = pig.Hand;
+            WarnIfRouteBroken(pig.Hand.name, pig.FieldOne, pig.Pen.Feed);
+
+            // The road link and the van. The farm's road already runs on to x 46; the link turns north
+            // between the two fences and joins the market's road, which leads to its driveway.
+            BuildRoadLink(group.transform);
+
+            float lane = MarketOffsetX + (MarketBuilder.LaneWest + MarketBuilder.LaneEast) * 0.5f;
+            float doorZ = (MarketBuilder.VanDoorFrom + MarketBuilder.VanDoorTo) * 0.5f;
+
+            var van = new GameObject("MeatVan");
+            van.transform.SetParent(group.transform, false);
+            LevelBuildKit.Identify(van, "farm.pigvan");
+            pig.Van = van.AddComponent<MeatVan>();
+            ButcherModels.Van(van.transform, Vector3.zero, 0f);
+            pig.Van.source = pig.Pen.Output;   // the butcher gives it its drop pile (ButcherBuilder)
+
+            var holder = new GameObject("VanRoute");
+            holder.transform.SetParent(group.transform, false);
+            MeatVan.Stop Stop(string stopName, float x, float z, bool reverse = false)
+            {
+                var point = new GameObject(stopName);
+                point.transform.SetParent(holder.transform, false);
+                point.transform.localPosition = new Vector3(x, 0f, z);
+                return new MeatVan.Stop { point = point.transform, reverseInto = reverse };
+            }
+
+            pig.Van.route = new[]
+            {
+                Stop("Bay", ColumnPig, VanBayZ),
+                Stop("FarmRoad", ColumnPig, RoadZ),
+                Stop("RoadEast", RoadLinkX, RoadZ),
+                Stop("LinkNorth", RoadLinkX, MarketBuilder.RoadZ),
+                Stop("MarketRoad", lane, MarketBuilder.RoadZ),
+                Stop("DrivewayTop", lane, doorZ),
+                // Backs up the arm to the back-room door: rear to the door, so the cargo is what it faces.
+                Stop("DoorBay", MarketOffsetX + MarketBuilder.VanUnloadX, doorZ, reverse: true),
+            };
+
+            group.SetActive(false);
+            return pig;
+        }
+
+        /// <summary>
+        /// Tarmac from the farm's road to the market's: north between the two fences, then east to the
+        /// market's road. Drawn flat with no colliders (the fences stop everyone walking it); it only
+        /// exists so the van drives on a road the whole way.
+        /// </summary>
+        private static void BuildRoadLink(Transform group)
+        {
+            var tarmac = LevelBuildKit.Mat("Road", new Color(0.36f, 0.36f, 0.39f));
+            float southZ = RoadZ - 1.4f, northZ = MarketBuilder.RoadZ + 1.4f;
+            LevelBuildKit.Box("RoadLinkNorth", group, new Vector3(RoadLinkX, 0.02f, (southZ + northZ) * 0.5f),
+                new Vector3(2.8f, 0.04f, northZ - southZ), tarmac, castShadow: false);
+
+            float westX = RoadLinkX - 1.4f, eastX = MarketOffsetX + MarketBuilder.RoadWestX + 1f;
+            LevelBuildKit.Box("RoadLinkEast", group,
+                new Vector3((westX + eastX) * 0.5f, 0.02f, MarketBuilder.RoadZ),
+                new Vector3(eastX - westX, 0.04f, 2.8f), tarmac, castShadow: false);
         }
 
         /// <summary>Gives a hired field hand a second field to cut (see WorkerAgent.ChooseField).</summary>
@@ -697,10 +883,18 @@ namespace Tycoon.EditorTools
         /// has actually been bought.
         /// </summary>
         internal static UnlockStation Gate(Transform root, string id, string name, Vector3 position,
-            Vector2 size, string label, double price, params GameObject[] reveal)
+            Vector2 size, string label, double price, params GameObject[] reveal) =>
+            Gate(root, id, name, position, size, default, label, price, reveal);
+
+        /// <summary>
+        /// As above, with the drawn card's smallest size given. For a gate in a tight room (the
+        /// butcher's) whose card must not be padded out to the usual 2.5 x 2.1 minimum.
+        /// </summary>
+        internal static UnlockStation Gate(Transform root, string id, string name, Vector3 position,
+            Vector2 size, Vector2 smallestCard, string label, double price, params GameObject[] reveal)
         {
             var gate = LevelBuildKit.Station<UnlockStation>(id, name, root, position, size,
-                label, new Color(1f, 0.85f, 0.35f));
+                label, new Color(1f, 0.85f, 0.35f), smallestCard);
             gate.price = Price(price);
             gate.payPerTick = Mathf.Max(4f, (float)(gate.price / 40d));
             gate.revealOnUnlock = reveal;
@@ -718,11 +912,11 @@ namespace Tycoon.EditorTools
         internal static UnlockStation BuildHire(Transform root, string role, string id, Vector3 position,
             double price, Tycoon.Stations.StationBase pickup, Tycoon.Stations.StationBase dropoff,
             Color color, double feePerDelivery, Tycoon.Upkeep.AlertBeacon beacon,
-            string idPrefix = "farm.hire.")
+            string idPrefix = "farm.hire.", Vector2 smallestCard = default)
         {
             // Field hands wear the straw hat, till staff the cap. Derived from the role
             // name so adding a hire does not mean remembering to pass a model as well.
-            string model = role.StartsWith("Cashier") || role.StartsWith("Milk")
+            string model = role.StartsWith("Cashier") || role.StartsWith("Milk") || role.StartsWith("Butcher")
                 ? CharacterLibrary.Cashier
                 : CharacterLibrary.Farmer;
 
@@ -731,7 +925,7 @@ namespace Tycoon.EditorTools
             WarnIfRouteBroken(id, pickup, dropoff);
 
             var hire = LevelBuildKit.Station<UnlockStation>($"{idPrefix}{id}", $"Hire{id}", root, position,
-                new Vector2(1.8f, 1.8f), role, new Color(0.55f, 0.8f, 1f));
+                new Vector2(1.8f, 1.8f), role, new Color(0.55f, 0.8f, 1f), smallestCard);
             // A person rather than the padlock every other purchase gets: same station type,
             // very different thing being bought.
             hire.icon = Tycoon.UI.SquareIcon.Hire;
@@ -769,10 +963,12 @@ namespace Tycoon.EditorTools
             {
                 // The four columns: fields, buildings, and every square that belongs to them,
                 // including the hire squares standing behind the fields.
-                new Rect(-22f, -12.5f, 44f, 19f),
+                new Rect(-22f, -12.5f, 54f, 19f),
                 // The market: both tills, the bin, the hire squares flanking the counters,
                 // the queues and the road.
-                new Rect(EdgeWest - 1f, -21f, (EdgeEast - EdgeWest) + 2f, 8.5f),
+                // Runs on east past the fence to the end of the road (x 46), and the link to town below.
+                new Rect(EdgeWest - 1f, -21f, (EdgeEast - EdgeWest) + 2f + 10f, 8.5f),
+                new Rect(38.5f, -21f, 7f, 14f),
             };
 
             LevelBuildKit.BuildGrass(root, area, keepClear, tufts: 2200);
@@ -836,7 +1032,7 @@ namespace Tycoon.EditorTools
         /// <summary>Price of the supermarket itself, before the test override.</summary>
         private const double MarketPrice = 7000d;
 
-        private static void BuildMarketLink(Transform farmRoot, Items items, FarmParts parts)
+        private static void BuildMarketLink(Transform farmRoot, Items items, FarmParts parts, PigFarm pigs)
         {
             var farmLocation = farmRoot.GetComponent<Location>();
 
@@ -845,7 +1041,11 @@ namespace Tycoon.EditorTools
             spawn.transform.localPosition = ReturnFromTown;
             farmLocation.spawnPoint = spawn.transform;
 
-            var market = MarketBuilder.Build(farmRoot, items, farmLocation, MarketOffsetX);
+            var market = MarketBuilder.Build(farmRoot, items, farmLocation, MarketOffsetX, pigs);
+
+            // The third location: empty and locked, sold from the supermarket's forecourt once the
+            // butcher is complete. Its own file, like the market's.
+            TownBuilder.Build(farmRoot, market);
 
             var toTown = LevelBuildKit.Station<TravelStation>("farm.travel.town", "TravelToTown",
                 farmRoot, TownSquarePosition, new Vector2(2.5f, 2.1f), "Town",

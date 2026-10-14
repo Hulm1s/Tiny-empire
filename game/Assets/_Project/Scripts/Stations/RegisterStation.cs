@@ -65,6 +65,31 @@ namespace Tycoon.Stations
                  "supermarket) and does not touch a till with no pile (the shop's own).")]
         [Range(0f, 1f)] public float accountShare = 1f;
 
+        [Header("Display counter (the butcher's only)")]
+        [Tooltip("Leave empty for an ordinary till, which hands over what the player is carrying. " +
+                 "Filled, this is a counter with a glass case: whoever stands here (the player or the " +
+                 "butcher) first puts what they carry into the case - into the buffer that holds that " +
+                 "product - and then serves the shopper at the front OUT of the case. A case that has not " +
+                 "been bought yet is inactive and is simply not served from. " +
+                 "One square does both on purpose: a hired butcher has one pickup and one dropoff, and a " +
+                 "dropoff that restocks AND serves is what lets one worker keep the counter going.")]
+        public ItemBuffer[] stock;
+
+        /// <summary>True for a display counter (the butcher's), false for a plain till.</summary>
+        public bool HasDisplay => stock != null && stock.Length > 0;
+
+        /// <summary>The case for this product, if there is one that is switched on.</summary>
+        public ItemBuffer StockFor(ItemDefinition item)
+        {
+            if (item == null || stock == null) return null;
+            for (int i = 0; i < stock.Length; i++)
+            {
+                var b = stock[i];
+                if (b != null && b.item == item && b.isActiveAndEnabled) return b;
+            }
+            return null;
+        }
+
         /// <summary>Fired with the money taken per unit, for popups and audio.</summary>
         public event Action<double> Sold;
 
@@ -122,6 +147,7 @@ namespace Tycoon.Stations
         protected override bool TickWithPlayer()
         {
             if (queue == null) return false;
+            if (HasDisplay) return TickCounter();
 
             var customer = queue.Front;
             if (customer == null) return false;
@@ -139,6 +165,61 @@ namespace Tycoon.Stations
                 return false;
             }
 
+            Settle(wanted);
+            return true;
+        }
+
+        /// <summary>
+        /// A display counter's tick. Serve first: the shopper at the front takes one unit of what
+        /// they asked for from the case. Otherwise restock: one carried unit goes into the case for
+        /// its product, if the case has room. Doing both in one square is what lets the butcher
+        /// (whose dropoff is this square) keep the case full AND the queue moving.
+        /// </summary>
+        private bool TickCounter()
+        {
+            var customer = queue.Front;
+            var wanted = customer != null ? customer.Wanted : null;
+            if (wanted != null)
+            {
+                var shelf = StockFor(wanted);
+                if (shelf != null && shelf.Remove(1) > 0)
+                {
+                    if (customer.Deliver(wanted))
+                    {
+                        Settle(wanted);
+                        return true;
+                    }
+
+                    // Not wanted after all: back into the case, never destroyed.
+                    shelf.Add(1);
+                }
+            }
+
+            if (Carry == null || Carry.IsEmpty) return false;
+
+            for (int i = 0; i < stock.Length; i++)
+            {
+                var shelf = stock[i];
+                if (shelf == null || !shelf.isActiveAndEnabled || shelf.item == null || shelf.IsFull) continue;
+                if (!Carry.Has(shelf.item) || !Carry.TryRemove(shelf.item)) continue;
+
+                // If the case somehow refuses it, hand it back rather than destroying goods.
+                if (shelf.Add(1) == 0)
+                {
+                    Carry.TryAdd(shelf.item);
+                    continue;
+                }
+
+                SoundFx.PlayAt(Sfx.Drop, shelf.transform.position);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>One unit sold: the money, the event, the sound and the popup.</summary>
+        private void Settle(ItemDefinition wanted)
+        {
             double price = wanted.basePrice * priceMultiplier * queue.PriceMultiplier;
             Pay(price);
             Sold?.Invoke(price);
@@ -148,8 +229,6 @@ namespace Tycoon.Stations
 
             Tycoon.UI.WorldFeedback.AddMoney($"sale{GetInstanceID()}",
                 transform.position + Vector3.up * 1.8f, Mathf.RoundToInt((float)price));
-
-            return true;
         }
     }
 }

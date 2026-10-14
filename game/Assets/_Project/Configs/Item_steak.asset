@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c8154ee2a02895448ef908b10a18e2c, type: 3}
+  m_Name: Item_steak
+  m_EditorClassIdentifier: 
+  id: steak
+  displayName: Steak
+  color: {r: 0.76, g: 0.3, b: 0.22, a: 1}
+  visualPrefab: {fileID: 2063779054428840336, guid: f3fd445cc00c4a3429c4d13721bac6ea, type: 3}
+  carryMaterial: {fileID: 2100000, guid: ad33d7e69e440da4a973538a22d2f975, type: 2}
+  icon: {fileID: 0}
+  stackHeight: 0.2
+  basePrice: 25
+  perishable: 0
+  spoilSeconds: 180

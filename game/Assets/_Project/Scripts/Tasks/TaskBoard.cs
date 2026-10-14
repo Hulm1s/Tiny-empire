@@ -94,6 +94,8 @@ namespace Tycoon.Tasks
         private PaintStation[] _paints;
         private CollectStation[] _collects;
         private DepositStation[] _deposits;
+        private RegisterStation[] _registers;
+        private CutStation[] _benches;
         private DiscardStation[] _bins;
         private AtmStation[] _atms;
         private CashCollectStation[] _tillCash;
@@ -197,6 +199,8 @@ namespace Tycoon.Tasks
             _paints = FindObjectsByType<PaintStation>(inactive, none);
             _collects = FindObjectsByType<CollectStation>(inactive, none);
             _deposits = FindObjectsByType<DepositStation>(inactive, none);
+            _registers = FindObjectsByType<RegisterStation>(inactive, none);
+            _benches = FindObjectsByType<CutStation>(inactive, none);
             _bins = FindObjectsByType<DiscardStation>(inactive, none);
             _atms = FindObjectsByType<AtmStation>(inactive, none);
             _tillCash = FindObjectsByType<CashCollectStation>(inactive, none);
@@ -359,6 +363,19 @@ namespace Tycoon.Tasks
                 AddProblem(4, $"Restock {stock.target.item.displayName}", stock);
             }
 
+            // The butcher's counter: each case that is switched on and bare is a shopper turned away.
+            for (int i = 0; i < _registers.Length; i++)
+            {
+                var counter = _registers[i];
+                if (!Live(counter) || !counter.HasDisplay) continue;
+
+                foreach (var shelf in counter.stock)
+                {
+                    if (shelf == null || !Live(shelf) || shelf.item == null || !shelf.IsEmpty) continue;
+                    AddProblem(4, $"Restock {shelf.item.displayName}", counter);
+                }
+            }
+
             ProblemCount = _found.Count;
 
             _found.Sort((a, b) =>
@@ -463,6 +480,19 @@ namespace Tycoon.Tasks
                 if (c.source.item == null || c.source.item.basePrice > 0d) continue;
 
                 Consider(c, 0d, "Clear out the rubbish");
+            }
+
+            // The butcher's benches: a counter case that has run bare, with raw meat waiting, is a free job
+            // for the player - "Grind sausages", "Cut steaks" - unless they are already holding the goods.
+            for (int i = 0; i < _benches.Length; i++)
+            {
+                var bench = _benches[i];
+                if (!Live(bench) || bench.output == null || bench.outputCase == null) continue;
+                if (!Live(bench.outputCase) || !bench.outputCase.IsEmpty) continue;
+                if (bench.meat == null || bench.meat.IsEmpty) continue;
+                if (_carry != null && _carry.Has(bench.output)) continue;
+
+                Consider(bench, 0d, bench.makes > 1 ? "Grind sausages" : "Cut steaks");
             }
 
             AddCashGoals();

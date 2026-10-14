@@ -30,6 +30,11 @@ namespace Tycoon.Stations
         [Tooltip("Each purchase multiplies the price by this. 1 makes every one cost the same.")]
         [Min(1f)] public float priceGrowth = 1.6f;
 
+        [Tooltip("Optional exact prices, one per purchase in order (the butcher's pigs: 3,500 / 5,000 / " +
+                 "7,000, which no single growth factor gives). Empty uses base price x growth. Past the " +
+                 "end of the list the last price repeats.")]
+        public double[] tierPrices;
+
         [Tooltip("Least money drained per tick while standing here. The real drain is the larger of " +
                  "this and the CURRENT price / 40 (the same rule as the gates), so a dear unit is " +
                  "still paid off in about the same number of ticks as a cheap one.")]
@@ -45,7 +50,15 @@ namespace Tycoon.Stations
         public event Action Purchased;
 
         /// <summary>Cost of the next purchase at the current level.</summary>
-        public double CurrentPrice => basePrice * Math.Pow(priceGrowth, _purchases);
+        public double CurrentPrice
+        {
+            get
+            {
+                if (tierPrices != null && tierPrices.Length > 0)
+                    return tierPrices[Mathf.Min(_purchases, tierPrices.Length - 1)];
+                return basePrice * Math.Pow(priceGrowth, _purchases);
+            }
+        }
 
         public double Remaining => Math.Max(0d, CurrentPrice - _paid);
 

@@ -153,7 +153,7 @@ of them destroys that object's saved progress for every existing player.**
 | `farm.cowB` | `FarmSceneBuilder.cs:362` | cow shed B |
 | `farm.unlock.cornB` | `FarmSceneBuilder.cs:418` | Field purchase progress |
 | `farm.unlock.coopB` | `FarmSceneBuilder.cs:422` | Coop purchase progress |
-| `farm.unlock.counterB` | `FarmSceneBuilder.cs:426` | Dairy Till purchase progress |
+| `farm.unlock.counterB#UnlockStation` | read-only by `LegacyUnlockReveal` | RETIRED Dairy Till gate; still honoured (see Dairy migration note) |
 | `farm.unlock.cowA` | `FarmSceneBuilder.cs:442` | Dairy purchase progress |
 | `farm.unlock.cornA2`, `.cornB2`, `.hayA2`, `.hayB2` | `FarmSceneBuilder.cs` | second-field purchases (new) |
 | ~~`farm.unlock.hayB`~~ | removed | meadow B is now bought with Cow Shed B; an old entry stays in the blob, unread and harmless |
@@ -172,6 +172,8 @@ Written in `MarketBuilder.cs` (and `FarmSceneBuilder.BuildMarketLink` for the tw
 | `farm.unlock.market` | the $7,000 supermarket purchase (`UnlockStation`) |
 | `farm.travel.town` | the farm-side travel square (not saveable, but identified) |
 | `market.travel.farm` | the market-side travel square (not saveable, but identified) |
+| `town.unlock` | the $12,000 town purchase (`UnlockStation`, in the market root, hidden until the butcher is complete; `TownBuilder.cs`). Reveals the town root and the travel square |
+| `market.travel.town`, `town.travel.market`, `town.locked.soon` | the market-side and town-side travel squares and the COMING SOON placeholder (identified, not saveable) |
 | `market.trash.1` … `market.trash.4` | the four rubbish piles: an `ItemBuffer` of `Trash` (4 bags each); a half-cleared pile restores with the bags it had left. `ClearablePile` keeps no state |
 | `market.trashcollect.1` … `.4` | the piles' collect squares (identified, not saveable) |
 | `market.unlock.repair` | the repair step (`UnlockStation`) |
@@ -193,7 +195,8 @@ Written in `MarketBuilder.cs` (and `FarmSceneBuilder.BuildMarketLink` for the tw
 | `market.unlock.shelf.s21/s22/s23` | the three shelf purchases (`UnlockStation`) |
 | `market.order.bread/apples/yogurt` | the three goods orders (`UnlockStation`) |
 | `market.unlock.checkout2` | the second checkout purchase (`UnlockStation`) |
-| `market.comingsoon` | the locked COMING SOON square (`LockedStation`; identified, nothing to save) |
+| *(removed)* `market.comingsoon` | the old COMING SOON square (identified, nothing was saved under it) |
+| `market.unlock.butcher` | the butcher extension purchase, $5,500 (`UnlockStation`); reveals the empty `Butcher` shell and removes the staff door's plug. New id; ATM ids `market.atm.*` unchanged though the machine moved outside |
 | `market.bin`, `market.bin.discard` | the market bin |
 
 `RevealWhenAll` has **no entry and needs none**: it stores nothing and re-derives its answer from
@@ -512,6 +515,13 @@ Read this before touching anything save-related.
   `priceGrowth` 2.2 -> 1.6: `UpgradeStation` keeps only `purchases` and `paid`, so the next price is
   recomputed from the new formula (a building with 2 purchases simply sells its 3rd at the new
   price; a part-paid purchase completes when `paid >= newPrice`).
+- **Dairy Till merged into Dairy.** `farm.unlock.counterB` (the old $800 gate) is gone; the Dairy gate
+  `farm.unlock.cowA` (now $3,000) also reveals `CounterB`. Old saves: Dairy bought -> the Dairy gate
+  restores and reveals the till (whether or not the till was bought). Till bought, Dairy not -> the
+  always-active `LegacyUnlockReveal` object reads the retired `farm.unlock.counterB#UnlockStation`
+  entry and reveals `CounterB` itself. The entry is never rewritten (`CaptureState` returns empty and
+  the save preserves entries it does not own), so this keeps working on every load. A partly-paid old
+  Dairy gate keeps its `paid` and simply has more to go (price 2,200 -> 3,000); a bought Dairy stays bought.
 - **New fields behind new gates.** `farm.cornA2/cornB2/hayA2/hayB2` and `farm.unlock.cornA2/cornB2/
   hayA2/hayB2` are new ids: old saves have no entries, so the gates start unpaid. The B2/hay gates are
   revealed by the gates that already exist (coopB / cowA / cowB), and `Register` restores a gate the
@@ -615,3 +625,13 @@ New ids only; no existing id changed. `Wallet` is still `blob.money` and is now 
 
 The collect squares, ATM squares and wear-off are stateless: wear-off is derived from the saved `farm.unlock.market`.
 An old save restores with its balance on the account and `player.cash` absent (0 in hand).
+
+
+## Butcher save ids (all new)
+
+Farm: `farm.pigA` (+ `.input`, `.output`: machine and buffers), `farm.cornE1`, `farm.cornE2`, `farm.pigvan`
+(`MeatVan`: cargo + time). Market: gates `market.unlock.pigfarm`, `.table`, `.steaks`, `.pigfield2`, `.sausages`;
+`market.butcher.pigs` (pig purchases), `market.hire.butcher`, `market.butcher` (shopper queue reputation),
+`market.butcher.drop` / `.steak` / `.sausage` (buffers), `market.butcher.cash` (cash pile). `market.butcher.grind` identifies the grinder's GRIND square (a station, nothing saved under it).
+Note: a gate switched on by hand in a test (rather than by being paid) is not saved, because its object was never
+active to register.

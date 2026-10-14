@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c8154ee2a02895448ef908b10a18e2c, type: 3}
+  m_Name: Item_sausage
+  m_EditorClassIdentifier: 
+  id: sausage
+  displayName: Sausage
+  color: {r: 0.86, g: 0.38, b: 0.26, a: 1}
+  visualPrefab: {fileID: 2569121008226729632, guid: f6fcbf24f2837f04ab7265f406e83b4e, type: 3}
+  carryMaterial: {fileID: 2100000, guid: 10ad956007eaaea4aaa6d51de6c35c7c, type: 2}
+  icon: {fileID: 0}
+  stackHeight: 0.31
+  basePrice: 9
+  perishable: 0
+  spoilSeconds: 180

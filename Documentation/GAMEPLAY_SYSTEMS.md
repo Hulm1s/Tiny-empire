@@ -562,8 +562,7 @@ walking away keeps what you have paid.
 | `farm.unlock.cornB` | `Field` | 400 | CornFieldB |
 | `farm.unlock.coopB` | `Coop` | 500 | CoopB **+ HarvesterB + SellerB hires + the `cornB2` gate** |
 | `farm.unlock.cornB2` | `Field` | 700 | CornFieldB2 (offered once Coop B is bought) |
-| `farm.unlock.counterB` | `Dairy Till` | 800 | CounterB |
-| `farm.unlock.cowA` | `Dairy` | 2200 | CowShedA **+ HayFieldA + HayHandA + MilkRunA + the `hayA2` gate** |
+| `farm.unlock.cowA` | `Dairy` | 3000 | CowShedA **+ HayFieldA + HayHandA + MilkRunA + CounterB (the milk till) + the `hayA2` gate** |
 | `farm.unlock.hayA2` | `Meadow` | 1800 | HayFieldA2 (offered once the Dairy is bought) |
 | `farm.unlock.cowB` | `Cow Shed` | 4500 | CowShedB **+ HayFieldB + HayHandB + MilkRunB + the `hayB2` gate** |
 | `farm.unlock.hayB2` | `Meadow` | 2800 | HayFieldB2 (offered once Cow Shed B is bought) |
@@ -848,7 +847,7 @@ The shop is a derelict on arrival. Each stage reveals the next, through `RevealW
 | 1 | **Repair** (`market.unlock.repair`) and the **first paint job** at the PAINT square (`market.paint`, a menu - see below) | $3,000 / $2,000 | Repair swaps the wrecked shelves and desk for working ones; the first confirmed paint job swaps the grubby coat for the painted one |
 | 2 | **OPEN** (`market.open`, a `ChoreStation`, 1 ring of 2 s) | free | the whole working shop (stage 3) |
 | 3 | The shop trades | - | sklad1's storage + supply, the first row's STOCK and COLLECT squares, checkout 1 and its queue, the cashier and both sklad1 stockers on sale, lit sign |
-| 4 | **Growth** (below) | $3,000-$5,500 each | a second shelf row, three new products, a second checkout, COMING SOON |
+| 4 | **Growth** (below) | $3,000-$5,500 each | a second shelf row, three new products, a second checkout, then the butcher extension gate (stage 5) |
 
 `Stations/ClearablePile.cs` sits on each trash buffer: it hides litter pieces as the buffer drains
 and switches the COLLECT square off when it is empty. No state of its own - a half-cleared pile is
@@ -890,7 +889,7 @@ derelict; the menu starts from cream walls, red skirting, pale tiles.
 The shop is 24 x 21.0 m (x -12..12, z -5.4..15.6) and symmetric about the front door at x = 0:
 
 ```
-                  north wall   [COMING SOON]
+                  north wall
   [S11 corn] [S12 milk] [S13 egg]   | sklad1: egg/milk/corn crates, door 1,
      (stock squares, then aisle)    |         stocker hires A and B beside it
   [S21 bread][S22 apples][S23 yogurt]| sklad2: bread/apples/yogurt crates, door 2,
@@ -909,7 +908,31 @@ through the door does not walk across a hire. PAINT is in the south-east corner 
 The two checkouts stand side by side in the south-west, below the second shelf row, counters running
 north-south. Each has its serving square on the counter's west side at the south end and its cashier
 hire just north of that; shoppers queue southward along the counter's east side, pay, then turn east
-along the bottom wall (z -4.7) to the door. COMING SOON sits just inside the door, east side.
+along the bottom wall (z -4.7) to the door. The **ATM is outside** on the street frontage (`AtmPosition`
+(-9.8, -6.2), west of the door, squares 1.65 m in front of it on the forecourt); shoppers walk the road
+to x = 0 first (`EntryRoute[0]`) so they never cut across its squares.
+
+### The butcher extension (shell only; contents come later)
+
+Filip's sketch: the butcher is an **extension on the shop's west side**, entered from the street.
+`MarketBuilder.BuildButcher` builds an inactive `Butcher` object: front room x -21..-12, z -5.4..4.6
+(customers' gap in the south wall x -18..-15), back room x -17.5..-12, z 4.6..11.6 (gap into it from the
+staff strip x -15.5..-13, tall north wall), walls solid and carving the navmesh like the shop's, floors,
+and the meat van's **driveway** (4 m wide: up the west side x -27..-23 from the street, then east along
+z 7..11 to the back room's van door z 7.4..10.6 in its west wall; flat tarmac, no collider). The market's
+west wall has the **staff door** (z 2.0..4.2), closed by a *plug* (three wall pieces + collider) until the
+extension is bought; orange posts and lintel mark it. Customers never use it.
+
+The market's world edge moved: `EdgeWest` -17 -> -30 (fence, boundary, road, grass keep-clear, forecourt
+follow). The extension is bought at the **butcher gate** (`market.unlock.butcher`, $5,500 via `Price()`,
+`UnlockButcher`, at (-16.5, -2.0) on the lot): it is offered when all six growth purchases are done
+(replaces COMING SOON), reveals `Butcher` and hides the plug. Empty slots reserved for the contents
+(`MarketBuilder.Butcher*`, market-local): drop square (-15.4, 9.8) 2.2x2.2; CUT square (-15.1, 6.6) 2.4x2.4;
+cutting table (-12.9, 8.2) 1.2 x 4.4 along the market wall; display counter y=1.2, x -20.8..-12.4; cash
+pile (-19.8, 3.0); butcher hire (-17.9, 3.0); queue front (-16.6, 0.1); customers' door (-16.5, -5.4).
+`SquareAudit.ButcherShell` checks the shell is saved inactive, the gate hides the plug, and with the plug
+gone every walk the butcher needs (street to counter, staff door to strip to back room to table to drop
+square, driveway to the van door) clears every wall by 0.35 m.
 
 ### Storage and supply
 
@@ -997,12 +1020,12 @@ cashier 1 + both sklad1 stockers hired                 (RevealWhenAll)
         checkout 2 reveals its desk, queue and cashier 2 ($3,500)
   -> S22 $3,500 -> "Order Apples" $5,000 -> S23 $4,000 -> "Order Yogurt" $5,500
 all three shelves and all three orders bought          (RevealWhenAll)
-  -> COMING SOON: a locked square (LockedStation) just inside the front door, east side, held for the butcher
+  -> the butcher extension gate $5,500 (market.unlock.butcher, on the lot west of the shop): reveals the empty butcher shell
 ```
 
 A product is only ever offered once its shelf is standing, and only one order is ever on offer,
-so nothing can be bought without a place to put it (the audit checks both). COMING SOON is not
-for sale and does nothing. Nothing here needs money to escape a state with no income: the opening
+so nothing can be bought without a place to put it (the audit checks both). The butcher gate is
+the only thing offered after it; its contents are a later step. Nothing here needs money to escape a state with no income: the opening
 three lines trade from the day the shop opens, and every growth step is optional.
 
 ### Tunables (all in `MarketBuilder.cs` unless noted)
@@ -1027,7 +1050,7 @@ three lines trade from the day the shop opens, and every growth step is optional
 | Bread / apples / yogurt | `FarmSceneBuilder.CreateItems` | base 7 / 4 / 10 (x1.5 at the till); bread rots 150 s, yogurt 120 s |
 
 All purchase prices go through `FarmSceneBuilder.Price()`, so `TestPriceOverride` flattens the
-market too. **Not in this version:** the butcher itself (COMING SOON marks the bay), a roof.
+market too. **Not in this version:** the butcher's contents (only its empty shell and gate exist), a roof.
 
 ### New pieces (and what was extended)
 
@@ -1035,7 +1058,7 @@ New: `Core/Location.cs`, `Stations/TravelStation.cs`, `RevealWhenAll.cs`, `Chore
 `SupplyFeed.cs`, `CheckoutStation.cs`, `UI/ScreenFade.cs`, `UI/ShelfDisplay.cs`,
 `Editor/MarketBuilder.cs`, `Stations/ClearablePile.cs`, `Stations/PaintStation.cs`,
 `Stations/MarketDecor.cs`, `UI/PaintMenu.cs`, `UI/PatternFactory.cs`, `Editor/PatternSheet.cs`,
-`Stations/LockedStation.cs` (round 3: the COMING SOON square).
+`Stations/LockedStation.cs` (round 3: the COMING SOON square; now the town's placeholder).
 Extended in round 3: `WorkerAgent` (`routes`, `StockRoute`, claims, idle), `CustomerQueue` (`alternates`,
 `sharesReputationWith`, `LineDemand`, `StoreShelf.via/openWhen/IsOpen/Connect`), `CustomerAgent` (aisle
 trail), `FarmSceneBuilder.Items` (Bread, Apples, Yogurt), `IconFactory`/`IconSheet` (three product icons),
@@ -1048,6 +1071,30 @@ Extended earlier: `CustomerAgent`/`CustomerQueue` (browsing mode),
 the editor `LevelBuildKit` (boundary and fence by edges, grass/fence mesh names),
 `FarmSceneBuilder` (market link; `Gate`, `BuildHire`, `Price`, `LevelLocal`, `Items` are now
 `internal`), `SquareAudit` (see `EDITING_GUIDE.md` section 25).
+
+
+---
+
+## The town (`Editor/TownBuilder.cs`): third location, empty and locked
+
+`Location` id `town`, a root beside the farm turned the same 45 degrees, saved INACTIVE. It is a skeleton only: what
+it holds is undecided. Built from existing parts (Location, TravelStation, UnlockStation, RevealWhenAll,
+`LevelBuildKit.BuildBoundary/BuildFenceAround/BuildGrass`).
+
+- **Place:** farm-grid offset (0, -56): south of the farm, 18 m clear of its fence (the audit logs the gaps). Not along the road axis: the market already
+  reaches world x 78 and the walkable ground plane is 160 m (+-80), so a third location cannot go further down it.
+- **Inside** (town grid): fence/boundary x -16..16, z -12..13; road stub through both fence gaps at z -3; paved square x -12..12,
+  z -1.4..9.5; arrival point (-6, -3); a "Back to the supermarket" `TravelStation` at (-12, -3); one `LockedStation` "Coming Soon" at (0, 4.5) with a plain sign board.
+  Nothing else, nothing buyable, no state.
+- **The way in:** in the SUPERMARKET, on the forecourt east of the shop front at (14.2, -3.8): gate `town.unlock` (3.0 x 2.4, **$12,000**,
+  through `Price()`) with the travel square `market.travel.town` on it. The gate is itself hidden until a `RevealWhenAll`
+  ("TownUnlock", on the market root) sees the butcher complete: the extension gate, every butcher purchase (pig farm, table, steak counter, corn
+  field 2, the butcher hire, sausages) and the pigs at their maximum. Paying it reveals the town root and the travel square.
+- **Price:** the sim (`plans/econ/market_sim.py`, proposal B) has the butcher's last step leaving ~$2,050/min with steps costing 2-4.5 min
+  each; a location is a bigger milestone, so about six minutes of income = $12,000.
+- **Back:** `town.travel.market` lands the player on the market's arrival point (8, -6.3), the same spot the farm trip uses
+  (`Location` has one spawn point). There is no town-to-farm square.
+- **Audit:** the town is audited like any location; `ButcherChain`'s "the supermarket must not ask for the pig farm" rule exempts the "TownUnlock" watcher on purpose.
 
 ---
 
@@ -1075,9 +1122,57 @@ Money is a thing the player carries. Every number here was read off the code.
   `CashStack`. `RepairStation.freeRepairFraction` is untouched, so a jam with empty pockets is still repairable
   (the no-money-trap rule).
 - **`AtmStation`** (`Stations/AtmStation.cs`): WITHDRAW square (account into hand) with a smaller DEPOSIT square
-  (`deposit = true`). Stateless. One at the farm market row (`farm.atm`), one just inside the market door (`market.atm`).
+  (`deposit = true`). Stateless. One at the farm market row (`farm.atm`), one on the market's street frontage outside the shop (`market.atm`).
 - **Wear off:** `Durability.retireWhen` = the market gate. When it is owned (also on restore) the machine is restored to
   full, `Wear` does nothing, and `retireDisable` (the repair square) is switched off. Derived from the saved purchase:
   no save field.
 - **HUD:** the plaque shows cash in hand (big, by the coin) and the account (small, by the bank icon).
   **TaskBoard** adds "Collect cash at the till" / "Get cash at the ATM" goals when carried cash cannot cover the cheapest purchase.
+
+
+---
+
+## The butcher (`Editor/ButcherBuilder.cs`, filled into the shell `MarketBuilder.BuildButcher` makes)
+
+The chain, end to end: **pigs make raw meat on the FARM, a van drives it to the butcher, the cutting table
+turns it into steaks/sausages in the cutter's arms, the counter takes them into its case and serves shoppers
+out of it, takings land on the cash pile.** Built from the existing parts; the only new runtime types are
+`CutStation`, `MeatVan` and `ProductOffer`, plus small opt-in extensions (below).
+
+Purchases, one step offered at a time (all prices through `Price()`; all in the butcher except the extension):
+
+| Step | Price | Where | Brings |
+|---|---|---|---|
+| Butcher extension | 5,500 | market lot (existing) | the shell |
+| Pig Farm | 5,000 | drop square | the farm's pig column (pen + 1 pig, corn field E1, pig hand, van, road link) and the drop pile |
+| Cutting Table | 3,000 | cut square | table + `CutStation` |
+| Steak Counter | 4,000 | counter square | display counter, cash pile, shoppers; offers pigs and corn field E2 |
+| Pigs 2-4 | 3,500 / 5,000 / 7,000 | front room (`UpgradeStation.tierPrices`) | up to four pigs |
+| Corn Field E2 | 6,000 | front room | the second pig field (the pig hand cuts the fuller one) |
+| Butcher (hire) | 8,000 | behind the counter | offered once pigs are maxed AND E2 is bought |
+| Sausages | 9,000 | back room, on the GRIND square | the grinder bench + its GRIND square (1 joint -> 3 sausages), the sausage case and `ProductOffer(sausage)`; offered after the butcher |
+
+* **Pig pen** (farm x 26.25, `LevelBuildKit.BuildWorkshop(..., Livestock.Pig, maintenance: false)`): no
+  durability, no repair/buy squares. 10 s per joint per pig, eats 2 corn, buffers 20 corn / 24 meat. It is NOT in
+  `FarmParts.Unlocks`: the supermarket never waits for it. Farm edge 25.5 -> 36, road 34 -> 46.
+* **`MeatVan`**: waypoint route (pen bay, farm road, link, market road, driveway, back-room door), no collider and no
+  navmesh obstacle, so it never blocks anyone. Leaves with `minBatch` (4) or after 25 s with at least one, takes up to
+  12 from the pen, backs up to the door, adds to the drop pile one unit at a time, drives home. Saved: cargo + time;
+  offline it converts the gap into whole trips (order 100, after every buffer and machine has restored).
+* **`CutStation`** (Task mode), one place and one product: the cutting table (`output` steak, `makes` 1) and the
+  sausage grinder (`output` sausage, `makes` 3, own GRIND square, id `market.butcher.grind`). One raw meat per ring
+  goes into the occupant's arms; it never makes what its counter case has no room for (counting what the cutter
+  carries); before the counter exists the table just fills the arms. The player chooses by where they stand; the
+  task list says "Cut steaks" / "Grind sausages" when that case is bare and meat is waiting.
+* **Back room**: 7.3 x 11.6 m. Drop pile (north, by the van door), grinder + GRIND, table + CUT, all against the
+  market wall with a 2.5 m walkway down the west wall; the driveway arm and van door moved north with it.
+* **Counter** = `RegisterStation` with `stock` (the cases): standing there first puts carried goods into the case,
+  then serves the front shopper out of it. The butcher's dropoff is this square, so it restocks and serves.
+  Shoppers: `CustomerQueue` (farm style) with an `entryRoute` through the street door; `ProductOffer` is what lets
+  them ask for steak (and sausage once its line is on); sausage adds demand (`demandPerCapacity` 0.5).
+* **Butcher worker**: ordinary `WorkerAgent` with two routes (table -> counter, grinder -> counter). With empty
+  arms `ChooseBench` takes the bench whose counter case is emptier (steak wins ties; benches that are not bought,
+  have no meat or whose case is full are skipped); `deliverPartialLoads` takes a part load to the counter when the
+  bench has nothing to do instead of waiting for a full one.
+* **`StationBase.AdoptIfInside`**: a worker whose route changes to a square it is already standing in (the pig hand
+  crossing E1 to reach E2) is enrolled; before this it stood in the field doing nothing.

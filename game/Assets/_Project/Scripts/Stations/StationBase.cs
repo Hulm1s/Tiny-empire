@@ -209,6 +209,27 @@ namespace Tycoon.Stations
         {
             var carry = other.GetComponentInParent<CarryStack>();
             if (carry == null) return;
+            TryEnter(carry);
+        }
+
+        /// <summary>
+        /// A worker whose route has just changed to this square may already be standing in it: it
+        /// walked THROUGH on its way somewhere else (the pig hand crosses field E1 to reach E2), and a
+        /// square it was not routed to turned it away at the door (see <see cref="IStationUser"/>).
+        /// Changing route does not walk it out and in again, so no enter event ever comes and it would
+        /// stand in the middle of the field with the crop ready, doing nothing. The worker calls this
+        /// when it adopts the route.
+        /// </summary>
+        public void AdoptIfInside(CarryStack carry)
+        {
+            if (carry == null || !isActiveAndEnabled) return;
+            var box = GetComponent<BoxCollider>();
+            if (box == null || !box.bounds.Contains(carry.transform.position + Vector3.up * 0.1f)) return;
+            TryEnter(carry);
+        }
+
+        private void TryEnter(CarryStack carry)
+        {
             if (_occupants.Exists(o => o.Carry == carry)) return;
 
             bool isPlayer = carry.CompareTag("Player");

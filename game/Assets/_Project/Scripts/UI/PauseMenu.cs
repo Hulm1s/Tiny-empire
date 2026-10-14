@@ -117,12 +117,7 @@ namespace Tycoon.UI
             _panel.gameObject.SetActive(open);
 
             // Fit the board to the screen: full size on a phone, smaller on a short window.
-            if (open && _board != null)
-            {
-                var area = _panel.rect;
-                float fit = Mathf.Min(1f, area.height / 1170f, area.width / 840f);
-                _board.localScale = new Vector3(fit, fit, 1f);
-            }
+            if (open) FitBoard();
 
             // Freeze the world. Everything in the game is driven by Time.deltaTime, so this
             // stops production, decay, customers and spoilage together.
@@ -134,6 +129,16 @@ namespace Tycoon.UI
 
             if (!open) DisarmDelete();
             if (open) GameRoot.Instance?.Save();
+        }
+
+        /// <summary>Also re-run every frame while open: a rotation or resize changes the canvas size under it.</summary>
+        private void FitBoard()
+        {
+            if (_board == null) return;
+            var area = _panel.rect;
+            float fit = Mathf.Min(1f, area.height / 1170f, area.width / 840f);
+            if (fit > 0f && !Mathf.Approximately(_board.localScale.x, fit))
+                _board.localScale = new Vector3(fit, fit, 1f);
         }
 
         private void ToggleSound()
@@ -194,6 +199,7 @@ namespace Tycoon.UI
 
         private void Update()
         {
+            if (_open) FitBoard();
             if (_deleteArmed && Time.unscaledTime > _deleteArmedUntil) DisarmDelete();
         }
 

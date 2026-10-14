@@ -134,7 +134,7 @@ no HUD action buttons anywhere in the project, deliberately.
 | `ChoreStation.cs` | A free Task-mode job (sweep, OPEN) that hides a mess and reveals the next step. Saveable. |
 | `SupplyFeed.cs` | Adds a unit to a buffer every few seconds for free (the market's storage). Saveable, with offline catch-up. |
 | `CheckoutStation.cs` | The supermarket till: scans the front shopper's basket one unit per tick. Sibling of `RegisterStation`. |
-| `LockedStation.cs` | A square that is labelled and measured like any other but never operational and not for sale: the market's COMING SOON bay. |
+| `LockedStation.cs` | A square that is labelled and measured like any other but never operational and not for sale: the market's COMING SOON bay (no longer placed there); now the town's placeholder square (`town.locked.soon`). |
 
 The key abstraction, from `README.md` and confirmed in the code:
 
@@ -211,6 +211,7 @@ Editor-only. Not compiled into the player.
 |---|---|---|
 | `FarmSceneBuilder.cs` | ~900 | **The level.** Farm layout, economy, progression, camera, player spawn, and the link to the second location. Menu: `Tycoon → Rebuild Farm Scene`. Headless: `FarmSceneBuilder.Build`. Calls `MarketBuilder`. |
 | `MarketBuilder.cs` | ~1000 | **The supermarket** ("Tiny Market"), the second `Location`: walls, renovation stages, shelves, crates, checkout, shoppers' routes, hires. Same style as `FarmSceneBuilder`: commented constants. |
+| `TownBuilder.cs` | ~200 | **The town** (`Location` id `town`, display "Town"): the third location, an EMPTY LOCKED skeleton (ground, fence, road stub, paved square, grass, arrival point, a COMING SOON `LockedStation`). Also builds the supermarket-side gate and travel square. Called from `FarmSceneBuilder.BuildMarketLink`. |
 | `LevelBuildKit.cs` | ~1380 | The parts catalogue. `BuildWorkshop`, `BuildField`, `AddCounter`, `BuildWorker`, `BuildBin`, `Station<T>`, `Item`, `Mat`, fences, grass, and `BuildBoundary`/`BuildFenceAround` (a location's edges). |
 | `SquareAudit.cs` | ~900 | **The main safety net.** For every `Location`: overlaps (day one, fully built, and each stage of the progression), building footprints, arrival points, shopper paths, unreachable squares, hire routes, camera edge. Whole scene: locations apart, travel links, save ids. `SquareAudit.Run`. |
 | `TycoonBuild.cs` | 190 | The WebGL build entry point. `Tycoon → Build Web`, headless `TycoonBuild.BuildWeb`. |
@@ -384,3 +385,11 @@ agreement, not a technical lock.
 3. `Stations/StationBase.cs` — the interaction contract everything else hangs off.
 4. `LevelBuildKit.cs` — skim the public method signatures; that is the parts catalogue.
 5. `EDITING_GUIDE.md` in this folder when you want to change something specific.
+
+
+## Butcher files
+
+`Editor/ButcherBuilder.cs` (contents of the butcher shell), `Editor/ButcherModels.cs` + `Editor/ButcherPreview.cs`
+(approved art and its preview sheet), `Scripts/Stations/CutStation.cs`, `MeatVan.cs`, `ProductOffer.cs`.
+Small extensions: `RegisterStation.stock`, `UpgradeStation.tierPrices`, `WorkerAgent.deliverPartialLoads`,
+`CustomerQueue.entryRoute` for farm-style queues, `StationBase.AdoptIfInside`, `LevelBuildKit.Livestock.Pig`.

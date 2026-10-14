@@ -102,7 +102,13 @@ namespace Tycoon.Customers
         /// <summary>Ready to be served: standing still at the counter with an unfilled order.</summary>
         public bool IsWaiting => CurrentPhase == Phase.Waiting;
 
-        public void Begin(CustomerQueue queue, ItemDefinition item, int count, Vector3 slot, Color tint)
+        /// <param name="entryRoute">
+        /// Optional waypoints to walk before heading for the slot - the butcher's shoppers come off the
+        /// street and must go in through the door, not straight across the wall. A farm customer has
+        /// none and walks the straight line, as it always did.
+        /// </param>
+        public void Begin(CustomerQueue queue, ItemDefinition item, int count, Vector3 slot, Color tint,
+            IList<Vector3> entryRoute = null)
         {
             _queue = queue;
             _wanted = item;
@@ -111,6 +117,9 @@ namespace Tycoon.Customers
             _patienceLeft = patienceSeconds;
             CurrentPhase = Phase.Arriving;
             _target = slot;
+
+            _route.Clear();
+            if (entryRoute != null) _route.AddRange(entryRoute);
 
             ApplyTint(tint);
 

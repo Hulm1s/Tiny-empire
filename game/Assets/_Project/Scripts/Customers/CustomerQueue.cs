@@ -149,7 +149,9 @@ namespace Tycoon.Customers
                  "checkout - the shelves are the menu, and `register` is not used.")]
         public StoreShelf[] shelves;
 
-        [Tooltip("Where a shopper walks on the way in, after the road and before the first shelf.")]
+        [Tooltip("Where a shopper walks on the way in, after the road and before the first shelf. " +
+                 "On a farm-style till (the butcher's counter) it is the way from the street in through " +
+                 "the door to the queue.")]
         public Transform[] entryRoute;
 
         [Tooltip("Where a shopper walks on the way out, after the checkout and before the exit.")]
@@ -489,8 +491,18 @@ namespace Tycoon.Customers
 
             int count = UnityEngine.Random.Range(minOrder, maxOrder + 1);
 
+            // A counter that is entered through a door (the butcher's) lists the way in; a farm till
+            // lists nothing and its customers walk the straight line from the road.
+            List<Vector3> way = null;
+            if (entryRoute != null && entryRoute.Length > 0)
+            {
+                way = new List<Vector3>(entryRoute.Length);
+                foreach (var point in entryRoute)
+                    if (point != null) way.Add(point.position);
+            }
+
             _waiting.Add(agent);
-            agent.Begin(this, item, count, SlotPosition(_waiting.Count - 1), RandomTint());
+            agent.Begin(this, item, count, SlotPosition(_waiting.Count - 1), RandomTint(), way);
         }
 
         /// <summary>

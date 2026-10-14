@@ -592,7 +592,7 @@ namespace Tycoon.EditorTools
         }
 
         /// <summary>What lives in a building's pen. Drives the animal shape and the pen size.</summary>
-        public enum Livestock { None, Chicken, Cow }
+        public enum Livestock { None, Chicken, Cow, Pig }
 
         /// <summary>
         /// A fenced pen attached to the side of a building, with the animals inside and nest
@@ -670,41 +670,14 @@ namespace Tycoon.EditorTools
                 // A little scatter so a row of animals does not look stamped out.
                 animal.transform.localRotation = Quaternion.Euler(0f, (i * 53) % 360, 0f);
 
-                if (cows) BuildCow(animal.transform);
-                else BuildChicken(animal.transform);
+                // The shared rounded-style models (LivestockModels), with procedural idle motion.
+                var model = cows ? LivestockModels.Cow(animal.transform, Vector3.zero)
+                                 : LivestockModels.Chicken(animal.transform, Vector3.zero);
+                var idle = model.AddComponent<Tycoon.Characters.LivestockIdle>();
+                idle.kind = cows ? Tycoon.Characters.LivestockIdle.Kind.Cow : Tycoon.Characters.LivestockIdle.Kind.Chicken;
             }
 
             return holder.transform;
-        }
-
-        private static void BuildChicken(Transform parent)
-        {
-            var feather = Mat("Chicken_Body", new Color(0.97f, 0.96f, 0.92f));
-            var comb = Mat("Chicken_Comb", new Color(0.9f, 0.32f, 0.28f));
-
-            Box("Body", parent, new Vector3(0f, 0.22f, 0f), new Vector3(0.3f, 0.3f, 0.4f), feather);
-            Box("Head", parent, new Vector3(0f, 0.45f, 0.12f), new Vector3(0.18f, 0.2f, 0.18f), feather);
-            Box("Comb", parent, new Vector3(0f, 0.58f, 0.12f), new Vector3(0.07f, 0.1f, 0.13f), comb);
-        }
-
-        private static void BuildCow(Transform parent)
-        {
-            var hide = Mat("Cow_Hide", new Color(0.96f, 0.95f, 0.93f));
-            var patch = Mat("Cow_Patch", new Color(0.24f, 0.22f, 0.22f));
-            var udder = Mat("Cow_Udder", new Color(0.94f, 0.7f, 0.72f));
-
-            Box("Body", parent, new Vector3(0f, 0.62f, 0f), new Vector3(0.55f, 0.5f, 1f), hide);
-            Box("Patch", parent, new Vector3(0.01f, 0.72f, 0.15f), new Vector3(0.57f, 0.22f, 0.34f), patch);
-            Box("Head", parent, new Vector3(0f, 0.72f, 0.66f), new Vector3(0.34f, 0.34f, 0.36f), hide);
-            Box("Snout", parent, new Vector3(0f, 0.63f, 0.86f), new Vector3(0.24f, 0.18f, 0.12f), udder);
-            Box("Udder", parent, new Vector3(0f, 0.34f, -0.22f), new Vector3(0.26f, 0.2f, 0.26f), udder);
-
-            for (int i = 0; i < 4; i++)
-            {
-                float x = (i % 2 == 0) ? -0.2f : 0.2f;
-                float z = (i < 2) ? 0.32f : -0.32f;
-                Box($"Leg_{i}", parent, new Vector3(x, 0.18f, z), new Vector3(0.13f, 0.37f, 0.13f), patch);
-            }
         }
 
         public static WorkerAgent BuildWorker(string name, Transform parent, Vector3 position,
@@ -771,23 +744,44 @@ namespace Tycoon.EditorTools
             float secondsPerOutput, int inputCapacity, int outputCapacity,
             Color bodyColor, float wearPerOutput = 2f, int inputPerOutput = 1,
             int startUnits = 1, int maxUnits = 3, double unitPrice = 120d,
-            string unitName = "Chicken", Livestock livestock = Livestock.Chicken)
+            string unitName = "Chicken", Livestock livestock = Livestock.Chicken,
+            bool maintenance = true)
         {
             var root = new GameObject(name);
             root.transform.SetParent(parent, false);
             root.transform.localPosition = position;
 
-            var body = Mat($"Body_{name}", bodyColor);
-            var roof = Mat($"Roof_{name}", bodyColor * 0.65f);
+            // The pig pen is drawn by ButcherModels (the approved art): its "Shell" and "Pen" go
+            // straight under the root, named as the audit expects, and only the solid body is added
+            // here. `maintenance: false` leaves the building with no wear, no repair square and no
+            // buy-a-unit square - the farm's pig pen, whose pigs are bought in the butcher.
+            Transform pigs = null;
+            GameObject bodyGo;
+            if (livestock == Livestock.Pig)
+            {
+                pigs = ButcherModels.PigPenInto(root.transform, Mathf.Max(1, maxUnits));
+                bodyGo = root.transform.Find("Shell/Body").gameObject;
+                bodyGo.AddComponent<BoxCollider>();
+            }
+            else
+            {
+                var body = Mat($"Body_{name}", bodyColor);
+                var roof = Mat($"Roof_{name}", bodyColor * 0.65f);
 
-            // Visuals sit on their own turned pivot so the squares below stay screen-aligned.
-            var shell = new GameObject("Shell");
-            shell.transform.SetParent(root.transform, false);
-            shell.transform.localRotation = Quaternion.Euler(0f, BuildingYaw, 0f);
+                // Visuals sit on their own turned pivot so the squares below stay screen-aligned.
+                var shell = new GameObject("Shell");
+                shell.transform.SetParent(root.transform, false);
+                shell.transform.localRotation = Quaternion.Euler(0f, BuildingYaw, 0f);
 
-            // Solid: the player and workers must walk around a building, not through it.
-            var bodyGo = Box("Body", shell.transform, new Vector3(0f, 0.9f, 0f),
-                new Vector3(3.0f, 1.8f, 2.2f), body, collider: true);
+                // Solid: the player and workers must walk around a building, not through it.
+                bodyGo = Box("Body", shell.transform, new Vector3(0f, 0.9f, 0f),
+                    new Vector3(3.0f, 1.8f, 2.2f), body, collider: true);
+
+                // The roof is left non-solid - it sits above head height and a collider up there
+                // only creates invisible ledges to get caught on.
+                Box("Roof", shell.transform, new Vector3(0f, 1.95f, 0f),
+                    new Vector3(3.4f, 0.3f, 2.6f), roof);
+            }
 
             // Carving obstacle rather than baked geometry, so a coop that is unlocked later
             // cuts its own hole without the navmesh needing a rebake.
@@ -795,10 +789,6 @@ namespace Tycoon.EditorTools
             obstacle.shape = UnityEngine.AI.NavMeshObstacleShape.Box;
             obstacle.size = Vector3.one;      // local space; the box is already scaled
             obstacle.carving = true;
-            // The roof is left non-solid - it sits above head height and a collider up there
-            // only creates invisible ledges to get caught on.
-            Box("Roof", shell.transform, new Vector3(0f, 1.95f, 0f),
-                new Vector3(3.4f, 0.3f, 2.6f), roof);
 
             // The machine and its durability both live on the root; the type suffix in the
             // save key keeps them apart.
@@ -811,8 +801,11 @@ namespace Tycoon.EditorTools
             kit.Output = Buffer($"{id}.output", "OutputBuffer", root.transform, new Vector3(0f, 0.3f, -1.4f),
                 output, outputCapacity);
 
-            kit.Durability = root.AddComponent<Durability>();
-            kit.Durability.wearPerOutput = wearPerOutput;
+            if (maintenance)
+            {
+                kit.Durability = root.AddComponent<Durability>();
+                kit.Durability.wearPerOutput = wearPerOutput;
+            }
 
             kit.Machine = root.AddComponent<ProducerMachine>();
             kit.Machine.input = kit.Input;
@@ -822,7 +815,7 @@ namespace Tycoon.EditorTools
             kit.Machine.durability = kit.Durability;
             kit.Machine.maxUnits = Mathf.Max(1, maxUnits);
             kit.Machine.units = Mathf.Clamp(startUnits, 1, kit.Machine.maxUnits);
-            kit.Machine.unitVisuals = BuildPen(root.transform, kit.Machine.maxUnits, livestock);
+            kit.Machine.unitVisuals = pigs != null ? pigs : BuildPen(root.transform, kit.Machine.maxUnits, livestock);
 
             // What the building holds, how many animals work it, and whether it has stopped
             // because the output is full. Kept low, just clear of the roof: the camera looks
@@ -835,9 +828,12 @@ namespace Tycoon.EditorTools
 
             // Sits above the board, so the two read as one column of information rather than
             // competing for the same bit of sky. Hidden until the building starts wearing out.
-            var marker = root.AddComponent<AttentionMarker>();
-            marker.durability = kit.Durability;
-            marker.height = 4.35f;
+            if (kit.Durability != null)
+            {
+                var marker = root.AddComponent<AttentionMarker>();
+                marker.durability = kit.Durability;
+                marker.height = 4.35f;
+            }
 
             // Squares are arranged along the screen's vertical axis, never side by side. A
             // portrait phone only shows about 7.8 world units across, so a building that puts
@@ -861,17 +857,20 @@ namespace Tycoon.EditorTools
             // Repair and buy sit together on the west side; the east belongs to the pen, which
             // is walkable and is the way round the building. Held a metre clear of the feed and
             // collect squares so that stepping into one of these is always a decision.
-            kit.Repair = Station<RepairStation>($"{id}.repair", "Repair", root.transform,
-                new Vector3(-3.9f, 0f, -1.6f),
-                new Vector2(1.8f, 1.8f), "Fix", new Color(1f, 0.72f, 0.3f));
-            kit.Repair.target = kit.Durability;
+            if (maintenance)
+            {
+                kit.Repair = Station<RepairStation>($"{id}.repair", "Repair", root.transform,
+                    new Vector3(-3.9f, 0f, -1.6f),
+                    new Vector2(1.8f, 1.8f), "Fix", new Color(1f, 0.72f, 0.3f));
+                kit.Repair.target = kit.Durability;
 
-            kit.Upgrade = Station<UpgradeStation>($"{id}.upgrade", "BuyUnit", root.transform,
-                new Vector3(-3.9f, 0f, 1.6f), new Vector2(1.8f, 1.8f),
-                unitName, new Color(0.55f, 0.85f, 0.45f));
-            kit.Upgrade.target = kit.Machine;
-            kit.Upgrade.basePrice = unitPrice;
-            kit.Upgrade.unitName = unitName;
+                kit.Upgrade = Station<UpgradeStation>($"{id}.upgrade", "BuyUnit", root.transform,
+                    new Vector3(-3.9f, 0f, 1.6f), new Vector2(1.8f, 1.8f),
+                    unitName, new Color(0.55f, 0.85f, 0.45f));
+                kit.Upgrade.target = kit.Machine;
+                kit.Upgrade.basePrice = unitPrice;
+                kit.Upgrade.unitName = unitName;
+            }
 
             kit.Beacon = root.AddComponent<AlertBeacon>();
             kit.Beacon.businessName = name;
@@ -1255,12 +1254,14 @@ namespace Tycoon.EditorTools
         /// smaller DEPOSIT beside it (hand back onto the account). Front faces -z, toward the camera.
         /// </summary>
         public static AtmStation BuildAtm(string id, string name, Transform parent, Vector3 position,
-            Vector2 withdrawSize, Vector2 depositSize, float depositDX, float depositDZ = 0f)
+            Vector2 withdrawSize, Vector2 depositSize, float depositDX, float depositDZ = 0f,
+            float frontDistance = 1.85f)
         {
             CashModels.Atm(name, parent, position);
 
-            // Squares lie in front of the machine (z = -1.85 from it).
-            Vector3 front = position + new Vector3(0f, 0f, -1.85f);
+            // Squares lie in front of the machine (z = -1.85 from it unless told otherwise: the
+            // market's street ATM is tucked against the shop wall and has less forecourt to use).
+            Vector3 front = position + new Vector3(0f, 0f, -frontDistance);
             var withdraw = Station<AtmStation>($"{id}.withdraw", "AtmWithdraw", parent, front, withdrawSize,
                 "ATM", new Color(0.35f, 0.8f, 1f), smallestCard: withdrawSize);
 
