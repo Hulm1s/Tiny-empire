@@ -86,6 +86,10 @@ namespace Tycoon.Customers
         private readonly List<Transform> _trail = new List<Transform>();
         private bool _stopPrepared;
 
+        // A florist customer: the basket is filled at the door with the bouquet they want
+        // (BeginOrder), and is handed over line by line by Deliver rather than scanned.
+        private bool _isOrder;
+
         private class BasketLine
         {
             public ItemDefinition item;
@@ -111,6 +115,8 @@ namespace Tycoon.Customers
             IList<Vector3> entryRoute = null)
         {
             _queue = queue;
+            _isOrder = false;
+            _basket.Clear();
             _wanted = item;
             _requested = Mathf.Max(1, count);
             _delivered = 0;
@@ -141,6 +147,75 @@ namespace Tycoon.Customers
         }
 
         /// <summary>
+        /// Starts a customer who wants several products at once - a florist's bouquet, e.g. three
+        /// roses and two tulips. Walks in and queues exactly like a farm customer (<see cref="Begin"/>);
+        /// the order is kept in the same basket lines a supermarket shopper uses, and the till hands it
+        /// over one flower at a time through <see cref="Deliver"/>, in any order.
+        /// </summary>
+        public void BeginOrder(CustomerQueue queue, IList<ItemDefinition> items, IList<int> counts, Vector3 slot,
+            Color tint, IList<Vector3> entryRoute = null)
+        {
+            _queue = queue;
+            _isOrder = true;
+            _stops = null;
+            _basket.Clear();
+            _requested = 0;
+            for (int i = 0; i < items.Count; i++)
+            {
+                int n = Mathf.Max(1, counts[i]);
+                _basket.Add(new BasketLine { item = items[i], count = n });
+                _requested += n;
+            }
+            _delivered = 0;
+            _wanted = null;
+            RefreshWanted();
+            _patienceLeft = patienceSeconds;
+            CurrentPhase = Phase.Arriving;
+            _target = slot;
+
+            _route.Clear();
+            if (entryRoute != null) _route.AddRange(entryRoute);
+
+            ApplyTint(tint);
+            ShowBubble();
+        }
+
+        /// <summary>True for a several-product order (a bouquet).</summary>
+        public bool IsOrder => _isOrder;
+
+        /// <summary>Lines in a several-product order (0 for anyone else).</summary>
+        public int OrderLines => _isOrder ? _basket.Count : 0;
+
+        public ItemDefinition OrderItem(int line) => _basket[line].item;
+        public int OrderCount(int line) => _basket[line].count;
+        public int OrderRemaining(int line) => Mathf.Max(0, _basket[line].count - _basket[line].scanned);
+
+        /// <summary>Would this customer take one of these now? The till's one question.</summary>
+        public bool Wants(ItemDefinition item)
+        {
+            if (item == null || !IsWaiting || IsSatisfied) return false;
+            if (!_isOrder) return item == _wanted;
+            for (int i = 0; i < _basket.Count; i++)
+                if (_basket[i].item == item && _basket[i].scanned < _basket[i].count) return true;
+            return false;
+        }
+
+        private void ShowBubble()
+        {
+            if (bubble == null) return;
+            if (!_isOrder) { bubble.Show(_wanted, Remaining); return; }
+
+            var items = new ItemDefinition[_basket.Count];
+            var left = new int[_basket.Count];
+            for (int i = 0; i < _basket.Count; i++)
+            {
+                items[i] = _basket[i].item;
+                left[i] = OrderRemaining(i);
+            }
+            bubble.ShowLines(items, left);
+        }
+
+        /// <summary>
         /// Starts a supermarket shopper: walk the entry route, visit each shelf on the list and
         /// take what they came for, then queue at the checkout with the basket.
         ///
@@ -152,6 +227,7 @@ namespace Tycoon.Customers
             IList<Vector3> entryRoute, Color tint)
         {
             _queue = queue;
+            _isOrder = false;
             _stops = stops;
             _stopIndex = 0;
             _takeTimer = 0f;
@@ -226,7 +302,22 @@ namespace Tycoon.Customers
         /// <summary>Hands over one unit. Returns false if this customer does not want it.</summary>
         public bool Deliver(ItemDefinition item)
         {
-            if (!IsWaiting || item != _wanted || IsSatisfied) return false;
+            if (!Wants(item)) return false;
+
+            if (_isOrder)
+            {
+                for (int i = 0; i < _basket.Count; i++)
+                {
+                    if (_basket[i].item != item || _basket[i].scanned >= _basket[i].count) continue;
+                    _basket[i].scanned++;
+                    break;
+                }
+                _delivered++;
+                RefreshWanted();
+                ShowBubble();
+                if (IsSatisfied) Leave(true);
+                return true;
+            }
 
             _delivered++;
             if (bubble != null) bubble.Show(_wanted, Remaining);

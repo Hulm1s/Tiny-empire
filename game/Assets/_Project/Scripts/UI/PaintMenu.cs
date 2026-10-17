@@ -67,6 +67,9 @@ namespace Tycoon.UI
 
         // Patterns tab.
         private Image[] _patternBorders;
+        private RectTransform[] _patternButtons;
+        private Text[] _patternNames;
+        private int[] _visiblePatterns = PatternFactory.MarketPatterns;
         private Texture2D[] _thumbs;
         private bool[] _thumbDirty;
         private Text _hint;
@@ -132,6 +135,7 @@ namespace Tycoon.UI
 
             _wallPixels = _wallPixels ?? new Color32[PatternFactory.Size * PatternFactory.Size];
 
+            LayoutPatterns(_decor.PatternList);
             SyncControls();
             SelectTab(0);
             _previewDirty = true;
@@ -287,11 +291,14 @@ namespace Tycoon.UI
             _patternBorders = new Image[PatternFactory.PatternCount];
             _thumbs = new Texture2D[PatternFactory.PatternCount];
             _thumbDirty = new bool[PatternFactory.PatternCount];
+            _patternButtons = new RectTransform[PatternFactory.PatternCount];
+            _patternNames = new Text[PatternFactory.PatternCount];
 
             for (int p = 0; p < PatternFactory.PatternCount; p++)
             {
                 int pattern = p;
-                int column = p % columns, row = p / columns;
+                // Placed for real by LayoutPatterns when the menu opens: each shop lists its own.
+                const int column = 0, row = 0;
                 float x = x0 + column * (cell + gap);
                 float y = 6f + row * (cellH + 6f);
 
@@ -317,6 +324,8 @@ namespace Tycoon.UI
                 var name = Label(tab, PatternFactory.PatternNames[p], 26, x - 6f, y + cell + 2f,
                     cell + 12f, 48f, Color.white);
                 name.fontStyle = FontStyle.Bold;
+                _patternButtons[p] = rect;
+                _patternNames[p] = name;
             }
 
             _hint = Label(tab, "", 30, 20f, 508f, CardWidth - 40f, 44f, Quiet);
@@ -328,6 +337,32 @@ namespace Tycoon.UI
             _strip.raycastTarget = false;
             _stripTexture = PatternFactory.NewTexture("PaintStrip");
             _strip.texture = _stripTexture;
+        }
+
+        /// <summary>
+        /// Lays the pattern buttons out for the shop being painted: only the patterns it lists, in its order,
+        /// in the same five-wide grid (the supermarket's ten fill two rows exactly as they always did).
+        /// </summary>
+        private void LayoutPatterns(int[] list)
+        {
+            _visiblePatterns = list;
+            const int columns = 5;
+            const float cell = 176f, gap = 14f, cellH = 240f;
+            float x0 = (CardWidth - (columns * cell + (columns - 1) * gap)) * 0.5f;
+
+            for (int p = 0; p < PatternFactory.PatternCount; p++)
+            {
+                int slot = System.Array.IndexOf(list, p);
+                bool shown = slot >= 0;
+                _patternButtons[p].gameObject.SetActive(shown);
+                _patternNames[p].gameObject.SetActive(shown);
+                if (!shown) continue;
+
+                float x = x0 + (slot % columns) * (cell + gap);
+                float y = 6f + (slot / columns) * (cellH + 6f);
+                Place(_patternButtons[p], x, y, cell, cell);
+                Place(_patternNames[p].rectTransform, x - 6f, y + cell + 2f, cell + 12f, 48f);
+            }
         }
 
         private void ChoosePattern(int pattern)
@@ -354,14 +389,14 @@ namespace Tycoon.UI
         {
             if (_baking != null) return;
             bool anyMissing = false;
-            for (int p = 0; p < PatternFactory.PatternCount; p++)
+            foreach (int p in _visiblePatterns)
                 if (!PatternFactory.IsWallMapReady(p)) anyMissing = true;
             if (anyMissing) _baking = StartCoroutine(BakeAll());
         }
 
         private IEnumerator BakeAll()
         {
-            for (int p = 0; p < PatternFactory.PatternCount; p++)
+            foreach (int p in _visiblePatterns)
             {
                 if (!PatternFactory.IsWallMapReady(p))
                 {

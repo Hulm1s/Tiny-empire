@@ -99,6 +99,15 @@ namespace Tycoon.Stations
         [Header("What gets patterned")]
         public DecorSurface[] surfaces;
 
+        [Header("The paint menu for this shop")]
+        [Tooltip("The wall patterns the menu offers, as PatternFactory indexes, in menu order. Empty is the " +
+                 "supermarket's own ten (PatternFactory.MarketPatterns), so its saved looks are unchanged.")]
+        public int[] patterns;
+
+        [Tooltip("Start from startingLook instead of the supermarket's cream walls and red skirting.")]
+        public bool useStartingLook;
+        public DecorLook startingLook;
+
         private DecorLook _look = DecorLook.Default;
         private bool _painted;
         private bool _previewing;
@@ -114,6 +123,14 @@ namespace Tycoon.Stations
 
         /// <summary>The look that has been confirmed, or the default if none has.</summary>
         public DecorLook Look => _look;
+
+        /// <summary>The patterns the paint menu lists for this shop.</summary>
+        public int[] PatternList => patterns != null && patterns.Length > 0 ? patterns : PatternFactory.MarketPatterns;
+
+        private void Awake()
+        {
+            if (useStartingLook) _look = startingLook;
+        }
 
         public string SaveKey => SaveKeys.For(this);
 

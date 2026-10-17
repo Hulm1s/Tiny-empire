@@ -173,6 +173,8 @@ namespace Tycoon.EditorTools
             clashes += Progression(root, firstLive, tag);
             clashes += GrowthRules(root, firstLive, firstBuffer, tag);
             clashes += ButcherChain(root, solids, entries, firstLive, tag);
+            clashes += FloristChain(root, solids, entries, firstLive, tag);
+            clashes += LetGoRules(location, tag);
             ReportLayout(root, solids, tag);
 
             return clashes;
@@ -517,6 +519,7 @@ namespace Tycoon.EditorTools
             {
                 if (worker.routes == null || worker.routes.Length == 0) continue;
                 if (worker.routes[0] != null && worker.routes[0].pickup is CutStation) continue;   // the butcher: see ButcherChain
+                if (worker.routes[0] != null && worker.routes[0].dropoff is BedStation) continue;   // the gardener: see FloristChain
 
                 var carried = new List<string>();
                 foreach (var route in worker.routes)
@@ -630,7 +633,10 @@ namespace Tycoon.EditorTools
                 if (!TryFootprint(root, t, out Rect area)) continue;
 
                 string owner = t.parent != null ? t.parent.name : t.name;
-                found.Add(new Solid { Name = owner + "/" + t.name, Owner = owner, Area = area });
+                // The florist's walls (painted coat) and its counter and stands (the fittings that REPAIR brings
+                // back) are separate groups so each can be switched, but they are one building.
+                if (owner == "Painted" || owner == "Working") owner = "Building";
+                found.Add(new Solid { Name = (t.parent != null ? t.parent.name : "") + "/" + t.name, Owner = owner, Area = area });
             }
 
             return found;
@@ -1113,10 +1119,6 @@ namespace Tycoon.EditorTools
                     legs.Add(new Leg(from, Flat(root, queue.exitPoint), "out to the street"));
                 }
 
-                for (int i = 0; i + 1 < queue.slots.Length; i++)
-                    legs.Add(new Leg(Flat(root, queue.slots[i]), Flat(root, queue.slots[i + 1]), "along the queue"));
-
-                // Customers are not solid, but they are drawn: no walking through walls or the counter.
                 foreach (var leg in legs)
                     foreach (var solid in solids)
                     {
@@ -1147,6 +1149,400 @@ namespace Tycoon.EditorTools
             faults += VanRoute(van, tag);
 
             Debug.Log($"[Audit] {tag} butcher chain: {faults} faults.");
+            return faults;
+        }
+
+        // ---------------------------------------------------------------- letting a business go
+
+        /// <summary>
+        /// The farm is let go when the supermarket is bought and the supermarket when the town is: every till
+        /// with a cash pile there pays the account at a share (never nothing, never more than a sale) once
+        /// that purchase is owned, and the purchase is a real gate. A till with no pile already pays the
+        /// account in full and is left alone. The farm's share is the one the supermarket's copies.
+        /// </summary>
+        private static int LetGoRules(Location location, string tag)
+        {
+            if (location.locationId != "farm" && location.locationId != "market") return 0;
+
+            int faults = 0;
+            var root = location.transform;
+            string gateName = location.locationId == "farm" ? "UnlockMarket" : "UnlockTown";
+            void Check(string name, CashPile pile, UnlockStation gate, float share)
+            {
+                if (pile == null) return;
+                if (gate == null)
+                {
+                    faults++;
+                    Debug.LogWarning($"[Audit] LET-GO {tag} {name} has a cash pile but is never let go ({gateName} does not switch it).");
+                    return;
+                }
+                if (share <= 0f || share > 1f)
+                {
+                    faults++;
+                    Debug.LogWarning($"[Audit] LET-GO {tag} {name} pays the account {share:0.00} of a sale once let go.");
+                }
+            }
+
+            if (location.locationId == "market")
+            {
+                foreach (var till in root.GetComponentsInChildren<CheckoutStation>(true))
+                    Check(till.name, till.pile, till.accountWhenUnlocked, till.accountShare);
+                foreach (var register in root.GetComponentsInChildren<RegisterStation>(true))
+                    Check(register.name, register.pile, register.accountWhenUnlocked, register.accountShare);
+            }
+            else
+            {
+                foreach (var register in root.GetComponentsInChildren<RegisterStation>(true))
+                    Check(register.name, register.pile, register.accountWhenUnlocked, register.accountShare);
+            }
+
+            Debug.Log($"[Audit] {tag} let-go rules: {faults} faults.");
+            return faults;
+        }
+
+        // ---------------------------------------------------------------- the florist
+
+        /// <summary>
+        /// The florist as a whole (town only; it starts from the BouquetCounter): that the derelict shop can
+        /// be renovated in order, that the flowers can go from the beds to a paying customer, that every bed
+        /// can be planted, watered and harvested (and by the gardener), that the purchases come one at a time
+        /// in the intended order, and that every walk it relies on is clear.
+        ///
+        /// Checks, in order: the renovation (every litter heap has a pile and a square, REPAIR brings the
+        /// counter and stands back and removes the wrecks, PAINT is the florist's own menu without the
+        /// two-band wall, OPEN brings in the shop, the garden, the well and the seed box, and the steps are
+        /// live in the order litter, repair and paint, open); every flower the counter sells has a stock case,
+        /// is advertised (ProductOffer) and has two beds that fill that very stock; every bed has its one
+        /// square, six looks, a seed it takes from a seed box that supplies it and water it takes from a well
+        /// that supplies it, and those squares are live only once the shop is open; the gardener has three
+        /// routes per bed (water, seed, harvest) and carries one thing at a time; the purchases are live in
+        /// the order Tulips, Hydrangeas, Sunflowers, the florist hire, the gardener hire; customers' way in
+        /// (west of the central stand), along the queue and out (east of it) clears every wall, stand and
+        /// the counter by 0.25 m, and the lane they queue in is nobody's square; and the player's walk from
+        /// the street round the counter, through the back door to the well, the seed box and every bed (and
+        /// to the bin by the street door) is clear of walls, stands, the fence and the well by 0.3 m.
+        /// </summary>
+        private static int FloristChain(Transform root, List<Solid> solids, List<Entry> entries,
+            Dictionary<StationBase, int> firstLive, string tag)
+        {
+            BouquetCounter counter = null;
+            foreach (var c in root.GetComponentsInChildren<BouquetCounter>(true)) counter = c;
+            if (counter == null) return 0;
+
+            int faults = 0;
+            void Fault(string what)
+            {
+                faults++;
+                Debug.LogWarning($"[Audit] FLORIST {tag} {what}");
+            }
+
+            var beds = root.GetComponentsInChildren<FlowerBed>(true);
+            var offers = root.GetComponentsInChildren<ProductOffer>(true);
+
+            int LiveAt(StationBase st) => st != null && firstLive.TryGetValue(st, out int r) ? r : -1;
+
+            // ---- the renovation ----------------------------------------------------------------------
+            var named = new Dictionary<string, StationBase>();
+            foreach (var station in root.GetComponentsInChildren<StationBase>(true))
+                if (!named.ContainsKey(station.name)) named[station.name] = station;
+
+            var piles = new List<CollectStation>();
+            foreach (var take in root.GetComponentsInChildren<CollectStation>(true))
+                if (IsRubbishSquare(take)) piles.Add(take);
+            if (piles.Count == 0) Fault("there is no litter to clear: the shop does not start derelict.");
+            foreach (var take in piles)
+            {
+                if (take.workerCompatible) Fault($"{take.name} may be used by a worker; the litter is the player's to carry out.");
+                if (take.source == null || take.source.item == null || take.source.item.basePrice > 0d)
+                    Fault($"{take.name} does not hold worthless rubbish.");
+            }
+            bool hasBin = false;
+            foreach (var bin in root.GetComponentsInChildren<DiscardStation>(true)) hasBin |= LiveAt(bin) == 0;
+            if (!hasBin) Fault("there is no bin standing from the start for the litter.");
+
+            UnlockStation repair = named.TryGetValue("UnlockRepair", out var rs) ? rs as UnlockStation : null;
+            PaintStation paint = named.TryGetValue("Paint", out var ps) ? ps as PaintStation : null;
+            ChoreStation open = named.TryGetValue("Open", out var os) ? os as ChoreStation : null;
+            if (repair == null || paint == null || open == null) Fault("the renovation steps (repair, paint, open) are missing.");
+            else
+            {
+                if (repair.revealOnUnlock == null || repair.revealOnUnlock.Length == 0 ||
+                    repair.hideOnUnlock == null || repair.hideOnUnlock.Length == 0)
+                    Fault("repair does not bring the fittings back and take the wrecks away.");
+                if (paint.decor == null) Fault("the paint square has no decor.");
+                else
+                {
+                    var d = paint.decor;
+                    if (d.surfaces == null || d.surfaces.Length == 0) Fault("the decor has nothing to paint.");
+                    else
+                        foreach (var surface in d.surfaces)
+                            if (surface == null || surface.renderer == null) { Fault("the decor has a surface with no renderer."); break; }
+                    if (d.grubby == null || d.painted == null || d.grubby.Length == 0 || d.painted.Length == 0)
+                        Fault("the decor has no grubby and painted coats.");
+                    if (d.openStep != open) Fault("the decor does not know the OPEN step.");
+                    if (d.patterns == null || d.patterns.Length == 0)
+                        Fault("the florist decor has no pattern list of its own (it would offer the supermarket's).");
+                    else
+                    {
+                        foreach (int pattern in d.patterns)
+                            if (pattern < 0 || pattern >= Tycoon.UI.PatternFactory.PatternCount || Tycoon.UI.PatternFactory.IsBanded(pattern))
+                                Fault($"the florist offers pattern {pattern}, which does not exist or is a whole-wall pattern (its walls are 0.7 m).");
+                        if (d.patterns.Length > 10) Fault("the florist lists more patterns than the paint menu has room for.");
+                    }
+                }
+
+                bool Reveals(Component target) =>
+                    open.revealOnDone != null && System.Array.Exists(open.revealOnDone, go => go != null && target.transform.IsChildOf(go.transform));
+                if (!Reveals(counter)) Fault("OPEN does not bring in the counter and its queue.");
+                foreach (var bed in beds)
+                    if (bed.Flower != null && bed.Flower.id == "rose" && !Reveals(bed)) Fault("OPEN does not bring in the rose beds.");
+                foreach (var name in new[] { "FetchWater", "FetchSeeds" })
+                    if (!named.TryGetValue(name, out var supply) || !Reveals(supply)) Fault($"OPEN does not bring in {name}.");
+
+                // Litter, then repair and paint together, then open.
+                int trash = -1;
+                foreach (var take in piles) trash = Mathf.Max(trash, LiveAt(take));
+                int r = LiveAt(repair), pn = LiveAt(paint), op = LiveAt(open);
+                if (trash < 0 || r < 0 || pn < 0 || op < 0) Fault("a renovation step is never live.");
+                else
+                {
+                    if (r <= trash || pn <= trash) Fault($"repair (stage {r}) or paint (stage {pn}) is on offer before the litter is gone (stage {trash}).");
+                    if (op <= Mathf.Max(r, pn)) Fault($"OPEN (stage {op}) is on offer before repair (stage {r}) and paint (stage {pn}).");
+                }
+            }
+
+            // ---- flowers: bed -> stock -> counter -> customer -------------------------------------
+            if (counter.queue == null || counter.queue.register != counter || !counter.queue.bouquets)
+                Fault("the counter and its bouquet queue do not point at each other.");
+            if (counter.sells == null || counter.sells.Length != 4) Fault("the counter does not sell the four flowers.");
+            else
+                foreach (var flower in counter.sells)
+                {
+                    var stock = counter.stock != null ? System.Array.Find(counter.stock, b => b != null && b.item == flower) : null;
+                    if (stock == null) { Fault($"no stock case for {flower.displayName}."); continue; }
+                    if (System.Array.Find(offers, o => o.item == flower && o.transform == stock.transform) == null)
+                        Fault($"nothing advertises {flower.displayName} with its stock, so customers would never ask for it.");
+                    int feeding = 0;
+                    foreach (var bed in beds) if (bed.stock == stock) feeding++;
+                    if (feeding != 2) Fault($"{flower.displayName} has {feeding} beds filling its stock, not 2.");
+                }
+
+            // ---- the beds: plant, water, harvest -------------------------------------------------------
+            int openRound = open != null ? LiveAt(open) : -1;
+            foreach (var bed in beds)
+            {
+                if (bed.square == null || bed.square.bed != bed) { Fault($"{bed.name} has no square that points back at it."); continue; }
+                if (bed.looks == null || bed.looks.Length != 6 || System.Array.Exists(bed.looks, l => l == null))
+                    Fault($"{bed.name} does not have its six looks.");
+                if (bed.bubble == null) Fault($"{bed.name} has no bubble.");
+                if (bed.seed == null || bed.water == null || bed.stock == null) { Fault($"{bed.name} does not know its seed, water and stock."); continue; }
+                if (bed.flowersPerHarvest > bed.stock.capacity)
+                    Fault($"{bed.name} harvests {bed.flowersPerHarvest} flowers into a stock of {bed.stock.capacity}: it could never be picked.");
+
+                var seedSource = bed.seedSquare != null ? bed.seedSquare.source : null;
+                if (seedSource == null || seedSource.item != bed.seed || seedSource.GetComponent<SupplyFeed>() == null)
+                    Fault($"{bed.name}'s seed box does not supply the seed it plants.");
+                var wellSource = bed.wellSquare != null ? bed.wellSquare.source : null;
+                if (wellSource == null || wellSource.item != bed.water || wellSource.GetComponent<SupplyFeed>() == null)
+                    Fault($"{bed.name}'s well does not supply the water it drinks.");
+
+                int at = LiveAt(bed.square);
+                if (at < 0) Fault($"{bed.name}'s square is never live.");
+                else if (openRound >= 0 && at <= openRound)
+                    Fault($"{bed.name}'s square is live (stage {at}) before the shop is open (stage {openRound}).");
+                foreach (var supply in new StationBase[] { bed.seedSquare, bed.wellSquare })
+                    if (supply != null && openRound >= 0 && LiveAt(supply) >= 0 && LiveAt(supply) <= openRound)
+                        Fault($"{supply.name} is live before the shop is open.");
+            }
+
+            Tycoon.Upkeep.WorkerAgent gardener = null, florist = null;
+            foreach (var worker in root.GetComponentsInChildren<Tycoon.Upkeep.WorkerAgent>(true))
+            {
+                if (worker.dropoff == counter) florist = worker;
+                else if (worker.routes != null && worker.routes.Length > 0 && worker.routes[0].dropoff is BedStation) gardener = worker;
+            }
+            if (florist == null) Fault("no worker serves at the counter.");
+            else if (florist.routes != null && florist.routes.Length > 0) Fault("the florist worker has routes: it should only serve the counter.");
+            if (gardener == null) Fault("there is no gardener.");
+            else
+            {
+                if (gardener.routes.Length != beds.Length * 3) Fault($"the gardener has {gardener.routes.Length} routes for {beds.Length} beds (three each).");
+                foreach (var bed in beds)
+                {
+                    if (bed.square == null) continue;
+                    if (System.Array.Find(gardener.routes, r => r.dropoff == bed.square && r.pickup == bed.wellSquare) == null)
+                        Fault($"the gardener never waters {bed.name}.");
+                    if (System.Array.Find(gardener.routes, r => r.dropoff == bed.square && r.pickup == bed.seedSquare) == null)
+                        Fault($"the gardener never plants {bed.name}.");
+                    if (System.Array.Find(gardener.routes, r => r.dropoff == bed.square && r.pickup == bed.square) == null)
+                        Fault($"the gardener never harvests {bed.name}.");
+                }
+                if (gardener.GetComponent<Tycoon.Player.CarryStack>().capacity != 1)
+                    Fault("the gardener must carry one seed or can at a time (a left-over would strand it).");
+            }
+
+            // ---- one purchase at a time ------------------------------------------------------------
+            int Round(string name)
+            {
+                if (named.TryGetValue(name, out var st) && firstLive.TryGetValue(st, out int r)) return r;
+                Fault($"{name} is never live.");
+                return -1;
+            }
+            string[] order = { "Open", "UnlockTulips", "UnlockHydrangeas", "UnlockSunflowers", "Hireflorist", "Hiregardener" };
+            int previous = -1;
+            for (int i = 0; i < order.Length; i++)
+            {
+                int r = Round(order[i]);
+                if (i > 0 && r >= 0 && previous >= 0 && r <= previous)
+                    Fault($"{order[i]} (stage {r}) is on offer no later than {order[i - 1]} (stage {previous}); one step at a time.");
+                previous = r;
+            }
+
+            // ---- customers: in west of the stand, along the counter, out east of it --------------------
+            var queue = counter.queue;
+            if (queue != null && queue.spawnPoint != null && queue.slots != null && queue.slots.Length > 0)
+            {
+                var legs = new List<Leg>();
+                Vector2 at = Flat(root, queue.spawnPoint);
+                if (queue.entryRoute != null)
+                    foreach (var t in queue.entryRoute) { var p = Flat(root, t); legs.Add(new Leg(at, p, "in")); at = p; }
+                foreach (var slot in queue.slots) legs.Add(new Leg(at, Flat(root, slot), "in to the queue"));
+                for (int i = 0; i + 1 < queue.slots.Length; i++)
+                    legs.Add(new Leg(Flat(root, queue.slots[i]), Flat(root, queue.slots[i + 1]), "along the queue"));
+                // Only the customer at the front is served and leaves; the others advance to the front first (the
+                // "along the queue" legs above), so the way out is measured from slot 0.
+                {
+                    Vector2 from = Flat(root, queue.slots[0]);
+                    if (queue.exitRoute != null)
+                        foreach (var t in queue.exitRoute) { var p = Flat(root, t); legs.Add(new Leg(from, p, "out")); from = p; }
+                    legs.Add(new Leg(from, Flat(root, queue.exitPoint), "out to the street"));
+                }
+
+                // Order bubbles: the widest one (every line of a bouquet) of two queued customers must not overlap
+                // at the game camera. The town's grid is turned with the camera, so x is screen-right and z is
+                // screen-up foreshortened by sin(pitch 50).
+                var bubble = queue.customerTemplate != null ? queue.customerTemplate.GetComponent<OrderBubble>() : null;
+                if (bubble != null)
+                {
+                    Vector2 big = OrderBubble.CanvasSize(Mathf.Max(1, queue.maxBouquetLines)) * bubble.worldScale;
+                    for (int i = 0; i < queue.slots.Length; i++)
+                        for (int j = i + 1; j < queue.slots.Length; j++)
+                        {
+                            Vector2 a = Flat(root, queue.slots[i]), b = Flat(root, queue.slots[j]);
+                            float dx = Mathf.Abs(a.x - b.x), dy = Mathf.Abs(a.y - b.y) * 0.766f;
+                            if (dx < big.x && dy < big.y)
+                                Fault($"the order bubbles of queue slots {i} and {j} overlap at the game camera: " +
+                                      $"{dx:0.00} m across and {dy:0.00} m up the screen apart, a {queue.maxBouquetLines}-line bubble is {big.x:0.00} x {big.y:0.00} m.");
+                        }
+                }
+
+                for (int i = 0; i + 1 < queue.slots.Length; i++)
+                    legs.Add(new Leg(Flat(root, queue.slots[i]), Flat(root, queue.slots[i + 1]), "along the queue"));
+
+                // Customers are not solid, but they are drawn: no walking through walls or the counter.
+                foreach (var leg in legs)
+                    foreach (var solid in solids)
+                    {
+                        if (!SegmentHits(leg.A, leg.B, Grow(solid.Area, 0.25f))) continue;
+                        Fault($"a customer walking {leg.Label} ({leg.A.x:0.0},{leg.A.y:0.0}) to ({leg.B.x:0.0},{leg.B.y:0.0}) " +
+                              $"goes through {solid.Name}.");
+                    }
+
+                // "Round the stand", as the sketch has it: the way in passes the central stand on its
+                // west side and the way out on its east side, and both stay south of the counter.
+                Rect stand = default;
+                bool found = false;
+                float front = Flat(root, queue.slots[0]).y;
+                foreach (var solid in solids)
+                    if (solid.Name.EndsWith("/Stall") && solid.Area.width > 1.9f && solid.Area.width < 2.2f &&
+                        Mathf.Abs(solid.Area.width - solid.Area.height) < 0.05f && solid.Area.center.y < front &&
+                        Mathf.Abs(solid.Area.center.x - Flat(root, queue.slots[0]).x) < 0.5f)
+                    { stand = solid.Area; found = true; }
+                if (!found) Fault("cannot find the central stand in front of the counter.");
+                else
+                {
+                    bool westOk = false, eastOk = false;
+                    foreach (var t in queue.entryRoute)
+                    {
+                        var p = Flat(root, t);
+                        if (p.x < stand.xMin && p.y > stand.yMin - 0.5f) westOk = true;
+                    }
+                    foreach (var t in queue.exitRoute)
+                    {
+                        var p = Flat(root, t);
+                        if (p.x > stand.xMax && p.y < stand.yMax + 1f && p.y > stand.yMin - 0.5f) eastOk = true;
+                    }
+                    if (!westOk) Fault("the way in does not go round the west side of the central stand.");
+                    if (!eastOk) Fault("the way out does not go round the east side of the central stand.");
+                }
+
+                // Nobody pays for a purchase by standing in the queue.
+                var lane = new List<Vector2>();
+                foreach (var slot in queue.slots) lane.Add(Flat(root, slot));
+                foreach (var t in queue.entryRoute) lane.Add(Flat(root, t));
+                foreach (var t in queue.exitRoute) lane.Add(Flat(root, t));
+                foreach (var e in entries)
+                {
+                    if (!e.ActiveWhenBuilt) continue;
+                    foreach (var p in lane)
+                        if (e.Card.Contains(p)) { Fault($"the customers' lane passes through {e.Name}."); break; }
+                }
+            }
+
+            // ---- the player's walks -----------------------------------------------------------------
+            Vector2 V(Component c) => Flat(root, c.transform);
+            var walks = new List<Leg>();
+            var street = new Vector2(-10f, TownBuilder.RoadZ);
+            var inside = new Vector2(-10f, 2.2f);
+            var westEnd = new Vector2(-10.2f, 4.9f);
+            var behind = new Vector2(-9.6f, 7.0f);
+            var door = new Vector2(-6.0f, 7.2f);
+            var meadow = new Vector2(-6.0f, 9.0f);
+            walks.Add(new Leg(street, inside, "street into the shop"));
+            walks.Add(new Leg(inside, westEnd, "past the west end of the counter"));
+            walks.Add(new Leg(westEnd, behind, "behind the counter"));
+            walks.Add(new Leg(behind, V(counter), "to the serve square"));
+            walks.Add(new Leg(behind, door, "to the back door"));
+            walks.Add(new Leg(door, meadow, "through the back door"));
+            if (beds.Length > 0 && beds[0].wellSquare != null) walks.Add(new Leg(meadow, V(beds[0].wellSquare), "to the well"));
+            if (beds.Length > 0 && beds[0].seedSquare != null)
+            {
+                // Up the east side of the lane, past the well, then across to the seed box under the north fence.
+                var seed = V(beds[0].seedSquare);
+                walks.Add(new Leg(new Vector2(-5.65f, meadow.y), new Vector2(-5.65f, seed.y), "up the meadow to the seed box"));
+                walks.Add(new Leg(new Vector2(-5.65f, seed.y), seed, "to the seed box"));
+            }
+            foreach (var bin in root.GetComponentsInChildren<DiscardStation>(true))
+            {
+                if (LiveAt(bin) != 0) continue;
+                // Along the pavement outside the south wall and up to the square, which lies south of the can.
+                var pavement = new Vector2(-10f, -1.3f);
+                var corner = new Vector2(-14.0f, -1.3f);
+                walks.Add(new Leg(street, pavement, "from the street to the pavement"));
+                walks.Add(new Leg(pavement, corner, "along the pavement to the bin"));
+                walks.Add(new Leg(corner, V(bin), "up to the bin"));
+                walks.Add(new Leg(pavement, new Vector2(-10f, 0.2f), "from the pavement through the door"));
+            }
+            foreach (var bed in beds)
+            {
+                if (bed.square == null) continue;
+                var target = V(bed.square);
+                // Up the open strip beside the well, then across along the bed's own row.
+                float lane = target.x < meadow.x ? -8.35f : -5.65f;
+                walks.Add(new Leg(meadow, new Vector2(lane, meadow.y), "into the meadow"));
+                walks.Add(new Leg(new Vector2(lane, meadow.y), new Vector2(lane, target.y), "up the meadow"));
+                walks.Add(new Leg(new Vector2(lane, target.y), target, $"to {bed.name}"));
+            }
+            foreach (var leg in walks)
+                foreach (var solid in solids)
+                {
+                    // The beds are walked on (that is how they are watered); everything else is solid.
+                    if (solid.Name.StartsWith("Bed_") || !SegmentHits(leg.A, leg.B, Grow(solid.Area, 0.3f))) continue;
+                    Fault($"the player walking {leg.Label} ({leg.A.x:0.0},{leg.A.y:0.0}) to ({leg.B.x:0.0},{leg.B.y:0.0}) " +
+                          $"is blocked by {solid.Name}.");
+                }
+
+            Debug.Log($"[Audit] {tag} florist chain: {faults} faults.");
             return faults;
         }
 

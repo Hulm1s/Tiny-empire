@@ -35,9 +35,15 @@ namespace Tycoon.Upkeep
             new System.Collections.Generic.Dictionary<ItemBuffer, WorkerAgent>();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        private static void ResetClaims() => Claims.Clear();
+        private static void ResetClaims() { Claims.Clear(); BedClaims.Clear(); }
 
         private ItemBuffer _claimed;
+
+        // The florist's gardener claims beds the same way a stocker claims shelves.
+        private static readonly System.Collections.Generic.Dictionary<FlowerBed, WorkerAgent> BedClaims =
+            new System.Collections.Generic.Dictionary<FlowerBed, WorkerAgent>();
+        private FlowerBed _bedClaimed;
+        private int _bedJob;
 
         // A multi-route worker with nothing worth doing: every shelf full, empty-crated, not
         // open yet, or already taken by the other stocker. It stands where it is rather than
@@ -211,6 +217,13 @@ namespace Tycoon.Upkeep
 
         private void ReleaseClaim()
         {
+            if (_bedClaimed != null)
+            {
+                if (BedClaims.TryGetValue(_bedClaimed, out var bedOwner) && bedOwner == this) BedClaims.Remove(_bedClaimed);
+                _bedClaimed = null;
+                _bedJob = 0;
+            }
+
             if (_claimed == null) return;
             if (Claims.TryGetValue(_claimed, out var owner) && owner == this) Claims.Remove(_claimed);
             _claimed = null;
@@ -243,7 +256,17 @@ namespace Tycoon.Upkeep
         /// </summary>
         private void ChooseRoute()
         {
-            if (routes == null || routes.Length == 0 || !_carry.IsEmpty) return;
+            if (routes == null || routes.Length == 0) return;
+
+            // The florist gardener: beds to plant, water and harvest. It also has to decide what to do
+            // with something in its arms that no bed wants any more, so it runs before the empty-arms check.
+            if (routes[0] != null && routes[0].dropoff is BedStation)
+            {
+                ChooseBed();
+                return;
+            }
+
+            if (!_carry.IsEmpty) return;
 
             // A farmer with two fields is a different question from a stocker with several shelves.
             if (routes[0] != null && routes[0].pickup is HarvestStation)
@@ -335,6 +358,168 @@ namespace Tycoon.Upkeep
 
             pickup = best.pickup;
             dropoff = best.dropoff;
+            _routedTo = null;
+            AdoptRoute();
+        }
+
+        /// <summary>Which of its three jobs a route is: 1 fetch a seed to a bed, 2 fetch water to it, 3 harvest it.</summary>
+        private static int BedRouteKind(StockRoute route, FlowerBed bed)
+        {
+            if (route.pickup == route.dropoff) return 3;
+            var source = (route.pickup as CollectStation)?.source;
+            if (source == null) return 0;
+            return source.item == bed.water ? 2 : source.item == bed.seed ? 1 : 0;
+        }
+
+        private static bool BedFree(FlowerBed bed, WorkerAgent me) =>
+            !BedClaims.TryGetValue(bed, out var owner) || owner == me || owner == null || !owner.isActiveAndEnabled;
+
+        /// <summary>A route that does <paramref name="job"/> on <paramref name="bed"/> and can be started now.</summary>
+        private StockRoute FindBedRoute(FlowerBed bed, int job)
+        {
+            foreach (var route in routes)
+            {
+                if (route == null || !(route.dropoff is BedStation square) || square.bed != bed) continue;
+                if (!route.dropoff.isActiveAndEnabled || BedRouteKind(route, bed) != job) continue;
+
+                if (job != 3)
+                {
+                    // Something to fetch: its source must be switched on and have some.
+                    if (!route.pickup.isActiveAndEnabled) continue;
+                    var source = ((CollectStation)route.pickup).source;
+                    if (source == null || source.IsEmpty) continue;
+                }
+                return route;
+            }
+            return null;
+        }
+
+        private const float StallSeconds = 4f;
+        private Vector3 _stallPos;
+        private int _stallCarry;
+        private float _stallTimer;
+
+        private bool AnyBedWants(Tycoon.Config.ItemDefinition item)
+        {
+            foreach (var route in routes)
+            {
+                var bed = route != null ? (route.dropoff as BedStation)?.bed : null;
+                if (bed != null && route.dropoff.isActiveAndEnabled && bed.WantsItem(item)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Puts what the arms hold back into the buffer it came from (the seed box, the well).</summary>
+        private void ReturnHeld()
+        {
+            var held = _carry.Item;
+            foreach (var route in routes)
+            {
+                var source = (route != null ? route.pickup as CollectStation : null)?.source;
+                if (source == null || source.item != held) continue;
+                if (_carry.TryRemove(held)) source.Add(1);
+                return;
+            }
+        }
+
+        /// <summary>
+        /// The gardener. With empty arms: the job on the beds that matters most - harvest a ripe bed (the
+        /// stock has room) before watering a dry one before planting a bare one, the nearest first - and
+        /// a bed is claimed for the whole job so a second hand never goes for the same one. A route is
+        /// kept until the bed stops wanting that job. With a seed or a can already in its arms: to the
+        /// nearest bed that wants exactly that, or stay put until one does (it is never thrown away).
+        /// Nothing to do: stand still.
+        /// </summary>
+        private void ChooseBed()
+        {
+            var here = transform.position;
+
+            // Standing still with a job (or a seed or can nobody wants) for a few seconds is a stall - a square
+            // that never let it in, or a bed that changed under it. Drop the claim (choosing again re-offers the
+            // route to its squares); and a held thing no bed asks for goes back to where it came from, so a hand
+            // can never be stuck holding water while every bed wants a seed.
+            if ((here - _stallPos).sqrMagnitude < 0.01f && _carry.Count == _stallCarry) _stallTimer += Time.deltaTime;
+            else { _stallPos = here; _stallCarry = _carry.Count; _stallTimer = 0f; }
+
+            if (_stallTimer > StallSeconds)
+            {
+                _stallTimer = 0f;
+                if (!_carry.IsEmpty && !AnyBedWants(_carry.Item)) ReturnHeld();
+                if (_bedClaimed != null) ReleaseClaim();
+            }
+
+            if (!_carry.IsEmpty)
+            {
+                var held = _carry.Item;
+                var current = (dropoff as BedStation)?.bed;
+                if (current != null && current.WantsItem(held)) return;
+
+                FlowerBed bestBed = null;
+                StockRoute bestRoute = null;
+                float bestD = float.MaxValue;
+                foreach (var route in routes)
+                {
+                    var bed = route != null ? (route.dropoff as BedStation)?.bed : null;
+                    if (bed == null || !route.dropoff.isActiveAndEnabled || !bed.WantsItem(held) || !BedFree(bed, this)) continue;
+                    if (route.pickup == route.dropoff) continue;
+                    float d = (route.dropoff.transform.position - here).sqrMagnitude;
+                    if (d < bestD) { bestD = d; bestBed = bed; bestRoute = route; }
+                }
+
+                if (bestRoute == null) return;
+                ReleaseClaim();
+                _bedClaimed = bestBed;
+                _bedJob = bestBed.Job;
+                BedClaims[bestBed] = this;
+                pickup = bestRoute.pickup;
+                dropoff = bestRoute.dropoff;
+                _routedTo = null;
+                _idle = false;
+                AdoptRoute();
+                return;
+            }
+
+            // Arms empty. Keep the job in hand while its bed still wants it.
+            if (_bedClaimed != null)
+            {
+                if (_bedClaimed.Job == _bedJob && FindBedRoute(_bedClaimed, _bedJob) != null) return;
+                ReleaseClaim();
+            }
+
+            FlowerBed target = null;
+            StockRoute chosen = null;
+            int bestJob = 0;
+            float bestDist = float.MaxValue;
+            foreach (var route in routes)
+            {
+                var bed = route != null ? (route.dropoff as BedStation)?.bed : null;
+                if (bed == null || !BedFree(bed, this)) continue;
+
+                int job = bed.Job;
+                if (job == 0 || BedRouteKind(route, bed) != job) continue;
+                if (FindBedRoute(bed, job) != route) continue;
+
+                float d = (route.dropoff.transform.position - here).sqrMagnitude;
+                if (job > bestJob || (job == bestJob && d < bestDist))
+                {
+                    bestJob = job; bestDist = d; target = bed; chosen = route;
+                }
+            }
+
+            if (chosen == null)
+            {
+                _idle = true;
+                _routedTo = null;
+                if (_agent != null && _agent.isOnNavMesh) _agent.ResetPath();
+                return;
+            }
+
+            _idle = false;
+            _bedClaimed = target;
+            _bedJob = bestJob;
+            BedClaims[target] = this;
+            pickup = chosen.pickup;
+            dropoff = chosen.dropoff;
             _routedTo = null;
             AdoptRoute();
         }

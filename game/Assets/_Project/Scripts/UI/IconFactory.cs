@@ -46,7 +46,7 @@ namespace Tycoon.UI
     /// outline, a vertical gradient body, a soft highlight - so a wrench and an egg look like
     /// they come from the same game.
     /// </summary>
-    public static class IconFactory
+    public static partial class IconFactory
     {
         /// <summary>Texture resolution. Icons are never drawn larger than ~100 px on a phone.</summary>
         private const int Size = 96;
@@ -85,10 +85,35 @@ namespace Tycoon.UI
                 case "steak": return Get("steak", DrawSteak, Supersample);
                 case "sausage": return Get("sausage", DrawSausage, Supersample);
                 case "pig": return Get("pig", DrawPig, Supersample);
+                case "rose": return Get("rose", DrawRose, Supersample);
+                case "tulip": return Get("tulip", DrawTulip, Supersample);
+                case "sunflower": return Get("sunflower", DrawSunflower, Supersample);
+                case "hydrangea": return Get("hydrangea", DrawHydrangea, Supersample);
+                case "watering_can": return Get("watering_can", DrawWateringCan, Supersample);
+                case "seed": return Get("seed", DrawSeedPacket, Supersample);
+                case "bouquet": return Get("bouquet", DrawBouquet, Supersample);
             }
 
             // Unknown product: the old behaviour, a plain disc the caller tints.
             return UIFactory.Circle;
+        }
+
+        /// <summary>
+        /// Paints one of the florist products into a 96-unit painter, exactly as its icon, so the
+        /// bouquet minigame (<see cref="BouquetArt"/>) can render it at any size. False if the id
+        /// is not one of them.
+        /// </summary>
+        internal static bool DrawFlorist(Painter p, string id)
+        {
+            switch (id)
+            {
+                case "rose": DrawRose(p); return true;
+                case "tulip": DrawTulip(p); return true;
+                case "sunflower": DrawSunflower(p); return true;
+                case "hydrangea": DrawHydrangea(p); return true;
+                case "bouquet": DrawBouquet(p); return true;
+                default: return false;
+            }
         }
 
         /// <summary>True when <see cref="For"/> returns something better than a plain disc.</summary>
@@ -97,7 +122,10 @@ namespace Tycoon.UI
                 item.id == "egg" || item.id == "milk" || item.id == "corn" || item.id == "hay" ||
                 item.id == "trash" || item.id == "bread" || item.id == "apples" ||
                 item.id == "yogurt" || item.id == "meat" || item.id == "steak" ||
-                item.id == "sausage" || item.id == "pig");
+                item.id == "sausage" || item.id == "pig" ||
+                item.id == "rose" || item.id == "tulip" || item.id == "sunflower" ||
+                item.id == "hydrangea" || item.id == "watering_can" || item.id == "bouquet" ||
+                item.id == "seed");
 
         public static Sprite Action(SquareIcon kind)
         {
@@ -190,7 +218,7 @@ namespace Tycoon.UI
 
         private static readonly Color White = Color.white;
 
-        private static Color Rgb(float r, float g, float b, float a = 1f) => new Color(r, g, b, a);
+        internal static Color Rgb(float r, float g, float b, float a = 1f) => new Color(r, g, b, a);
 
         private static void DrawEgg(Painter p)
         {
@@ -482,6 +510,220 @@ namespace Tycoon.UI
             // Gloss: a bright streak and a dot on the upper left lobe.
             p.Fill((x, y) => Sd.Capsule(x, y, 20f, 42f, 24f, 56f, 3.4f), Rgb(1f, 1f, 1f, 0.8f), apple, 1.6f);
             p.Fill((x, y) => Sd.Circle(x, y, 30f, 62f, 2.4f), Rgb(1f, 1f, 1f, 0.75f), apple, 1.2f);
+            p.GroundShadow();
+        }
+
+        // ---- the florist's goods ------------------------------------------------------------
+
+        internal static readonly Color StemLit = new Color(0.55f, 0.82f, 0.32f);
+        internal static readonly Color StemShade = new Color(0.14f, 0.42f, 0.16f);
+
+        /// <summary>A green stalk from (x0,y0) to (x1,y1), outlined like the rest.</summary>
+        /// <remarks><paramref name="k"/> scales the outline and rounding with the drawing, for
+        /// the bouquet minigame's bigger flowers (<see cref="BouquetArt"/>); 1 is the icon.</remarks>
+        internal static void IconStem(Painter p, float x0, float y0, float x1, float y1, float r = 2.8f, float k = 1f)
+        {
+            p.Blob((x, y) => Sd.Capsule(x, y, x0, y0, x1, y1, r), StemLit, StemShade, outline: 2.2f * k, inflate: 3f * k, spec: 0.2f);
+        }
+
+        internal static void IconLeaf(Painter p, float bx, float by, float angle, float len, float wid, float k = 1f)
+        {
+            Painter.Shape leaf = (x, y) => Sd.Leaf(x, y, bx, by, angle, len, wid);
+            p.Blob(leaf, Rgb(0.70f, 0.93f, 0.42f), Rgb(0.16f, 0.46f, 0.16f), outline: 2.6f * k, inflate: 6f * k, spec: 0.35f);
+            p.Fill((x, y) => Sd.Leaf(x, y, bx, by, angle, len * 0.9f, 0.9f * k), Rgb(0.14f, 0.38f, 0.1f, 0.4f), leaf);
+        }
+
+        private static Painter.Shape RingAt(float cx, float cy, float r, float w) =>
+            (x, y) => w - Mathf.Abs(Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) - r);
+
+        // ---- the four flowers' heads ------------------------------------------------------
+        // Each icon is its stem and leaves plus one of these blooms at scale 1. The bouquet
+        // minigame (BouquetArt) draws the very same blooms bigger and on longer stems, so the
+        // flower the player cuts and arranges is the flower on the product icon.
+        // (cx, cy) is the bloom's anchor and k its scale; the icon's numbers are kept as
+        // offsets from the anchor so scale 1 reproduces the icon exactly.
+
+        internal static void RoseBloom(Painter p, float cx, float cy, float k)
+        {
+            Painter.Shape bloom = (x, y) => Sd.Circle(x, y, cx, cy, 29f * k);
+            p.Blob(bloom, Rgb(1f, 0.70f, 0.80f), Rgb(0.78f, 0.16f, 0.42f), outline: 3.4f * k, inflate: 22f * k, spec: 0.6f);
+
+            // Petal edges: arcs of rings off-centre, swirling in.
+            var edge = Rgb(0.62f, 0.08f, 0.32f, 0.55f);
+            p.Fill(RingAt(cx - 4f * k, cy - 4f * k, 22f * k, 1.3f * k), edge, bloom, 0.6f * k);
+            p.Fill(RingAt(cx + 4f * k, cy + 3f * k, 15f * k, 1.3f * k), edge, bloom, 0.6f * k);
+            p.Fill(RingAt(cx - 1f * k, cy - 2f * k, 8.5f * k, 1.3f * k), edge, bloom, 0.6f * k);
+            p.Fill((x, y) => Sd.Circle(x, y, cx, cy, 4.5f * k), Rgb(0.66f, 0.08f, 0.34f, 0.7f), bloom, 1f * k);
+
+            p.Fill((x, y) => Sd.Capsule(x, y, cx - 18f * k, cy + 3f * k, cx - 12f * k, cy + 19f * k, 3.2f * k), Rgb(1f, 1f, 1f, 0.8f), bloom, 1.6f * k);
+            p.Fill((x, y) => Sd.Circle(x, y, cx - 3f * k, cy + 21f * k, 2.2f * k), Rgb(1f, 1f, 1f, 0.65f), bloom, 1.2f * k);
+        }
+
+        internal static void TulipBloom(Painter p, float cx, float cy, float k)
+        {
+            var lit = Rgb(1f, 0.52f, 0.46f);
+            var shade = Rgb(0.74f, 0.08f, 0.20f);
+            Painter.Shape left = (x, y) => Sd.Egg(x, y, cx - 10f * k, cy, 13f * k, 25f * k, 0.45f, -12f);
+            Painter.Shape right = (x, y) => Sd.Egg(x, y, cx + 10f * k, cy, 13f * k, 25f * k, 0.45f, 12f);
+            Painter.Shape mid = (x, y) => Sd.Egg(x, y, cx, cy + 2f * k, 14.5f * k, 28f * k, 0.42f);
+            p.Blob(left, lit, shade, outline: 3f * k, inflate: 11f * k, spec: 0.4f);
+            p.Blob(right, lit, shade, outline: 3f * k, inflate: 11f * k, spec: 0.4f);
+            p.Blob(mid, Rgb(1f, 0.62f, 0.52f), Rgb(0.82f, 0.12f, 0.24f), outline: 3.2f * k, inflate: 14f * k, spec: 0.55f);
+            p.Fill((x, y) => Sd.Capsule(x, y, cx - 8f * k, cy - 4f * k, cx - 7f * k, cy + 14f * k, 2.8f * k), Rgb(1f, 1f, 1f, 0.75f), mid, 1.4f * k);
+        }
+
+        internal static void SunflowerBloom(Painter p, float cx, float cy, float k)
+        {
+            for (int ring = 0; ring < 2; ring++)
+            {
+                int n = 13;
+                float off = ring == 0 ? 0f : 360f / n * 0.5f;
+                float rc = (ring == 0 ? 24f : 21f) * k, ry = (ring == 0 ? 12f : 11f) * k, rx = (ring == 0 ? 6.4f : 6.0f) * k;
+                var lit = ring == 0 ? Rgb(1f, 0.82f, 0.30f) : Rgb(1f, 0.94f, 0.40f);
+                var shade = ring == 0 ? Rgb(0.90f, 0.48f, 0.04f) : Rgb(0.96f, 0.62f, 0.06f);
+                for (int i = 0; i < n; i++)
+                {
+                    float phi = i * 360f / n + off;
+                    float px = cx - rc * Mathf.Sin(phi * Mathf.Deg2Rad), py = cy + rc * Mathf.Cos(phi * Mathf.Deg2Rad);
+                    p.Blob((x, y) => Sd.Ellipse(x, y, px, py, rx, ry, phi), lit, shade, outline: 2f * k, inflate: 5f * k, spec: 0.3f);
+                }
+            }
+
+            Painter.Shape core = (x, y) => Sd.Circle(x, y, cx, cy, 15f * k);
+            p.Blob(core, Rgb(0.66f, 0.40f, 0.16f), Rgb(0.26f, 0.12f, 0.05f), outline: 2.6f * k, inflate: 12f * k, spec: 0.3f);
+            // Seeds in a spiral.
+            var seed = Rgb(0.20f, 0.09f, 0.04f, 0.8f);
+            for (int s = 1; s <= 22; s++)
+            {
+                float a = s * 137.5f * Mathf.Deg2Rad, r = 11.5f * k * Mathf.Sqrt(s / 22f);
+                float sx = cx + r * Mathf.Cos(a), sy = cy + r * Mathf.Sin(a);
+                p.Fill((x, y) => Sd.Circle(x, y, sx, sy, 1.5f * k), seed, core, 0.6f * k);
+            }
+            p.Fill((x, y) => Sd.Capsule(x, y, cx - 10f * k, cy + 5f * k, cx - 6f * k, cy + 12f * k, 1.8f * k), Rgb(1f, 1f, 1f, 0.55f), core, 1.2f * k);
+        }
+
+        internal static void HydrangeaBloom(Painter p, float cx, float cy, float k)
+        {
+            Painter.Shape ball = (x, y) => Sd.Circle(x, y, cx, cy, 31f * k);
+            p.Blob(ball, Rgb(0.56f, 0.72f, 1f), Rgb(0.20f, 0.30f, 0.80f), outline: 3.4f * k, inflate: 24f * k, spec: 0.4f);
+
+            var tones = new[] { Rgb(0.78f, 0.88f, 1f), Rgb(0.46f, 0.64f, 1f), Rgb(0.62f, 0.60f, 1f) };
+            var rim = Rgb(0.14f, 0.22f, 0.66f, 0.7f);
+            float o = 2.7f * k, fr = 3.3f * k;
+            for (int i = 0; i < 40; i++)
+            {
+                float a = i * 137.5f * Mathf.Deg2Rad, r = 27f * k * Mathf.Sqrt((i + 0.5f) / 40f);
+                float fx = cx + r * Mathf.Cos(a), fy = cy + r * Mathf.Sin(a);
+                var tone = tones[(i * 7) % 3];
+                Painter.Shape floret = (x, y) => Mathf.Max(
+                    Mathf.Max(Sd.Circle(x, y, fx - o, fy, fr), Sd.Circle(x, y, fx + o, fy, fr)),
+                    Mathf.Max(Sd.Circle(x, y, fx, fy - o, fr), Sd.Circle(x, y, fx, fy + o, fr)));
+                p.Fill((x, y) => floret(x, y) + 0.9f * k, rim, ball, 0.5f * k);
+                p.Fill(floret, tone, ball, 0.5f * k);
+                p.Fill((x, y) => Sd.Circle(x, y, fx, fy, 1.1f * k), Rgb(1f, 1f, 0.9f, 0.9f), ball, 0.4f * k);
+            }
+            p.Fill((x, y) => Sd.Capsule(x, y, cx - 20f * k, cy + 6f * k, cx - 14f * k, cy + 22f * k, 3.4f * k), Rgb(1f, 1f, 1f, 0.55f), ball, 1.8f * k);
+        }
+
+        private static void DrawRose(Painter p)
+        {
+            IconStem(p, 48f, 8f, 48f, 40f);
+            IconLeaf(p, 47f, 20f, 58f, 24f, 8.5f);
+            IconLeaf(p, 49f, 16f, -60f, 22f, 8f);
+            RoseBloom(p, 48f, 59f, 1f);
+            p.GroundShadow();
+        }
+
+        private static void DrawTulip(Painter p)
+        {
+            IconLeaf(p, 47f, 8f, 24f, 46f, 10f);
+            IconLeaf(p, 49f, 8f, -26f, 42f, 9.5f);
+            IconStem(p, 48f, 8f, 48f, 42f, 3f);
+            TulipBloom(p, 48f, 62f, 1f);
+            p.GroundShadow();
+        }
+
+        private static void DrawSunflower(Painter p)
+        {
+            IconStem(p, 48f, 6f, 48f, 34f, 3f);
+            IconLeaf(p, 47f, 14f, 62f, 24f, 9f);
+            IconLeaf(p, 49f, 12f, -62f, 24f, 9f);
+            SunflowerBloom(p, 48f, 58f, 1f);
+            p.GroundShadow();
+        }
+
+        private static void DrawHydrangea(Painter p)
+        {
+            IconLeaf(p, 47f, 10f, 58f, 36f, 12f);
+            IconLeaf(p, 49f, 10f, -58f, 36f, 12f);
+            HydrangeaBloom(p, 48f, 56f, 1f);
+            p.GroundShadow();
+        }
+
+        private static void DrawWateringCan(Painter p)
+        {
+            var lit = Rgb(0.50f, 0.88f, 0.92f);
+            var shade = Rgb(0.10f, 0.42f, 0.62f);
+
+            // Back handle (a loop) and the carrying arc over the top.
+            Painter.Shape back = RingAt(25f, 40f, 13f, 3.4f);
+            p.Blob(back, Rgb(0.34f, 0.74f, 0.84f), Rgb(0.08f, 0.34f, 0.52f), outline: 2.4f, inflate: 3.4f, spec: 0.3f);
+            var arcRing = RingAt(42f, 52f, 18f, 3.4f);
+            Painter.Shape arc = (x, y) => Mathf.Min(arcRing(x, y), y - 52f);
+            p.Blob(arc, Rgb(0.34f, 0.74f, 0.84f), Rgb(0.08f, 0.34f, 0.52f), outline: 2.4f, inflate: 3.4f, spec: 0.3f);
+
+            // Spout with its sprinkler rose.
+            p.Blob((x, y) => Sd.Capsule(x, y, 58f, 30f, 78f, 58f, 4.2f), lit, shade, outline: 2.6f, inflate: 4.2f, spec: 0.4f);
+            Painter.Shape rose = (x, y) => Sd.Ellipse(x, y, 80f, 61f, 11f, 5.6f, 36f);
+            p.Blob(rose, Rgb(0.30f, 0.64f, 0.80f), Rgb(0.06f, 0.28f, 0.46f), outline: 2.6f, inflate: 6f, spec: 0.5f);
+            var hole = Rgb(0.05f, 0.2f, 0.34f, 0.8f);
+            p.Fill((x, y) => Sd.Circle(x, y, 77.5f, 64f, 1.1f), hole, rose, 0.4f);
+            p.Fill((x, y) => Sd.Circle(x, y, 81f, 61f, 1.1f), hole, rose, 0.4f);
+            p.Fill((x, y) => Sd.Circle(x, y, 84.5f, 58f, 1.1f), hole, rose, 0.4f);
+
+            // Body.
+            Painter.Shape body = (x, y) => Sd.Box(x, y, 44f, 36f, 21f, 21f, 9f);
+            p.Blob(body, lit, shade, outline: 3.4f, inflate: 14f, spec: 0.5f);
+            p.Fill((x, y) => Sd.Box(x, y, 44f, 18f, 21f, 2f, 1f), Rgb(0.06f, 0.30f, 0.50f, 0.55f), body);
+            p.Fill((x, y) => Sd.Box(x, y, 44f, 54f, 21f, 2f, 1f), Rgb(0.06f, 0.30f, 0.50f, 0.55f), body);
+            p.Fill((x, y) => Sd.Capsule(x, y, 30f, 30f, 30f, 50f, 2.8f), Rgb(1f, 1f, 1f, 0.8f), body, 1.6f);
+
+            // A few drops.
+            var drop = Rgb(0.50f, 0.78f, 1f);
+            var dropShade = Rgb(0.14f, 0.40f, 0.90f);
+            p.Blob((x, y) => Sd.Egg(x, y, 88f, 44f, 3.2f, 4.6f, 0.4f), drop, dropShade, outline: 1.6f, inflate: 3f, spec: 0.5f);
+            p.Blob((x, y) => Sd.Egg(x, y, 80f, 40f, 2.8f, 4.0f, 0.4f), drop, dropShade, outline: 1.6f, inflate: 3f, spec: 0.5f);
+            p.GroundShadow();
+        }
+
+        private static void DrawBouquet(Painter p)
+        {
+            IconLeaf(p, 40f, 52f, 52f, 26f, 8f);
+            IconLeaf(p, 56f, 52f, -52f, 26f, 8f);
+
+            // Blooms peeking over the wrap: hydrangea, sunflower, rose, tulip.
+            p.Blob((x, y) => Sd.Circle(x, y, 33f, 68f, 13f), Rgb(0.60f, 0.76f, 1f), Rgb(0.22f, 0.34f, 0.84f), outline: 2.6f, inflate: 10f, spec: 0.4f);
+            p.Blob((x, y) => Sd.Circle(x, y, 63f, 68f, 13f), Rgb(1f, 0.90f, 0.36f), Rgb(0.92f, 0.52f, 0.04f), outline: 2.6f, inflate: 10f, spec: 0.4f);
+            p.Blob((x, y) => Sd.Circle(x, y, 63f, 68f, 5.5f), Rgb(0.66f, 0.40f, 0.16f), Rgb(0.28f, 0.14f, 0.06f), outline: 1.4f, inflate: 5f);
+            p.Blob((x, y) => Sd.Egg(x, y, 48f, 76f, 10f, 15f, 0.4f), Rgb(1f, 0.56f, 0.48f), Rgb(0.76f, 0.10f, 0.22f), outline: 2.6f, inflate: 9f, spec: 0.5f);
+            Painter.Shape rose = (x, y) => Sd.Circle(x, y, 47f, 62f, 13.5f);
+            p.Blob(rose, Rgb(1f, 0.72f, 0.82f), Rgb(0.80f, 0.18f, 0.44f), outline: 2.8f, inflate: 11f, spec: 0.55f);
+            p.Fill((x, y) => Sd.Circle(x, y, 47f, 62f, 4.5f), Rgb(0.66f, 0.08f, 0.34f, 0.6f), rose, 1f);
+
+            // The paper cone, a cream body with a pink flap down the front.
+            Painter.Shape cone = (x, y) => Sd.Poly(x, y, new[] { new Vector2(48f, 12f), new Vector2(26f, 56f), new Vector2(70f, 56f) }, 4f);
+            p.Blob(cone, Rgb(1f, 0.92f, 0.76f), Rgb(0.84f, 0.62f, 0.38f), outline: 3.2f, inflate: 12f, spec: 0.3f);
+            p.Blob((x, y) => Sd.Poly(x, y, new[] { new Vector2(48f, 13f), new Vector2(40f, 54f), new Vector2(66f, 54f) }, 3f),
+                Rgb(1f, 0.68f, 0.78f), Rgb(0.84f, 0.28f, 0.50f), outline: 2f, inflate: 8f, spec: 0.3f, clip: cone);
+
+            // Ribbon with a bow.
+            var rl = Rgb(0.72f, 0.54f, 1f);
+            var rs = Rgb(0.38f, 0.18f, 0.74f);
+            p.Blob((x, y) => Sd.Box(x, y, 48f, 31f, 14f, 4f, 2f, -4f), rl, rs, outline: 2.2f, inflate: 4f, spec: 0.4f, clip: cone);
+            p.Blob((x, y) => Sd.Ellipse(x, y, 40f, 34f, 7.5f, 4.6f, 28f), rl, rs, outline: 2.2f, inflate: 4f, spec: 0.4f);
+            p.Blob((x, y) => Sd.Ellipse(x, y, 56f, 34f, 7.5f, 4.6f, -28f), rl, rs, outline: 2.2f, inflate: 4f, spec: 0.4f);
+            p.Blob((x, y) => Sd.Circle(x, y, 48f, 32f, 3.6f), rl, rs, outline: 2f, inflate: 3.6f, spec: 0.4f);
+            p.Fill((x, y) => Sd.Capsule(x, y, 30f, 40f, 33f, 52f, 2.4f), Rgb(1f, 1f, 1f, 0.6f), cone, 1.4f);
             p.GroundShadow();
         }
 
@@ -892,7 +1134,7 @@ namespace Tycoon.UI
         }
 
         /// <summary>Signed distance to a polygon, positive INSIDE (the painter's convention).</summary>
-        private static float PolygonField(Vector2[] v, float x, float y)
+        internal static float PolygonField(Vector2[] v, float x, float y)
         {
             float d = float.MaxValue;
             float sign = 1f;
@@ -980,7 +1222,7 @@ namespace Tycoon.UI
         /// painter's convention). Union is Max, cut-out is <see cref="Sub"/>, and <see cref="Smooth"/>
         /// melts two shapes together (a bottle's shoulder, an apple's two lobes).
         /// </summary>
-        private static class Sd
+        internal static class Sd
         {
             private static void Local(float x, float y, float cx, float cy, float angle, out float lx, out float ly)
             {
@@ -1065,22 +1307,55 @@ namespace Tycoon.UI
         /// Coordinates are in pixels with the origin at the bottom left, matching how a texture
         /// is addressed, so "up" in the drawing code is up in the icon.
         /// </summary>
-        private class Painter
+        internal class Painter
         {
             private delegate float Sdf(float x, float y);
 
-            private readonly int _size;
+            // Canvas size in (supersampled) pixels. Square for every icon; the bouquet minigame
+            // art (BouquetArt) paints on taller canvases with the same Blob/Fill finish.
+            private readonly int _w, _h;
             private readonly Color[] _pixels;
 
             private readonly int _ss;
 
+            // The pixel window Blob and Fill work inside (x0/y0 inclusive, x1/y1 exclusive).
+            // Normally the whole canvas; narrowed by SetWindow so a big canvas with many small
+            // details does not evaluate every shape over every pixel.
+            private int _wx0, _wy0, _wx1, _wy1;
+
             /// <param name="size">Logical icon size in pixels (what the sprite ends up being).</param>
             /// <param name="supersample">Draw at this multiple and average down, for the polished icons.</param>
-            public Painter(int size, int supersample = 1)
+            public Painter(int size, int supersample = 1) : this(size, size, supersample) { }
+
+            public Painter(int width, int height, int supersample)
             {
                 _ss = supersample;
-                _size = size * supersample;
-                _pixels = new Color[_size * _size];
+                _w = width * supersample;
+                _h = height * supersample;
+                _pixels = new Color[_w * _h];
+                ResetWindow();
+            }
+
+            /// <summary>Logical size of the canvas.</summary>
+            public int Width => _w / _ss;
+            public int Height => _h / _ss;
+
+            /// <summary>
+            /// Confines Blob and Fill to a logical rectangle (plus a little for outlines). Pixels
+            /// outside it are left exactly as they are; shapes that reach past it are cut off,
+            /// so give it the shape's bounds with its outline and some margin.
+            /// </summary>
+            public void SetWindow(float x0, float y0, float x1, float y1)
+            {
+                _wx0 = Mathf.Clamp(Mathf.FloorToInt(x0 * _ss) - 2, 0, _w);
+                _wy0 = Mathf.Clamp(Mathf.FloorToInt(y0 * _ss) - 2, 0, _h);
+                _wx1 = Mathf.Clamp(Mathf.CeilToInt(x1 * _ss) + 2, _wx0, _w);
+                _wy1 = Mathf.Clamp(Mathf.CeilToInt(y1 * _ss) + 2, _wy0, _h);
+            }
+
+            public void ResetWindow()
+            {
+                _wx0 = 0; _wy0 = 0; _wx1 = _w; _wy1 = _h;
             }
 
             public void Ellipse(float cx, float cy, float rx, float ry, Color top, Color bottom,
@@ -1202,29 +1477,34 @@ namespace Tycoon.UI
             public void Blob(Shape shape, Color lit, Color shade, float outline = 3f, float inflate = 12f,
                 float spec = 0.35f, Shape clip = null)
             {
-                int n = _size;
+                // Works in the window's own local grid: (x, y) below are window-relative, and
+                // (ox, oy) puts them back on the canvas. With the default window this is the
+                // whole canvas, exactly as before.
+                int ox = _wx0, oy = _wy0;
+                int n = _wx1 - _wx0, m = _wy1 - _wy0;
+                if (n <= 0 || m <= 0) return;
                 float s = _ss;
-                var d = new float[n * n];
-                float[] c = clip != null ? new float[n * n] : null;
-                for (int y = 0; y < n; y++)
+                var d = new float[n * m];
+                float[] c = clip != null ? new float[n * m] : null;
+                for (int y = 0; y < m; y++)
                     for (int x = 0; x < n; x++)
                     {
-                        float lx = (x + 0.5f) / s, ly = (y + 0.5f) / s;
+                        float lx = (x + ox + 0.5f) / s, ly = (y + oy + 0.5f) / s;
                         d[y * n + x] = shape(lx, ly);
                         if (c != null) c[y * n + x] = clip(lx, ly);
                     }
 
                 if (outline > 0f)
-                    for (int y = 0; y < n; y++)
+                    for (int y = 0; y < m; y++)
                         for (int x = 0; x < n; x++)
                         {
                             float cov = Mathf.Clamp01((d[y * n + x] + outline) * s + 0.5f);
                             if (c != null) cov *= Mathf.Clamp01(c[y * n + x] * s + 0.5f);
-                            if (cov > 0f) Blend(x, y, Ink, cov);
+                            if (cov > 0f) Blend(x + ox, y + oy, Ink, cov);
                         }
 
                 var hot = Color.Lerp(lit, Color.white, 0.25f);
-                for (int y = 0; y < n; y++)
+                for (int y = 0; y < m; y++)
                     for (int x = 0; x < n; x++)
                     {
                         int i = y * n + x;
@@ -1233,7 +1513,7 @@ namespace Tycoon.UI
                         if (cov <= 0f) continue;
 
                         int xm = Mathf.Max(x - 1, 0), xp = Mathf.Min(x + 1, n - 1);
-                        int ym = Mathf.Max(y - 1, 0), yp = Mathf.Min(y + 1, n - 1);
+                        int ym = Mathf.Max(y - 1, 0), yp = Mathf.Min(y + 1, m - 1);
                         float gx = (d[y * n + xp] - d[y * n + xm]) * s / (xp - xm);
                         float gy = (d[yp * n + x] - d[ym * n + x]) * s / (yp - ym);
                         float gl = Mathf.Sqrt(gx * gx + gy * gy);
@@ -1252,7 +1532,7 @@ namespace Tycoon.UI
                         float sp = Mathf.Pow(Mathf.Clamp01(Vector3.Dot(nrm, HalfDir)), 30f) * spec;
                         col = Color.Lerp(col, Color.white, Mathf.Clamp01(sp));
                         col.a = 1f;
-                        Blend(x, y, col, cov);
+                        Blend(x + ox, y + oy, col, cov);
                     }
             }
 
@@ -1262,11 +1542,10 @@ namespace Tycoon.UI
             /// </summary>
             public void Fill(Shape shape, Color color, Shape clip = null, float soft = 0f)
             {
-                int n = _size;
                 float s = _ss;
                 float ramp = Mathf.Max(soft, 1f / s);
-                for (int y = 0; y < n; y++)
-                    for (int x = 0; x < n; x++)
+                for (int y = _wy0; y < _wy1; y++)
+                    for (int x = _wx0; x < _wx1; x++)
                     {
                         float lx = (x + 0.5f) / s, ly = (y + 0.5f) / s;
                         float cov = Mathf.Clamp01(shape(lx, ly) / ramp + 0.5f);
@@ -1279,32 +1558,32 @@ namespace Tycoon.UI
             /// <summary>A soft contact shadow dropped under whatever has been drawn so far.</summary>
             public void GroundShadow(float down = 3f, float blur = 2.4f, float alpha = 0.32f)
             {
-                int n = _size;
+                int n = _w, m = _h;
                 int shift = Mathf.RoundToInt(down * _ss);
                 int r = Mathf.Max(1, Mathf.RoundToInt(blur * _ss));
-                var a = new float[n * n];
-                for (int y = 0; y < n; y++)
+                var a = new float[n * m];
+                for (int y = 0; y < m; y++)
                     for (int x = 0; x < n; x++)
-                        a[y * n + x] = y + shift < n ? _pixels[(y + shift) * n + x].a : 0f;
+                        a[y * n + x] = y + shift < m ? _pixels[(y + shift) * n + x].a : 0f;
 
-                var tmp = new float[n * n];
-                for (int y = 0; y < n; y++)
+                var tmp = new float[n * m];
+                for (int y = 0; y < m; y++)
                     for (int x = 0; x < n; x++)
                     {
                         float sum = 0f;
                         for (int k = -r; k <= r; k++) sum += a[y * n + Mathf.Clamp(x + k, 0, n - 1)];
                         tmp[y * n + x] = sum / (2 * r + 1);
                     }
-                for (int y = 0; y < n; y++)
+                for (int y = 0; y < m; y++)
                     for (int x = 0; x < n; x++)
                     {
                         float sum = 0f;
-                        for (int k = -r; k <= r; k++) sum += tmp[Mathf.Clamp(y + k, 0, n - 1) * n + x];
+                        for (int k = -r; k <= r; k++) sum += tmp[Mathf.Clamp(y + k, 0, m - 1) * n + x];
                         a[y * n + x] = sum / (2 * r + 1);
                     }
 
                 var shadow = new Color(0.10f, 0.05f, 0.02f);
-                for (int i = 0; i < n * n; i++)
+                for (int i = 0; i < n * m; i++)
                 {
                     float sa = a[i] * alpha;
                     if (sa <= 0.002f) continue;
@@ -1322,18 +1601,18 @@ namespace Tycoon.UI
             /// <summary>Samples a signed-distance function once per pixel, for reuse across layers.</summary>
             public float[] Field(System.Func<float, float, float> sdf)
             {
-                var field = new float[_size * _size];
-                for (int y = 0; y < _size; y++)
-                    for (int x = 0; x < _size; x++)
-                        field[y * _size + x] = sdf(x + 0.5f, y + 0.5f);
+                var field = new float[_w * _h];
+                for (int y = 0; y < _h; y++)
+                    for (int x = 0; x < _w; x++)
+                        field[y * _w + x] = sdf(x + 0.5f, y + 0.5f);
                 return field;
             }
 
             /// <summary>Paints one layer, per pixel; the colour's alpha is the coverage.</summary>
             public void Raster(System.Func<int, int, Color> colourAt)
             {
-                for (int y = 0; y < _size; y++)
-                    for (int x = 0; x < _size; x++)
+                for (int y = 0; y < _h; y++)
+                    for (int x = 0; x < _w; x++)
                     {
                         var c = colourAt(x, y);
                         if (c.a > 0f) Blend(x, y, new Color(c.r, c.g, c.b, 1f), c.a);
@@ -1352,9 +1631,9 @@ namespace Tycoon.UI
             /// <summary>A soft blob, for highlights and other unoutlined detail.</summary>
             public void Glow(float cx, float cy, float rx, float ry, Color color)
             {
-                for (int y = 0; y < _size; y++)
+                for (int y = 0; y < _h; y++)
                 {
-                    for (int x = 0; x < _size; x++)
+                    for (int x = 0; x < _w; x++)
                     {
                         float dx = (x + 0.5f - cx) / rx;
                         float dy = (y + 0.5f - cy) / ry;
@@ -1369,13 +1648,13 @@ namespace Tycoon.UI
             /// <summary>Clears an area back to transparent. Used to bite shapes out of others.</summary>
             public void Erase(float cx, float cy, float halfW, float halfH)
             {
-                for (int y = 0; y < _size; y++)
+                for (int y = 0; y < _h; y++)
                 {
-                    for (int x = 0; x < _size; x++)
+                    for (int x = 0; x < _w; x++)
                     {
                         if (Mathf.Abs(x + 0.5f - cx) > halfW) continue;
                         if (Mathf.Abs(y + 0.5f - cy) > halfH) continue;
-                        _pixels[y * _size + x] = new Color(0f, 0f, 0f, 0f);
+                        _pixels[y * _w + x] = new Color(0f, 0f, 0f, 0f);
                     }
                 }
             }
@@ -1389,13 +1668,13 @@ namespace Tycoon.UI
 
             private void Pass(Sdf shape, float grow, Color top, Color bottom)
             {
-                for (int y = 0; y < _size; y++)
+                for (int y = 0; y < _h; y++)
                 {
                     // One gradient across the whole icon rather than per shape, so a stacked
                     // shape like the milk bottle is lit as a single object.
-                    Color tone = Color.Lerp(bottom, top, y / (float)(_size - 1));
+                    Color tone = Color.Lerp(bottom, top, y / (float)(_h - 1));
 
-                    for (int x = 0; x < _size; x++)
+                    for (int x = 0; x < _w; x++)
                     {
                         float distance = shape(x + 0.5f, y + 0.5f) + grow;
                         // A one-pixel ramp across the edge is all the anti-aliasing this needs.
@@ -1408,7 +1687,7 @@ namespace Tycoon.UI
             /// <summary>Standard source-over, kept un-premultiplied so Unity gets plain RGBA.</summary>
             private void Blend(int x, int y, Color color, float coverage)
             {
-                int index = y * _size + x;
+                int index = y * _w + x;
                 Color dst = _pixels[index];
 
                 float srcA = color.a * coverage;
@@ -1431,30 +1710,43 @@ namespace Tycoon.UI
 
             public Sprite ToSprite(string name)
             {
-                int outSize = _size / _ss;
+                var texture = ToTexture(name);
+                return Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height),
+                    new Vector2(0.5f, 0.5f), 100f);
+            }
+
+            /// <summary>
+            /// The canvas as a texture. <paramref name="keep"/> keeps that many output pixels per
+            /// logical pixel (it must divide the supersample): 1 is the icon's own size, and the
+            /// bouquet art keeps more so it stays sharp on a big screen.
+            /// </summary>
+            public Texture2D ToTexture(string name, int keep = 1)
+            {
+                int step = Mathf.Max(1, _ss / Mathf.Max(1, keep));
+                int outW = _w / step, outH = _h / step;
                 var pixels = _pixels;
-                if (_ss > 1)
+                if (step > 1)
                 {
                     // Average the supersamples (premultiplied, so soft edges do not fringe).
-                    pixels = new Color[outSize * outSize];
-                    float inv = 1f / (_ss * _ss);
-                    for (int y = 0; y < outSize; y++)
-                        for (int x = 0; x < outSize; x++)
+                    pixels = new Color[outW * outH];
+                    float inv = 1f / (step * step);
+                    for (int y = 0; y < outH; y++)
+                        for (int x = 0; x < outW; x++)
                         {
                             float r = 0f, g = 0f, b = 0f, a = 0f;
-                            for (int sy = 0; sy < _ss; sy++)
-                                for (int sx = 0; sx < _ss; sx++)
+                            for (int sy = 0; sy < step; sy++)
+                                for (int sx = 0; sx < step; sx++)
                                 {
-                                    var c = _pixels[(y * _ss + sy) * _size + x * _ss + sx];
+                                    var c = _pixels[(y * step + sy) * _w + x * step + sx];
                                     r += c.r * c.a; g += c.g * c.a; b += c.b * c.a; a += c.a;
                                 }
-                            pixels[y * outSize + x] = a > 0.0001f
+                            pixels[y * outW + x] = a > 0.0001f
                                 ? new Color(r / a, g / a, b / a, a * inv)
                                 : new Color(0f, 0f, 0f, 0f);
                         }
                 }
 
-                var texture = new Texture2D(outSize, outSize, TextureFormat.RGBA32, false)
+                var texture = new Texture2D(outW, outH, TextureFormat.RGBA32, false)
                 {
                     name = name,
                     wrapMode = TextureWrapMode.Clamp,
@@ -1463,9 +1755,7 @@ namespace Tycoon.UI
 
                 texture.SetPixels(pixels);
                 texture.Apply();
-
-                return Sprite.Create(texture, new Rect(0f, 0f, outSize, outSize),
-                    new Vector2(0.5f, 0.5f), 100f);
+                return texture;
             }
         }
     }

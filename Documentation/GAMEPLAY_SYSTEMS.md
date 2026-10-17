@@ -1075,10 +1075,10 @@ the editor `LevelBuildKit` (boundary and fence by edges, grass/fence mesh names)
 
 ---
 
-## The town (`Editor/TownBuilder.cs`): third location, empty and locked
+## The town (`Editor/TownBuilder.cs`): third location, the street of businesses
 
-`Location` id `town`, a root beside the farm turned the same 45 degrees, saved INACTIVE. It is a skeleton only: what
-it holds is undecided. Built from existing parts (Location, TravelStation, UnlockStation, RevealWhenAll,
+`Location` id `town`, a root beside the farm turned the same 45 degrees, saved INACTIVE. Its first business is the florist (next section);
+what else it holds comes later. Built from existing parts (Location, TravelStation, UnlockStation, RevealWhenAll,
 `LevelBuildKit.BuildBoundary/BuildFenceAround/BuildGrass`).
 
 - **Place:** farm-grid offset (0, -56): south of the farm, 18 m clear of its fence (the audit logs the gaps). Not along the road axis: the market already
@@ -1095,6 +1095,186 @@ it holds is undecided. Built from existing parts (Location, TravelStation, Unloc
 - **Back:** `town.travel.market` lands the player on the market's arrival point (8, -6.3), the same spot the farm trip uses
   (`Location` has one spawn point). There is no town-to-farm square.
 - **Audit:** the town is audited like any location; `ButcherChain`'s "the supermarket must not ask for the pig farm" rule exempts the "TownUnlock" watcher on purpose.
+
+---
+
+## The florist (`Editor/FloristBuilder.cs`): the first business on the town street
+
+The town is now a street of businesses (florist -> hairdresser -> cafe -> restaurant); the florist is
+built, the COMING SOON square east of it (town (7, 4.5)) stands for the next one. Town grid, north +z,
+the street at z -3. The town's north edge moved 13 -> 19.5 for the meadow; the plaza is now only the
+part east of the florist (x 1..13).
+
+```
+ z 17.2  ---------------- meadow fence ----------------
+         tulip  tulip    [gardener]    hydr.  hydr.         beds 1.8 x 2.4 (FloristModels.BedSize)
+                            WELL
+         rose   rose    [ WATER ]      sunfl. sunfl.        well square (-7, 10)
+ z 8.2   ======== north wall ===== back door ===========
+         [cash] [SERVE]                 [florist hire]     serve (-7.9, 6.0), back door x -6.9..-5.1
+                ======= counter =======                    counter (-7, 4.4), 3.36 x 1.0
+          queue  slot2  slot1  slot0                       z 3.1
+         stand           CENTRE STAND          stand       centre stand (-7, 1.2)
+ z -0.8  == entrance x -11..-9 ======== exit x -5..-3 ==
+                         street (z -3)
+```
+Shop x -13..-1, z -0.8..8.2; low walls (0.7 m) with 1.2 m invisible collision that carves the navmesh;
+wall stands on both side walls, angled corner stands in all four corners, the square stand in the middle.
+
+**The town starts derelict, and the florist is renovated like the supermarket** (`FloristBuilder.BuildRenovation`,
+the same parts as `MarketBuilder.BuildRenovation`): three litter heaps (`ItemBuffer` of 4 trash + `CollectStation`
+`town.florist.trashcollect.N` + `ClearablePile`) carried to the bin west of the street door (`town.florist.bin`,
+`BinAt` (-14.4, 1.9), `squareToSouth`), all free; when every heap is empty `RevealWhenAll` offers REPAIR
+(`town.florist.unlock.repair`, an `UnlockStation`: reveals the `Working` group - counter and stands - and hides the
+`Broken` group, the wrecks) and PAINT (`town.florist.paint`, a `PaintStation` on a `MarketDecor` `town.florist.decor`);
+when repair is bought and the first paint confirmed, OPEN (`town.florist.chore.open`, a `ChoreStation`) appears and
+brings in the shop (counter, queue, cash), the rose beds, the well, the seed box and the tulips offer. The shop has two
+coats built in (`Grubby` / `Painted`), swapped by the decor; everything that blocks (wall, stand and counter
+colliders, fence) is built once in `Building`, so nothing that blocks anyone blinks. The audit names: painted walls
+are `Wall`, the grubby set `DirtyWall` (never counted twice); `Painted` / `Working` / `Building` are one building.
+**Per-decor pattern list:** `MarketDecor.patterns` (empty = `PatternFactory.MarketPatterns`, the supermarket's ten, saved
+indices unchanged); the florist lists `PatternFactory.FloristPatterns` = plain, stripes, dots, diamonds, waves + the
+new FLOWERS, LEAVES, TRELLIS (indices 10-12, appended), no two-band wall (its walls are 0.7 m); the menu lays out only
+what the shop lists (`PaintMenu.LayoutPatterns`). The hints under the grid name each colour's job.
+
+**Flowers are grown in a cycle** (`Stations/FlowerBed.cs`, `Stations/BedStation.cs`). Each flower has a STOCK
+(`ItemBuffer` `town.florist.stock.<id>`, 12, behind the counter, unseen) that a harvest of its two beds fills. A bed goes
+Empty -> (plant a SEED) -> needs water -> (water) -> grows -> needs water again -> (water) -> grows -> Ready ->
+(harvest) -> Empty. The two growing spells are the only thing that moves by itself (`FloristBuilder.SpellSeconds`,
+rose 10, tulip 11, sunflower 13, hydrangea 14 s); the waiting stages never decay. A harvest puts
+`FlowersPerHarvest` (4) flowers into the stock and needs room for all four (a full stock leaves the bed ripe).
+Each bed has ONE square, a Task-mode `BedStation` (0.9 s): with a seed in the arms on bare soil it plants, with a
+can on a dry bed it waters, on a ripe bed it harvests; it shows the seed / the can / the flower and "Growing 40%".
+Six looks, one per stage (the approved `FloristModels.BedStage` models: empty, seedlings, seedlings wet, half-grown,
+half-grown wet, bloom), so nothing blinks. A bubble over the bed (`UI/BedBubble.cs`: seed packet, water drop, pink
+bloom; hidden while growing) asks for the next thing. Seeds are free from the SEED BOX (`ItemBuffer` of 8 +
+`SupplyFeed` 2.5 s + `CollectStation`, east of the well) and water from the well (`ItemBuffer` of 6 + `SupplyFeed`
+0.4 s + `CollectStation`), neither costs money, and the well is free from the start: no money trap. Items:
+`Item_seed` (the pouch model) and `Item_watering_can`.
+
+**Customers want bouquets.** `CustomerQueue.bouquets` (new, florist only): a customer wants 1-3 kinds of
+flower that the shop sells AND grows (`ProductOffer` on each stock, live once that flower is bought),
+1-3 of each, at most 6. They are a farm-style queue (3 slots) with an entry route in through the left
+door, west of the central stand, to the counter, and out east of the stand through the right door.
+The order lives in `CustomerAgent`'s basket lines (`BeginOrder`, `Wants`, `Deliver` by line); the bubble
+shows each flower with its count (`OrderBubble.ShowLines`). Demand grows a third per extra flower bought
+(`demandPerCapacity` 0.35); a customer every 8 s at full reputation.
+
+**Serving** is `Stations/BouquetCounter.cs` (new), a `RegisterStation` display counter over the four stocks
+(`RegisterStation.TickCounter` now serves any line the front customer still wants that is in a case, so a
+sold-out flower does not hold up the rest; a one-product shopper behaves exactly as before):
+- the hired **florist** (pickup = dropoff = the counter, like a cashier) is served by the base class:
+  flower by flower out of the stock, at the base price x reputation;
+- the **player** standing there 0.6 s, with a customer whose whole bouquet is in stock, opens the
+  **bouquet minigame**; when it is done the whole bouquet is handed over at the same price plus a tip
+  (`tipShare` 20 / 45 / 75 % for 1 / 2 / 3 stars). Nothing is taken until it is finished; closing it
+  early takes nothing and the square re-arms when the player steps out.
+Takings land on the cash pile at the counter's west end (`town.florist.cash`).
+
+**The minigame** (`UI/MinigameOverlay.cs` base + `UI/BouquetMinigame.cs`, both new). The base is what the
+haircut will reuse: opened from a square, world frozen (timeScale 0) and joystick hidden while open
+(restored on close and in OnDisable), in the HUD's safe area, a 1080 x 1920 design card scaled to fit
+(portrait phone 1:1, a landscape window smaller), a dim layer that eats taps, and `MinigamePad`: touch and
+mouse both arrive as press / drag / release in design coordinates. The bouquet: header (BOUQUET, the ORDER
+with the finished bouquet and each flower x N, tabs CUT > FILL > TIE > WRAP) as the approved mock-ups,
+then CUT (swipe across the dashed line, every stem crossed is trimmed), FILL (drag each flower from YOUR
+FLOWERS into a place that wants it; a tap also places it; a wrong drop shakes and counts as a mistake),
+TIE (circle the knot twice), WRAP (swipe right to left), RESULT (stars, PRICE / TIP / TOTAL; tap or 3 s
+closes). Stars: time against a par of 6 s + 1.2 s per flower (<= par 3, <= 1.8 x par 2, else 1), minus one
+for two or more wrong drops. Art is `BouquetArt` / `HudArt`. **Nothing is painted at runtime**: painting one
+big bouquet picture took 3-6 s in the editor, so `Editor/BouquetBake.cs` paints every picture once (100
+of them, 2.6 MB of PNG, ~4 min) into `Resources/Bouquet` with an index of anchors and crop rectangles. The
+scene build re-bakes only when `BouquetMinigame.ArtVersion` changes. The gathered bouquet is stacked at
+runtime from its baked layers (`BouquetArt.Part` paper/leaves/ribbon, one stem per head count and position,
+one bloom per flower) in `BouquetMinigame.BunchView`, in the same order `BouquetArt.Bunch` paints it. An
+unbaked picture is painted on the spot with a warning, so a missing bake is slow, not broken.
+
+**Texture memory.** The baked PNGs are imported with the settings in code (`BouquetBake.ApplyImportSettings`,
+re-applied by every scene build if they differ - the `.meta` files are not edited by hand): WebGL override
+**ASTC 6x6** (ASTC 4x4 for pictures of 256 px or less, where 6x6 visibly softens crisp outlines), max size
+1024, mipmaps only on the bouquet layers (`b*`). ASTC is what iPhone and Android GPUs take natively; the
+project's default WebGL format is DXT5, which iOS lacks (a phone would unpack it to full size). All 100
+pictures: 37 MB as RGBA32 (with mipmaps), 4.7 MB as ASTC; a typical order loads about 48 of them: 18.8 MB
+before, 2.5 MB after. Pictures are loaded on first use per picture (`Cached`) and kept; they are not released
+on close - the built screen's images hold them, and at 2.5 MB it is not worth rebuilding the screen on every
+open. A browser without ASTC (desktop Chrome on Windows) makes Unity unpack the textures on load - works, but
+unmeasured; the phone is the target.
+
+**Phone fit and orientation.** The content is two groups, each in the 1080 x 1920 design coordinates: the
+header (title, ORDER, step tabs) and the body (the play area, banner, step pill, the touch pad). Portrait
+stacks them on one card (the approved layout). Landscape sets them side by side - header column left, body
+right, each in its own frame (`BoardTop` / `BoardBottom` instead of the one big `Board`) - on a 2080 x 1260
+card (`LandW`/`LandH`). `MinigameOverlay.FitCard` runs every frame and takes whichever arrangement fits the
+safe area at the larger scale, so an iPad rotated while the minigame is open switches live
+(`ApplyOrientation`). The pad reports coordinates of its own group, so touch works in both. Sizes: portrait
+390 x 844 phone 0.36 pt per design unit (44 pt = 122 units); phone sideways 0.29 (44 pt = 150 units); iPad
+about 0.57 to 0.66. The X button has an invisible 160-unit hit area. The CUT row of stems is centred and
+kept 24 units inside the play area for the widest bloom (`BuildCut`). Smallest labels are 8 to 11 pt on a
+phone (design-size limited), 15 pt and up on a tablet.
+
+**The stock panel** (round 3, in the HUD - it replaced a world board over the counter, which hid the customers'
+bubbles): a small info panel at the bottom centre of the screen (`UI/StockPanel.cs`, built by `HudRoot` inside the safe
+area, so the home bar never covers it) with the icon of every BOUGHT flower and `n / capacity`, red (and a dimmed icon)
+at 0, so the player sees why a waiting customer cannot be served. It is shown only while the player stands inside the
+florist's zone (`UI/StockInfoZone.cs` on the `Florist` group: the shop and the meadow, in the town's grid) and hidden on
+the farm, in the supermarket and on the street. A flower whose stock object is switched off (not bought yet) has no cell;
+the panel closes up and each purchase adds its cell. Information only: nothing in it takes a tap, so it cannot
+interfere with the floating joystick; it sits below the task card, the money plaque and the pause button, and below
+every menu. It reads the saved stocks, so it has no state of its own.
+
+**Queue spacing** (round 3): customers' order bubbles used to overlap (slots 1.35 m apart in a row, a bouquet
+bubble 2-4 m wide). Now `OrderBubble.LinePitch` is 100 (a 3-line bubble is 334 canvas units), the florist's customers use
+`worldScale` 0.0075 (`FloristBuilder.BubbleScale`: 2.5 x 1.5 m for three lines) and the three queue slots are staggered
+along a diagonal from the counter's front back towards the street door (`FloristBuilder.Slots`: (-7, 3.1), (-9.6, 2.4),
+(-10.6, 0.4)): two bubbles clear each other if they are wider apart than a bubble sideways OR deeper apart than a bubble
+is tall (a metre of depth is 0.77 m up the screen). `SquareAudit.FloristChain` checks every pair of slots against the
+widest bouquet bubble (`OrderBubble.CanvasSize`) and measures the way out from slot 0 only (the others advance to the
+front first). Other queues keep their layout (the butcher's one-product bubbles are not affected).
+
+**Meadow layout** (Filip's sketch, round 3): the water square lies directly south of the well, touching it; the seed
+box is a long rack against the north fence left of centre (`SeedBoxAt` (-8.6, 16.7)) with its collect square in front
+(`SeedSquareAt` (-7.9, 15.35)); the gardener's hire square is against the north fence right of centre
+(`GardenerHireAt` (-6.25, 16.2)). Beds and well did not move.
+
+**Stands show only what is bought.** `FloristModels`' stands carry buckets named `Fill_<id>`; the builder
+moves each flower's buckets into that flower's purchase group, so they appear when it is bought.
+
+**Progression, one at a time** (all `Price()`; `plans/econ/market_sim.py`, `FLORIST`, 2026-10-17):
+
+| Step | Price | Reveals |
+|---|---|---|
+| Litter (free) | - | repair and paint |
+| Repair (`town.florist.unlock.repair`) | 2,000 | the counter and stands; the wrecks go |
+| Paint (first job, `town.florist.paint`) | 1,000 (repaint 200) | the painted coat; with repair, OPEN |
+| OPEN (`town.florist.chore.open`, free) | - | shop, queue, cash pile, rose beds, well, seed box, the tulips offer |
+| Tulips | 3,500 | tulip beds + stock, the hydrangeas offer |
+| Hydrangeas | 4,500 | hydrangea beds, the sunflowers offer |
+| Sunflowers | 5,000 | sunflower beds, the florist hire |
+| Florist (hire) | 5,500 | the florist worker (it only serves at the counter), the gardener hire |
+| Gardener (hire) | 7,000 | the gardener: a `WorkerAgent` with three routes per bed (water from the well, plant from the seed box, harvest); `WorkerAgent.ChooseBed` does harvest, then water, then plant, nearest first, claims a bed for the whole job, carries one thing at a time and never throws a seed or can away |
+
+Filip's limit: repair + first paint within 3 minutes of buying the town (the sim: paint at +1.3 min, repair at +2.5),
+and no separate purchase for the first beds. The rest follow every 2.8-4.2 minutes on the farm and the supermarket
+(both let go at half value once the town is bought, below) plus the florist: tulips +5.3, hydrangeas +8.9,
+sunflowers +12.6, florist hire +16.7, gardener +20.9 minutes after the town; the florist alone ends near $330 a
+minute in the sim. Flower prices 15 / 18 / 24 / 27 (rose / tulip / sunflower / hydrangea).
+
+**The supermarket is let go when the town is bought** (the farm's rule, extended): every checkout
+(`CheckoutStation.accountWhenUnlocked` = the town gate, new, `accountShare` 0.5) and the butcher counter
+(`RegisterStation`, same fields) pay the account half of a sale instead of filling the cash pile, through the one
+rule `RegisterStation.Takings(...)` that the farm tills use too (`TownBuilder.Build` sets them). The market has no
+wear to switch off. The saved purchase decides, so it holds after a reload, and the player still earns (50%). The town
+has its own ATM from the start (`town.atm`, east of the florist) because the account is where the farm and the shop
+now pay and the renovation is paid in cash.
+
+Task list: every purchase is an ordinary goal ("Repair the shop - $2K", "Paint the shop - $1K", "Open the shop",
+"Clear out the rubbish", "Buy Tulips - $3.5K", "Hire Florist"); a free goal "Make a bouquet" while a whole bouquet
+is ready and no florist is hired; and, while no gardener is on the beds, one problem line per flower and job at the
+nearest bed that wants it: "Fetch seeds for the roses" / "Plant the roses", "Fetch water for the roses" / "Water the
+roses" (pointing at the seed box or the well, then at the bed once the player holds the seed or can), "Harvest the
+roses". The florist counter is excluded from the butcher's "Restock" problem.
+
+**Audit:** `SquareAudit.FloristChain` (below) on top of the usual per-location checks.
 
 ---
 

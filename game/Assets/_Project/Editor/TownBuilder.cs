@@ -45,14 +45,15 @@ namespace Tycoon.EditorTools
         private const float EdgeWest = -16f;
         private const float EdgeEast = 16f;
         private const float EdgeSouth = -12f;
-        private const float EdgeNorth = 13f;
+        // North grew from 13 to 19.5 for the florist's meadow (FloristBuilder.MeadowNorth 17.2 + room for the fence).
+        private const float EdgeNorth = 19.5f;
 
         /// <summary>The road stub's centre line, in the town's grid. The road box is 2.8 m deep.</summary>
-        private const float RoadZ = -3f;
+        internal const float RoadZ = -3f;
 
         // ---- the paved square ----------------------------------------------------------
-        // North of the road, where the town will eventually be built.
-        private const float PlazaWest = -12f, PlazaEast = 12f;
+        // North of the road, east of the florist: where the next businesses of the street will stand.
+        private const float PlazaWest = 1f, PlazaEast = 13f;
         private const float PlazaSouth = -1.4f, PlazaNorth = 9.5f;
 
         // ---- travel --------------------------------------------------------------------
@@ -68,8 +69,11 @@ namespace Tycoon.EditorTools
         /// </summary>
         private static readonly Vector3 MarketSquarePosition = new Vector3(14.2f, 0f, -3.8f);
 
+        /// <summary>The cash machine on the paving east of the florist; its squares lie south of it.</summary>
+        private static readonly Vector3 AtmPosition = new Vector3(2.6f, 0f, 3.0f);
+
         // ---- the placeholder -----------------------------------------------------------
-        private static readonly Vector3 SoonPosition = new Vector3(0f, 0f, 4.5f);
+        private static readonly Vector3 SoonPosition = new Vector3(7f, 0f, 4.5f);
         private static readonly Vector2 SoonSize = new Vector2(3.4f, 2.6f);
 
         // ---- price ---------------------------------------------------------------------
@@ -84,7 +88,7 @@ namespace Tycoon.EditorTools
         /// <paramref name="market"/> supplies the supermarket location, the root the gate and the
         /// travel square are children of, and the butcher purchases the gate waits on.
         /// </summary>
-        internal static Location Build(Transform farmRoot, MarketBuilder.Result market)
+        internal static Location Build(Transform farmRoot, MarketBuilder.Result market, FarmSceneBuilder.Items items)
         {
             var go = new GameObject("Town");
             go.transform.rotation = farmRoot.rotation;
@@ -110,6 +114,8 @@ namespace Tycoon.EditorTools
             back.destination = market.Location;
             back.taskDuration = 1.2f;
 
+            // The first business of the street; the COMING SOON square east of it is the next one.
+            FloristBuilder.Build(root, items);
             BuildPlaceholder(root);
 
             // ---- the way in, from the supermarket ----------------------------------------
@@ -128,6 +134,28 @@ namespace Tycoon.EditorTools
             // Offered only when the butcher is complete: the extension, every step inside it and the
             // pigs at their maximum. The watcher lives on the market root, which is always active
             // once the supermarket is bought, and reads the saved purchases, so it holds after a reload.
+            // Once the town is bought the supermarket is let go the way the farm was when the supermarket
+            // was bought (FarmSceneBuilder, parts.Counters): its takings go straight to the account at half
+            // value - the same RegisterStation rule, the same 0.5 - so the florist, not a bigger shop, is
+            // where the money is made. The market has no wear to switch off. Both read the saved purchase,
+            // so they hold after a reload, and the florist's own tills are untouched.
+            foreach (var checkout in marketRoot.GetComponentsInChildren<CheckoutStation>(true))
+            {
+                if (checkout.pile == null) continue;
+                checkout.accountWhenUnlocked = gate;
+                checkout.accountShare = 0.5f;
+            }
+            foreach (var counter in marketRoot.GetComponentsInChildren<RegisterStation>(true))
+            {
+                if (counter.pile == null) continue;
+                counter.accountWhenUnlocked = gate;
+                counter.accountShare = 0.5f;
+            }
+
+            // The town's cash machine, open from the moment the town is bought: the renovation is paid in
+            // cash and the account is where the farm's and the shop's takings now land.
+            LevelBuildKit.BuildAtm("town.atm", "Atm", root, AtmPosition, new Vector2(1.6f, 1.6f), new Vector2(1.3f, 1.5f), 1.9f);
+
             var watcher = new GameObject("TownUnlock");
             watcher.transform.SetParent(marketRoot, false);
             var reveal = watcher.AddComponent<RevealWhenAll>();
@@ -179,6 +207,12 @@ namespace Tycoon.EditorTools
                 // The paved square and the margin round it.
                 new Rect(PlazaWest - 1f, PlazaSouth - 1f, (PlazaEast - PlazaWest) + 2f,
                     (PlazaNorth - PlazaSouth) + 2f),
+                // The florist: the shop and its fenced meadow, which has its own lawn.
+                new Rect(FloristBuilder.ShopWest - 0.8f, FloristBuilder.ShopSouth - 0.8f,
+                    (FloristBuilder.ShopEast - FloristBuilder.ShopWest) + 1.6f,
+                    (FloristBuilder.MeadowNorth - FloristBuilder.ShopSouth) + 1.6f),
+                // The florist's bin on the pavement west of the street door: its pad, its square and the walk to it.
+                new Rect(FloristBuilder.BinAt.x - 1.8f, FloristBuilder.BinAt.z - 2.9f, 3.6f, 5.3f),
             };
 
             LevelBuildKit.BuildGrass(root, area, keepClear, tufts: 420, seed: 20261014,
@@ -202,10 +236,11 @@ namespace Tycoon.EditorTools
 
             // Two posts and a board across the top of the paved square, facing the camera (south).
             float z = PlazaNorth - 0.7f;
-            foreach (float x in new[] { -2.6f, 2.6f })
+            float cx = SoonPosition.x;
+            foreach (float x in new[] { cx - 2.6f, cx + 2.6f })
                 LevelBuildKit.Box("SignPost", root, new Vector3(x, 1.1f, z), new Vector3(0.2f, 2.2f, 0.2f),
                     wood, castShadow: false);
-            LevelBuildKit.Box("SignBoard", root, new Vector3(0f, 1.9f, z - 0.05f), new Vector3(6f, 1.0f, 0.14f),
+            LevelBuildKit.Box("SignBoard", root, new Vector3(cx, 1.9f, z - 0.05f), new Vector3(6f, 1.0f, 0.14f),
                 board, castShadow: false);
         }
     }

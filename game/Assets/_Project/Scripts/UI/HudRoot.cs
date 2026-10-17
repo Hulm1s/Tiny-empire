@@ -118,6 +118,10 @@ namespace Tycoon.UI
             arrow.AddAvoid(tasks.Card);
             ApplyLayout();
 
+            // The florist's stock, bottom centre, only while the player is in the florist. Information only (no
+            // taps), under every menu and clear of the task card, the plaque and the pause button.
+            StockPanel.Create(_safeArea);
+
             // Built last so the panel sits above the joystick area and swallows its taps.
             PauseMenu.Create(_safeArea, joystick.gameObject);
             arrow.AddAvoid(_safeArea.Find("PauseButton") as RectTransform);
@@ -125,6 +129,10 @@ namespace Tycoon.UI
             // The paint menu opens from a square in the supermarket and is not built until it
             // does. Above the pause panel's button, below the fade.
             PaintMenu.Create(_safeArea, joystick.gameObject);
+
+            // The florist's bouquet minigame (MinigameOverlay): opened by standing at the florist's
+            // counter, built the first time it opens. Same layer as the paint menu.
+            BouquetMinigame.Create(_safeArea, joystick.gameObject);
 
             // Last, so it covers the whole screen including the pause panel. It is the full
             // canvas rather than the safe area: a fade that stopped short of the notch would

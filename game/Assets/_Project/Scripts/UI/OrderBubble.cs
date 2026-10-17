@@ -28,6 +28,19 @@ namespace Tycoon.UI
         private Text _countLabel;
         private float _lastPatience = -1f;
 
+        // A several-product order (a florist's bouquet): one icon and count per product, side by
+        // side, the bubble widening to fit. Built on first use; a single-product bubble never has them.
+        private const int MaxLines = 3;
+        private const float LinePitch = 100f;
+
+        /// <summary>Canvas units a bubble is wide and tall: a one-product bubble, or <paramref name="lines"/> product lines. Used by the layout audit to keep queued customers' bubbles apart.</summary>
+        public static Vector2 CanvasSize(int lines) =>
+            lines <= 0 ? new Vector2(200f, 176f) : new Vector2(34f + lines * LinePitch, 196f);
+
+        private Image[] _lineIcons;
+        private Text[] _lineCounts;
+        private RectTransform _track;
+
         private void Awake() => Build();
 
         private void Build()
@@ -84,6 +97,7 @@ namespace Tycoon.UI
             _countLabel.rectTransform.sizeDelta = new Vector2(96f, 84f);
 
             var track = UIFactory.CreatePanel("PatienceTrack", _root, new Color(0.85f, 0.87f, 0.9f, 1f));
+            _track = track.rectTransform;
             track.rectTransform.anchorMin = new Vector2(0.5f, 0.27f);
             track.rectTransform.anchorMax = new Vector2(0.5f, 0.27f);
             track.rectTransform.pivot = new Vector2(0.5f, 0.5f);
@@ -123,7 +137,83 @@ namespace Tycoon.UI
             _iconImage.color = IconFactory.HasArtwork(item) ? Color.white : item.color;
 
             _countLabel.text = "x" + Mathf.Max(0, remaining);
+            SetLineMode(0);
             SetVisible(true);
+        }
+
+        /// <summary>
+        /// Shows an order of several products: each one's icon with how many are still wanted
+        /// under it, a line that is complete fading out. Up to three lines.
+        /// </summary>
+        public void ShowLines(ItemDefinition[] items, int[] remaining)
+        {
+            Build();
+            if (items == null || items.Length == 0) { SetVisible(false); return; }
+
+            if (_lineIcons == null)
+            {
+                _lineIcons = new Image[MaxLines];
+                _lineCounts = new Text[MaxLines];
+                for (int i = 0; i < MaxLines; i++)
+                {
+                    var icon = UIFactory.CreateRect("LineIcon" + i, _root);
+                    _lineIcons[i] = icon.gameObject.AddComponent<Image>();
+                    _lineIcons[i].raycastTarget = false;
+                    _lineIcons[i].preserveAspect = true;
+                    icon.anchorMin = icon.anchorMax = new Vector2(0f, 0.67f);
+                    icon.pivot = new Vector2(0.5f, 0.5f);
+                    icon.sizeDelta = new Vector2(74f, 74f);
+
+                    _lineCounts[i] = UIFactory.CreateText("LineCount" + i, _root, "x1", 40);
+                    _lineCounts[i].color = new Color(0.13f, 0.15f, 0.18f);
+                    _lineCounts[i].fontStyle = FontStyle.Bold;
+                    var r = _lineCounts[i].rectTransform;
+                    r.anchorMin = r.anchorMax = new Vector2(0f, 0.38f);
+                    r.pivot = new Vector2(0.5f, 0.5f);
+                    r.sizeDelta = new Vector2(LinePitch - 4f, 50f);
+                }
+            }
+
+            int n = Mathf.Min(MaxLines, items.Length);
+            for (int i = 0; i < n; i++)
+            {
+                var item = items[i];
+                _lineIcons[i].sprite = IconFactory.For(item);
+                bool done = remaining[i] <= 0;
+                var tint = IconFactory.HasArtwork(item) ? Color.white : item.color;
+                tint.a = done ? 0.3f : 1f;
+                _lineIcons[i].color = tint;
+                _lineCounts[i].text = done ? "OK" : "x" + remaining[i];
+                _lineCounts[i].color = done ? new Color(0.25f, 0.6f, 0.3f) : new Color(0.13f, 0.15f, 0.18f);
+            }
+
+            SetLineMode(n);
+            SetVisible(true);
+        }
+
+        /// <summary>0 = the single icon and count; n = n product lines in a wider bubble.</summary>
+        private void SetLineMode(int lines)
+        {
+            bool multi = lines > 0;
+            _iconImage.gameObject.SetActive(!multi);
+            _countLabel.gameObject.SetActive(!multi);
+
+            float width = multi ? 34f + lines * LinePitch : 200f;
+            _root.sizeDelta = new Vector2(width, multi ? 196f : 176f);
+            _track.sizeDelta = new Vector2(width - 52f, 16f);
+            _track.anchorMin = _track.anchorMax = new Vector2(0.5f, multi ? 0.235f : 0.27f);
+
+            if (_lineIcons == null) return;
+            for (int i = 0; i < MaxLines; i++)
+            {
+                bool on = i < lines;
+                _lineIcons[i].gameObject.SetActive(on);
+                _lineCounts[i].gameObject.SetActive(on);
+                if (!on) continue;
+                float x = 17f + LinePitch * (i + 0.5f);
+                _lineIcons[i].rectTransform.anchoredPosition = new Vector2(x, 0f);
+                _lineCounts[i].rectTransform.anchoredPosition = new Vector2(x, 0f);
+            }
         }
 
         /// <summary>Stretches to the bubble's body, leaving the bottom strip for the tail.</summary>

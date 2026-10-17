@@ -55,6 +55,10 @@ namespace Tycoon.EditorTools
             // The cash bundle prefab is written once per build; the stacks and piles instantiate it.
             CashModels.Begin();
 
+            // The bouquet minigame's pictures, painted once here rather than on the phone (re-baked only
+            // when BouquetMinigame.ArtVersion changes).
+            BouquetBake.EnsureBaked();
+
             var items = CreateItems();
             BuildEnvironment();
             var root = CreateLevelRoot();
@@ -143,6 +147,24 @@ namespace Tycoon.EditorTools
             public ItemDefinition Meat;
             public ItemDefinition Steak;
             public ItemDefinition Sausage;
+
+            // The florist's (town): four flowers grown in the beds and sold in bouquets, the water a
+            // watering can carries from the well to a bed, and the bouquet (the counter's icon only -
+            // nobody carries one).
+            public ItemDefinition Rose;
+            public ItemDefinition Tulip;
+            public ItemDefinition Sunflower;
+            public ItemDefinition Hydrangea;
+            public ItemDefinition Water;
+            public ItemDefinition Seed;
+            public ItemDefinition Bouquet;
+        }
+
+        /// <summary>A modelled good's height, so carried stacks close up exactly (FloristModels' goods).</summary>
+        private static float GoodHeight(string id, float fallback)
+        {
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(GoodsModels.MeshPath(id));
+            return mesh != null ? mesh.bounds.size.y : fallback;
         }
 
         private static Items CreateItems()
@@ -204,7 +226,33 @@ namespace Tycoon.EditorTools
 
                 Sausage = LevelBuildKit.Item(
                     "sausage", "Sausage", new Color(0.86f, 0.38f, 0.26f),
-                    price: 9d, perishable: false, stackHeight: 0.31f)
+                    price: 9d, perishable: false, stackHeight: 0.31f),
+
+                // Flower prices are per flower; a bouquet is two to six of them (FloristBuilder,
+                // tuned in plans/econ/market_sim.py). Not perishable: they wait in the stock.
+                Rose = LevelBuildKit.Item(
+                    "rose", "Rose", new Color(1.00f, 0.52f, 0.68f),
+                    price: FloristBuilder.RosePrice, perishable: false, stackHeight: GoodHeight("rose", 0.4f)),
+                Tulip = LevelBuildKit.Item(
+                    "tulip", "Tulip", new Color(0.96f, 0.26f, 0.32f),
+                    price: FloristBuilder.TulipPrice, perishable: false, stackHeight: GoodHeight("tulip", 0.4f)),
+                Sunflower = LevelBuildKit.Item(
+                    "sunflower", "Sunflower", new Color(1.00f, 0.82f, 0.12f),
+                    price: FloristBuilder.SunflowerPrice, perishable: false, stackHeight: GoodHeight("sunflower", 0.4f)),
+                Hydrangea = LevelBuildKit.Item(
+                    "hydrangea", "Hydrangea", new Color(0.42f, 0.62f, 1.00f),
+                    price: FloristBuilder.HydrangeaPrice, perishable: false, stackHeight: GoodHeight("hydrangea", 0.4f)),
+                // Worth nothing and sold nowhere: it only ever goes from the well to a bed.
+                Water = LevelBuildKit.Item(
+                    "watering_can", "Water", new Color(0.46f, 0.86f, 0.90f),
+                    price: 0d, perishable: false, stackHeight: GoodHeight("watering_can", 0.35f)),
+                // Worth nothing and sold nowhere: it only ever goes from the seed box to a bed.
+                Seed = LevelBuildKit.Item(
+                    "seed", "Seed", new Color(0.93f, 0.70f, 0.40f),
+                    price: 0d, perishable: false, stackHeight: GoodHeight("seed", 0.4f)),
+                Bouquet = LevelBuildKit.Item(
+                    "bouquet", "Bouquet", new Color(1.00f, 0.72f, 0.80f),
+                    price: 0d, perishable: false, stackHeight: GoodHeight("bouquet", 0.5f)),
             };
         }
 
@@ -917,6 +965,7 @@ namespace Tycoon.EditorTools
             // Field hands wear the straw hat, till staff the cap. Derived from the role
             // name so adding a hire does not mean remembering to pass a model as well.
             string model = role.StartsWith("Cashier") || role.StartsWith("Milk") || role.StartsWith("Butcher")
+                           || role.StartsWith("Florist")
                 ? CharacterLibrary.Cashier
                 : CharacterLibrary.Farmer;
 
@@ -1045,7 +1094,7 @@ namespace Tycoon.EditorTools
 
             // The third location: empty and locked, sold from the supermarket's forecourt once the
             // butcher is complete. Its own file, like the market's.
-            TownBuilder.Build(farmRoot, market);
+            TownBuilder.Build(farmRoot, market, items);
 
             var toTown = LevelBuildKit.Station<TravelStation>("farm.travel.town", "TravelToTown",
                 farmRoot, TownSquarePosition, new Vector2(2.5f, 2.1f), "Town",

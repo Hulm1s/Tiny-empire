@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c8154ee2a02895448ef908b10a18e2c, type: 3}
+  m_Name: Item_rose
+  m_EditorClassIdentifier: 
+  id: rose
+  displayName: Rose
+  color: {r: 1, g: 0.52, b: 0.68, a: 1}
+  visualPrefab: {fileID: 4794159238775930754, guid: 992c4ad8724e18242948b93eaad1f9b0, type: 3}
+  carryMaterial: {fileID: 2100000, guid: 90df3177bdfe29349a355a888146a6d9, type: 2}
+  icon: {fileID: 0}
+  stackHeight: 0.48000002
+  basePrice: 15
+  perishable: 0
+  spoilSeconds: 180

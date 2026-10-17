@@ -668,7 +668,7 @@ namespace Tycoon.EditorTools
 
         // ================================================================== asset plumbing
 
-        private static void EnsureFolder(string path)
+        internal static void EnsureFolder(string path)
         {
             if (AssetDatabase.IsValidFolder(path)) return;
             string parent = System.IO.Path.GetDirectoryName(path).Replace('\\', '/');
@@ -676,7 +676,7 @@ namespace Tycoon.EditorTools
             AssetDatabase.CreateFolder(parent, System.IO.Path.GetFileName(path));
         }
 
-        private static Mesh SaveMeshAt(string path, string name, GoodsMeshBuilder b)
+        internal static Mesh SaveMeshAt(string path, string name, GoodsMeshBuilder b)
         {
             EnsureFolder(System.IO.Path.GetDirectoryName(path).Replace('\\', '/'));
             var fresh = b.ToMesh(name);

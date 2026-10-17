@@ -60,12 +60,28 @@ namespace Tycoon.UI
         public const int Herringbone = 8;
         public const int TwoBand = 9;
 
-        public const int PatternCount = 10;
+        // Added with the florist's paint menu (appended: the index is saved).
+        public const int Flowers = 10;
+        public const int Leaves = 11;
+        public const int Trellis = 12;
+
+        public const int PatternCount = 13;
+
+        /// <summary>
+        /// The patterns the supermarket's paint menu offers, in order: exactly the ten it always had, so a
+        /// saved look still means the same thing.
+        /// </summary>
+        public static readonly int[] MarketPatterns = { Plain, Stripes, Checker, Brick, Subway, Diamonds, Waves, Dots, Herringbone, TwoBand };
+
+        /// <summary>
+        /// The florist's: no two-band wainscot (its walls are 0.7 m), three flower-shop patterns of its own.
+        /// </summary>
+        public static readonly int[] FloristPatterns = { Plain, Stripes, Dots, Diamonds, Waves, Flowers, Leaves, Trellis };
 
         public static readonly string[] PatternNames =
         {
             "PLAIN", "STRIPES", "CHECKER", "BRICK", "SUBWAY", "DIAMONDS",
-            "WAVES", "DOTS", "HERRING-\nBONE", "TWO-BAND",
+            "WAVES", "DOTS", "HERRING-\nBONE", "TWO-BAND", "FLOWERS", "LEAVES", "TRELLIS",
         };
 
         /// <summary>What each colour does in each pattern, shown under the grid.</summary>
@@ -81,6 +97,9 @@ namespace Tycoon.UI
             "Secondary and Tertiary dots on a Primary ground.",
             "Primary and Secondary planks, Tertiary joints.",
             "Primary lower wall, Secondary upper wall, Tertiary rail between.",
+            "Primary ground and flower hearts, Secondary petals, Tertiary leaves.",
+            "Primary ground, Secondary leaves, Tertiary vines and tendrils.",
+            "Primary ground, Tertiary trellis, Secondary blossoms and buds.",
         };
 
         /// <summary>True for patterns drawn as a whole wall from the floor up.</summary>
@@ -272,8 +291,189 @@ namespace Tycoon.UI
                 case TwoBand:
                     SampleTwoBand(ref m, x, y, aa);
                     break;
+
+                case Flowers:
+                    SampleFlowers(ref m, x, y, aa);
+                    break;
+
+                case Leaves:
+                    SampleLeaves(ref m, x, y, aa);
+                    break;
+
+                case Trellis:
+                    SampleTrellis(ref m, x, y, aa);
+                    break;
             }
             return m;
+        }
+
+        /// <summary>Distance (negative inside) from a point to a circle's edge.</summary>
+        private static float CircleD(float x, float y, float cx, float cy, float r) =>
+            Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) - r;
+
+        /// <summary>Approximate signed distance (negative inside) of a lens at an angle: the leaf shape.</summary>
+        private static float Lens(float x, float y, float cx, float cy, float dirX, float dirY, float halfLen, float halfWid)
+        {
+            float ox = x - cx, oy = y - cy;
+            float lx = ox * dirX + oy * dirY, ly = -ox * dirY + oy * dirX;
+            float k = Mathf.Sqrt((lx / halfLen) * (lx / halfLen) + (ly / halfWid) * (ly / halfWid));
+            return (k - 1f) * Mathf.Min(halfLen, halfWid);
+        }
+
+        /// <summary>
+        /// Five-petal blossoms in a half-drop grid, 40 cm apart, with a pale heart; Tertiary leaf pairs in
+        /// the gaps. The rows sit so that a 70 cm wall shows whole flowers on every other column.
+        /// </summary>
+        private static void SampleFlowers(ref Mix m, float x, float y, float aa)
+        {
+            const float pitch = 0.4f;
+            int ci = Mathf.FloorToInt(x / pitch);
+
+            // Leaf pairs in the gaps between columns first, so the flowers sit over them.
+            for (int bi = ci; bi <= ci + 1; bi++)
+            {
+                float gx = bi * pitch;
+                float gy0 = (bi & 1) == 1 ? 0.30f : 0.10f;
+                for (int row = -1; row <= 4; row++)
+                {
+                    float gy = gy0 + row * pitch;
+                    if (Mathf.Abs(y - gy) > 0.14f || Mathf.Abs(x - gx) > 0.14f) continue;
+                    const float s = 0.7071f;
+                    Lay(ref m, 2, Cov(Lens(x, y, gx - 0.040f, gy + 0.020f, -s, s, 0.060f, 0.022f), aa));
+                    Lay(ref m, 2, Cov(Lens(x, y, gx + 0.040f, gy + 0.020f, s, s, 0.060f, 0.022f), aa));
+                    Lay(ref m, 2, Cov(CircleD(x, y, gx, gy - 0.010f, 0.012f), aa));
+                }
+            }
+
+            for (int c = ci - 1; c <= ci + 1; c++)
+            {
+                float cx = (c + 0.5f) * pitch;
+                float baseY = 0.2f + (Mod(c, 2) == 1 ? 0.2f : 0f);
+                for (int row = -1; row <= 4; row++)
+                {
+                    float cy = baseY + row * pitch;
+                    if (Mathf.Abs(y - cy) > 0.13f || Mathf.Abs(x - cx) > 0.13f) continue;
+                    float dist = Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                    float petals = float.MaxValue;
+                    for (int k = 0; k < 5; k++)
+                    {
+                        float a = (90f + k * 72f) * Mathf.Deg2Rad;
+                        petals = Mathf.Min(petals, CircleD(x, y, cx + Mathf.Cos(a) * 0.050f, cy + Mathf.Sin(a) * 0.050f, 0.046f));
+                    }
+                    Lay(ref m, 1, Cov(petals, aa));
+                    // Darker towards the heart, so the petals read without a line round each.
+                    m.shade -= 0.10f * Cov(petals + 0.004f, aa) * Mathf.Clamp01(1f - dist / 0.07f) * Cov(CircleD(x, y, cx, cy, 0.07f), aa);
+                    // The heart: the ground colour, lifted, with a ring of shade.
+                    Lay(ref m, 0, Cov(CircleD(x, y, cx, cy, 0.024f), aa));
+                    m.shade += 0.35f * Cov(CircleD(x, y, cx, cy, 0.022f), aa);
+                    m.shade -= 0.25f * Cov(Mathf.Abs(CircleD(x, y, cx, cy, 0.027f)) - 0.003f, aa);
+                }
+            }
+        }
+
+        /// <summary>
+        /// A wavering vine up the middle of every 40 cm column: Tertiary stem, Secondary leaves on
+        /// alternate sides with a vein, and a curling tendril between them.
+        /// </summary>
+        private static void SampleLeaves(ref Mix m, float x, float y, float aa)
+        {
+            const float pitch = 0.4f;
+            float cx = (Mathf.Floor(x / pitch) + 0.5f) * pitch;
+            float u = x - cx;
+            float Xv(float yy) => 0.040f * Mathf.Sin(2f * Mathf.PI * yy / pitch);
+
+            float stem = Mathf.Abs(u - Xv(y)) - 0.0065f;
+            float slope = 0.040f * 2f * Mathf.PI / pitch * Mathf.Cos(2f * Mathf.PI * y / pitch);
+            stem /= Mathf.Sqrt(1f + slope * slope);
+
+            float leafSum = float.MaxValue, vein = float.MaxValue, tend = float.MaxValue;
+            for (int rep = -1; rep <= 1; rep++)
+            {
+                float oy = rep * pitch;
+                for (int s = 0; s < 2; s++)
+                {
+                    float side = s == 0 ? 1f : -1f;
+                    float v = (s == 0 ? 0.10f : 0.30f) + oy;
+                    float bx = Xv(v), by = v;
+                    float ang = 52f * Mathf.Deg2Rad;
+                    float dx = side * Mathf.Sin(ang), dy = Mathf.Cos(ang);
+                    float len = 0.082f;
+                    leafSum = Mathf.Min(leafSum, Lens(u, y, bx + dx * len, by + dy * len, dx, dy, len, 0.036f));
+
+                    float ox = u - bx, oy2 = y - by;
+                    float along = ox * dx + oy2 * dy, across = -ox * dy + oy2 * dx;
+                    if (along > 0f && along < len * 1.8f) vein = Mathf.Min(vein, Mathf.Abs(across) - 0.0035f);
+
+                    // The tendril on the opposite side, between the two leaves.
+                    float tv = (s == 0 ? 0.20f : 0.40f) + oy;
+                    float tside = -side;
+                    float tx = Xv(tv) + tside * 0.050f, ty = tv + 0.020f;
+                    float ring = Mathf.Abs(CircleD(u, y, tx, ty, 0.026f)) - 0.0050f;
+                    float ra = Mathf.Atan2(y - ty, (u - tx) * tside);
+                    if (ra < -0.3f && ra > -1.9f) ring = 1f;      // open the curl
+                    tend = Mathf.Min(tend, ring);
+
+                    float jx0 = Xv(tv), jy0 = tv - 0.005f;
+                    float hx = tx - tside * 0.026f, hy = ty;
+                    float t = Mathf.Clamp01(((u - jx0) * (hx - jx0) + (y - jy0) * (hy - jy0)) /
+                        Mathf.Max(1e-6f, (hx - jx0) * (hx - jx0) + (hy - jy0) * (hy - jy0)));
+                    float qx = jx0 + (hx - jx0) * t, qy = jy0 + (hy - jy0) * t;
+                    tend = Mathf.Min(tend, Mathf.Sqrt((u - qx) * (u - qx) + (y - qy) * (y - qy)) - 0.0050f);
+                }
+            }
+
+            Lay(ref m, 1, Cov(leafSum, aa));
+            m.shade -= 0.18f * Cov(vein, aa) * Cov(leafSum + 0.004f, aa);
+            Lay(ref m, 2, Cov(stem, aa));
+            Lay(ref m, 2, Cov(tend, aa));
+        }
+
+        /// <summary>
+        /// Crossed diagonal laths (Tertiary, lit on one edge, woven over and under) with a blossom
+        /// (Secondary, pale heart) on every second crossing and a bud on the rest.
+        /// </summary>
+        private static void SampleTrellis(ref Mix m, float x, float y, float aa)
+        {
+            const float pitch = 0.4f, half = 0.0125f, k = 0.70711f;
+            float p1 = Periodic(x - y, pitch) * k, p2 = Periodic(x + y, pitch) * k;
+
+            float d1 = Mathf.Abs(p1) - half, d2 = Mathf.Abs(p2) - half;
+            int cellA = Mathf.FloorToInt((x - y) / pitch + 0.5f), cellB = Mathf.FloorToInt((x + y) / pitch + 0.5f);
+            bool oneOnTop = ((cellA + cellB) & 1) == 0;
+
+            float back = oneOnTop ? d2 : d1, front = oneOnTop ? d1 : d2;
+            float pFront = oneOnTop ? p1 : p2;
+            Lay(ref m, 2, Cov(back, aa));
+            m.shade -= 0.30f * Cov(back, aa) * Cov(Mathf.Abs(front) - half - 0.010f, aa) * (1f - Cov(front, aa));
+            Lay(ref m, 2, Cov(front, aa));
+            m.shade += 0.25f * Cov(front, aa) * Mathf.Clamp01(-pFront / half);
+            m.shade -= 0.22f * Cov(front, aa) * Mathf.Clamp01(pFront / half);
+
+            int bx = Mathf.RoundToInt(x / 0.2f), by = Mathf.RoundToInt(y / 0.2f);
+            for (int ix = bx - 1; ix <= bx + 1; ix++)
+                for (int iy = by - 1; iy <= by + 1; iy++)
+                {
+                    if (((ix + iy) & 1) != 0) continue;              // crossings only
+                    float cx = ix * 0.2f, cy = iy * 0.2f;
+                    if (Mathf.Abs(x - cx) > 0.09f || Mathf.Abs(y - cy) > 0.09f) continue;
+                    if (Mod(ix, 2) == 0 && Mod(iy, 2) == 0)
+                    {
+                        float petals = float.MaxValue;
+                        for (int q = 0; q < 5; q++)
+                        {
+                            float a = (90f + q * 72f) * Mathf.Deg2Rad;
+                            petals = Mathf.Min(petals, CircleD(x, y, cx + Mathf.Cos(a) * 0.034f, cy + Mathf.Sin(a) * 0.034f, 0.031f));
+                        }
+                        Lay(ref m, 1, Cov(petals, aa));
+                        Lay(ref m, 0, Cov(CircleD(x, y, cx, cy, 0.016f), aa));
+                        m.shade += 0.30f * Cov(CircleD(x, y, cx, cy, 0.015f), aa);
+                    }
+                    else
+                    {
+                        Lay(ref m, 1, Cov(CircleD(x, y, cx, cy, 0.018f), aa));
+                        m.shade += 0.25f * Cov(CircleD(x, y, cx - 0.005f, cy + 0.005f, 0.007f), aa);
+                    }
+                }
         }
 
         /// <summary>Courses of bricks (or glazed tiles) in a running bond, half a brick out on alternate rows.</summary>

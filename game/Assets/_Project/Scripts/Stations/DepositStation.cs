@@ -27,6 +27,12 @@ namespace Tycoon.Stations
         /// </summary>
         public override Tycoon.UI.SquareIcon Icon => icon;
 
+        [Tooltip("Show the goods themselves instead of the arrow: the florist's WATER square on a bed " +
+                 "shows the watering can, which says more than an arrow on a flower bed.")]
+        public bool showItem;
+
+        public override Tycoon.Config.ItemDefinition IconItem => showItem && target != null ? target.item : null;
+
         /// <summary>The ring shows how full the hopper is getting.</summary>
         protected override float TransferProgress => target != null ? target.Fill : 0f;
 

@@ -993,3 +993,52 @@ final `[Audit] Nothing overlaps.` Any other final line is a failure; `AUDIT_OK` 
 - Bundle size or look: `CashModels.BundleSize`, `CashArt.BundleTopTexture`; layers before merging: `CashStack.maxLayers`, `CashPile.maxLayers`.
 - Step size of collect / withdraw: the `0.34` factor in `CashCollectStation` and `AtmStation`.
 - Never give a new money sink a path that needs money to earn money: keep `RepairStation.freeRepairFraction` above zero.
+
+
+---
+
+## 27. Change the florist, or add a serving minigame
+
+- Everything about the florist is in `Editor/FloristBuilder.cs` (constants at the top); the runtime is
+  `FlowerBed`, `BouquetCounter`, `UI/BouquetMinigame.cs` on top of existing parts. Rebuild the scene and run the
+  audit after any layout change: `[Audit] Nothing overlaps. (town)` and the final line.
+- **Never** let a flower bed die for good or make seeds, water or any step of the bed cycle cost money: every waiting
+  stage (empty, needs water, ready) holds for ever and the seed box and the well are free.
+- The florist starts derelict and is renovated exactly like the supermarket (litter, repair + paint, open): see
+  `FloristBuilder.BuildRenovation`. After changing any model run **Tycoon > Build Florist Models** (`FloristModels.BuildAll`)
+  once, so the seed good's prefab exists before the scene build (`Item_seed` takes its model from it).
+- The stock panel is info for the player in the HUD, not a sign in the world (a board over the counter hid the customers'
+  bubbles): put a `StockInfoZone` (the stocks and the ground) on another business to get the same panel there; a stock on
+  a switched-off object is left out until its purchase switches it on. Keep queue slots far enough apart for the widest
+  order bubble (the audit says: `FloristChain` "order bubbles ... overlap").
+- A new wall pattern goes on the END of `PatternFactory` (its index is saved), and into the list of the shops that offer
+  it (`MarketPatterns` / `FloristPatterns`).
+- A flower's stand buckets are moved into its purchase group by `FloristBuilder.BuildFlower` (`Fill_<id>`
+  children of the stands). A new stand must keep that naming.
+- The player only ever makes WHOLE bouquets (`BouquetCounter.CanMakeWhole`); the hired florist serves flower by
+  flower. Keep it that way: a minigame for half a bouquet would pay a tip for nothing.
+- `SquareAudit.FloristChain` checks: the renovation (litter heaps with a worthless-rubbish square, a bin standing from
+  the start, repair brings the fittings back and removes the wrecks, the paint decor has surfaces, both coats and the
+  florist's own pattern list without a whole-wall pattern, OPEN brings in the counter, roses, well and seed box; litter,
+  then repair and paint, then open, in that order); every flower sold has a stock, an offer and two beds filling it;
+  every bed has its one square, six looks, a bubble, a seed the seed box supplies and water the well supplies, and its
+  square and the supplies appear only after OPEN; the gardener has three routes per bed and carries one thing; the
+  purchases come in the order OPEN, Tulips, Hydrangeas, Sunflowers, florist hire, gardener hire; customers' way in
+  passes west of the central stand and the way out east of it, clear of every wall, stand and the counter by 0.25 m,
+  and nobody's square is on their lane; the player's walk from the street (and to the bin), round the counter, through
+  the back door, to the well, the seed box and every bed is clear by 0.3 m. `SquareAudit.LetGoRules` checks that every
+  till with a cash pile in the farm and the supermarket is tied to the purchase that lets it go. Read
+  `[Audit] [town] florist chain: 0 faults.`
+
+### A new minigame (the haircut next)
+
+Derive from `UI/MinigameOverlay.cs`: lay the screen out in `BuildContent` in 1080 x 1920 design units (y down,
+`Place`, `Plate`, `Label`, `Picture`, `Put`), take input from `Pad(...)` (press / drag / release, touch and mouse
+alike), do per-frame work in `Tick` (unscaled seconds), call `Show()` / `Hide()`. Create it in `HudRoot.Awake`
+beside `BouquetMinigame.Create`. Open it from a square the way `BouquetCounter` does (a short dwell, player only,
+re-arm on exit); a hired worker at the same square should do the plain version of the job at the base price.
+Do not create Materials. Code-drawn art (the `BouquetArt` pattern) must be BAKED, not painted at runtime: one
+big bouquet picture took 3-6 s to paint. Follow `BouquetMinigame.Cached` / `BakeAll` and `Editor/BouquetBake.cs`:
+every picture is listed in `BakeAll`, painted once by the scene build into `Resources/<folder>`, loaded at
+runtime; bump the version constant when the art changes. Pictures that vary per order are stacked from baked
+layers (`BunchView`) rather than painted.

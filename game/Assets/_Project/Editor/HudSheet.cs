@@ -25,7 +25,7 @@ namespace Tycoon.EditorTools
         private const string OutputPath = "../hud-sheet.png";
 
         /// <summary>Pixels per canvas unit: the same as the runtime sprites are drawn at.</summary>
-        private const float U = HudArt.RuntimeScale;
+        internal static float U = HudArt.RuntimeScale;
 
         internal static readonly Color Grass = new Color(0.42f, 0.66f, 0.30f);
         internal static readonly Color Night = new Color(0.13f, 0.17f, 0.20f);
@@ -305,6 +305,7 @@ namespace Tycoon.EditorTools
             ['-'] = "0.5,3 3.5,3",
             [':'] = "2,4 2,4.05|2,1 2,1.05",
             ['!'] = "2,6 2,2|2,0 2,0.05",
+            ['+'] = "0.5,3 3.5,3|2,1.2 2,4.8",
         };
 
         /// <summary>

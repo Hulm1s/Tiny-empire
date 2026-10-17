@@ -175,6 +175,17 @@ namespace Tycoon.Customers
                  "stayed empty. Smaller than a walkout: they still bought the rest.")]
         public float reputationPerSkip = 0.04f;
 
+        [Header("Bouquets (florist only)")]
+        [Tooltip("Off for every till that sells one product per customer. On for the florist: each " +
+                 "customer wants a bouquet of several flowers - one to maxBouquetLines kinds, drawn from " +
+                 "what the till sells AND the shop can make (ProductRegistry), one to maxPerFlower of each, " +
+                 "never more than maxBouquetFlowers in all. Served through CustomerAgent.Deliver like any order.")]
+        public bool bouquets;
+
+        [Min(1)] public int maxBouquetLines = 3;
+        [Min(1)] public int maxPerFlower = 3;
+        [Min(1)] public int maxBouquetFlowers = 6;
+
         [Header("Reputation")]
         [Range(0f, 1f)] public float startingReputation = 1f;
         public float reputationPerHappy = 0.05f;
@@ -477,6 +488,12 @@ namespace Tycoon.Customers
                 return;
             }
 
+            if (bouquets)
+            {
+                SpawnBouquet(go, agent);
+                return;
+            }
+
             var item = PickOrderableItem();
 
             // Two separate reasons to turn a shopper away at the door, and both matter:
@@ -503,6 +520,61 @@ namespace Tycoon.Customers
 
             _waiting.Add(agent);
             agent.Begin(this, item, count, SlotPosition(_waiting.Count - 1), RandomTint(), way);
+        }
+
+        /// <summary>
+        /// A florist customer: a bouquet of up to <see cref="maxBouquetLines"/> different flowers the shop
+        /// can actually grow right now, one to <see cref="maxPerFlower"/> of each and at most
+        /// <see cref="maxBouquetFlowers"/> in all. Turned away at the door, like any customer, when
+        /// nothing on the menu is growing yet.
+        /// </summary>
+        private void SpawnBouquet(GameObject go, CustomerAgent agent)
+        {
+            var menu = register != null ? register.sells : null;
+            var open = new List<ItemDefinition>();
+            if (menu != null)
+                foreach (var flower in menu)
+                    if (flower != null && ProductRegistry.CanProduce(flower)) open.Add(flower);
+
+            if (open.Count == 0)
+            {
+                Destroy(go);
+                return;
+            }
+
+            int kinds = UnityEngine.Random.Range(1, Mathf.Min(maxBouquetLines, open.Count) + 1);
+            var items = new List<ItemDefinition>();
+            var counts = new List<int>();
+            int left = maxBouquetFlowers;
+            for (int k = 0; k < kinds && left > 0; k++)
+            {
+                int pick = UnityEngine.Random.Range(0, open.Count);
+                int n = Mathf.Min(left - (kinds - k - 1), UnityEngine.Random.Range(1, maxPerFlower + 1));
+                if (n <= 0) break;
+                items.Add(open[pick]);
+                counts.Add(n);
+                left -= n;
+                open.RemoveAt(pick);
+            }
+
+            // Kept in the menu's own order, so a bouquet always reads roses, tulips, ... alike.
+            var ordered = new List<int>();
+            for (int i = 0; i < items.Count; i++) ordered.Add(i);
+            ordered.Sort((a, b) => System.Array.IndexOf(menu, items[a]).CompareTo(System.Array.IndexOf(menu, items[b])));
+            var sortedItems = new ItemDefinition[items.Count];
+            var sortedCounts = new int[items.Count];
+            for (int i = 0; i < ordered.Count; i++) { sortedItems[i] = items[ordered[i]]; sortedCounts[i] = counts[ordered[i]]; }
+
+            List<Vector3> way = null;
+            if (entryRoute != null && entryRoute.Length > 0)
+            {
+                way = new List<Vector3>(entryRoute.Length);
+                foreach (var point in entryRoute)
+                    if (point != null) way.Add(point.position);
+            }
+
+            _waiting.Add(agent);
+            agent.BeginOrder(this, sortedItems, sortedCounts, SlotPosition(_waiting.Count - 1), RandomTint(), way);
         }
 
         /// <summary>

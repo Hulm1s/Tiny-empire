@@ -635,3 +635,29 @@ Farm: `farm.pigA` (+ `.input`, `.output`: machine and buffers), `farm.cornE1`, `
 `market.butcher.drop` / `.steak` / `.sausage` (buffers), `market.butcher.cash` (cash pile). `market.butcher.grind` identifies the grinder's GRIND square (a station, nothing saved under it).
 Note: a gate switched on by hand in a test (rather than by being paid) is not saved, because its object was never
 active to register.
+
+
+## Florist save ids (all new, town)
+
+Gates `town.florist.unlock.repair` / `.tulips` / `.hydrangeas` / `.sunflowers`; chore `town.florist.chore.open`;
+`town.florist.decor` (the florist's `MarketDecor`, same blob as `market.decor`); litter `town.florist.trash.<1-3>`
+(`ItemBuffer`); hires `town.hire.florist`, `town.hire.gardener`; `town.florist` (the bouquet queue's reputation);
+`town.florist.cash` (cash pile); `town.florist.stock.<rose|tulip|sunflower|hydrangea>` (stocks, `ItemBuffer`);
+`town.florist.well` (the well's `ItemBuffer` + `SupplyFeed`); `town.florist.seeds` (the seed box's `ItemBuffer` +
+`SupplyFeed`); per bed `town.florist.bed.<id><0|1>` (`FlowerBed`); identified only: `town.florist.counter`,
+`town.florist.well.collect`, `town.florist.seeds.collect`, `town.florist.trashcollect.<n>`, `town.florist.paint`,
+`town.florist.bin` (+ `.discard`), `town.florist.bed.<id><n>.square`, `town.florist.collect`, `town.atm.withdraw`,
+`town.atm.deposit`. Retired (an old save's entries are simply ignored): `town.florist.unlock.open` (was a gate; the
+OPEN chore has its own new id), `town.florist.unlock.well`, `town.florist.water.<id><n>` (+ `.square`).
+
+### `FlowerBed` - `Stations/FlowerBed.cs`
+
+`version` (1; a blob without it is the old self-growing bed and loads as bare soil), `stage` (0 Empty, 1 needs water,
+2 growing, 3 needs water again, 4 growing, 5 Ready - the numbers are the `BedStage` enum and must not change),
+`timer` (seconds into the growing spell), `lastUnix`. Only a growing bed catches up on the offline gap (clamped to
+8 h) on the first frame after a load; every waiting stage holds exactly as saved.
+
+### The supermarket after the town
+
+No new state: the checkouts and the butcher counter read the saved `town.unlock` purchase (`accountWhenUnlocked`)
+and the share (0.5) from the scene, like the farm's tills read `farm.unlock.market`.

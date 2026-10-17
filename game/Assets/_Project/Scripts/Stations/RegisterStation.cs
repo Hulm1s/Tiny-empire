@@ -94,11 +94,19 @@ namespace Tycoon.Stations
         public event Action<double> Sold;
 
         /// <summary>Puts a sale where it belongs: the pile, or the account once the farm is let go.</summary>
-        private void Pay(double price)
+        protected void Pay(double price) => Takings(pile, accountWhenUnlocked, accountShare, price);
+
+        /// <summary>
+        /// Where a sale goes: the account when there is no pile, the pile while the business is still
+        /// worked, and the account at <paramref name="share"/> once <paramref name="letGoWhen"/> is owned (the
+        /// farm after the supermarket, the supermarket after the town). One rule for every till, so the
+        /// supermarket's checkouts (<see cref="CheckoutStation"/>) read it too.
+        /// </summary>
+        public static void Takings(CashPile pile, UnlockStation letGoWhen, float share, double price)
         {
-            bool letGo = accountWhenUnlocked != null && accountWhenUnlocked.IsUnlocked;
+            bool letGo = letGoWhen != null && letGoWhen.IsUnlocked;
             if (pile == null) GameRoot.Money?.Add(price);
-            else if (letGo) GameRoot.Money?.Add(price * accountShare);
+            else if (letGo) GameRoot.Money?.Add(price * share);
             else pile.Deposit(price);
         }
 
@@ -175,15 +183,21 @@ namespace Tycoon.Stations
         /// its product, if the case has room. Doing both in one square is what lets the butcher
         /// (whose dropoff is this square) keep the case full AND the queue moving.
         /// </summary>
-        private bool TickCounter()
+        protected bool TickCounter()
         {
+            // Any case holding something the front customer still wants: for a one-product shopper
+            // that is exactly their product; for a bouquet (several products) whichever of its
+            // flowers is in stock, so one sold-out flower does not hold up the rest of the order.
             var customer = queue.Front;
-            var wanted = customer != null ? customer.Wanted : null;
-            if (wanted != null)
+            if (customer != null)
             {
-                var shelf = StockFor(wanted);
-                if (shelf != null && shelf.Remove(1) > 0)
+                for (int i = 0; i < stock.Length; i++)
                 {
+                    var shelf = stock[i];
+                    if (shelf == null || !shelf.isActiveAndEnabled || shelf.IsEmpty) continue;
+                    var wanted = shelf.item;
+                    if (!customer.Wants(wanted) || shelf.Remove(1) == 0) continue;
+
                     if (customer.Deliver(wanted))
                     {
                         Settle(wanted);
@@ -217,10 +231,14 @@ namespace Tycoon.Stations
             return false;
         }
 
+        /// <summary>What one unit sells for here right now: its price, this till's multiplier, the shop's reputation.</summary>
+        public double UnitPrice(ItemDefinition item) =>
+            item == null || queue == null ? 0d : item.basePrice * priceMultiplier * queue.PriceMultiplier;
+
         /// <summary>One unit sold: the money, the event, the sound and the popup.</summary>
-        private void Settle(ItemDefinition wanted)
+        protected void Settle(ItemDefinition wanted)
         {
-            double price = wanted.basePrice * priceMultiplier * queue.PriceMultiplier;
+            double price = UnitPrice(wanted);
             Pay(price);
             Sold?.Invoke(price);
             Tycoon.Tasks.TutorialEvents.Raise(Tycoon.Tasks.TutorialEvent.Sell, Carry);

@@ -96,6 +96,8 @@ namespace Tycoon.Tasks
         private DepositStation[] _deposits;
         private RegisterStation[] _registers;
         private CutStation[] _benches;
+        private FlowerBed[] _beds;
+        private WorkerAgent[] _workers;
         private DiscardStation[] _bins;
         private AtmStation[] _atms;
         private CashCollectStation[] _tillCash;
@@ -201,6 +203,8 @@ namespace Tycoon.Tasks
             _deposits = FindObjectsByType<DepositStation>(inactive, none);
             _registers = FindObjectsByType<RegisterStation>(inactive, none);
             _benches = FindObjectsByType<CutStation>(inactive, none);
+            _beds = FindObjectsByType<FlowerBed>(inactive, none);
+            _workers = FindObjectsByType<WorkerAgent>(inactive, none);
             _bins = FindObjectsByType<DiscardStation>(inactive, none);
             _atms = FindObjectsByType<AtmStation>(inactive, none);
             _tillCash = FindObjectsByType<CashCollectStation>(inactive, none);
@@ -368,11 +372,59 @@ namespace Tycoon.Tasks
             {
                 var counter = _registers[i];
                 if (!Live(counter) || !counter.HasDisplay) continue;
+                // The florist's cases are filled by the beds, never by hand: a bare one is a bed to tend (below).
+                if (counter is BouquetCounter) continue;
 
                 foreach (var shelf in counter.stock)
                 {
                     if (shelf == null || !Live(shelf) || shelf.item == null || !shelf.IsEmpty) continue;
                     AddProblem(4, $"Restock {shelf.item.displayName}", counter);
+                }
+            }
+
+            // The florist's beds: plant, water, pick. One line per flower and job, at the nearest bed that
+            // wants it: pointing at where to get the seed or the water first, and at the bed itself once
+            // it is in the player's arms. A gardener on the payroll does all of this, so no lines then.
+            if (!GardenerWorksBeds())
+            {
+                _bedBest.Clear();
+                _bedBestDistance.Clear();
+                for (int i = 0; i < _beds.Length; i++)
+                {
+                    var bed = _beds[i];
+                    if (!Live(bed) || bed.Flower == null || bed.Job == 0) continue;
+
+                    int key = bed.Flower.GetInstanceID() * 4 + bed.Job;
+                    float d = DistanceToPlayer(bed.square);
+                    if (_bedBest.ContainsKey(key) && _bedBestDistance[key] <= d) continue;
+                    _bedBest[key] = bed;
+                    _bedBestDistance[key] = d;
+                }
+
+                foreach (var pair in _bedBest)
+                {
+                    var bed = pair.Value;
+                    string flower = bed.Flower.displayName.ToLowerInvariant() + "s";
+                    switch (bed.Job)
+                    {
+                        case 1:
+                        {
+                            bool holding = _carry != null && _carry.Has(bed.seed);
+                            var target = holding || !Live(bed.seedSquare) ? (StationBase)bed.square : bed.seedSquare;
+                            AddProblem(3, holding ? $"Plant the {flower}" : $"Fetch seeds for the {flower}", target);
+                            break;
+                        }
+                        case 2:
+                        {
+                            bool holding = _carry != null && _carry.Has(bed.water);
+                            var target = holding || !Live(bed.wellSquare) ? (StationBase)bed.square : bed.wellSquare;
+                            AddProblem(2, holding ? $"Water the {flower}" : $"Fetch water for the {flower}", target);
+                            break;
+                        }
+                        default:
+                            AddProblem(2, $"Harvest the {flower}", bed.square);
+                            break;
+                    }
                 }
             }
 
@@ -385,6 +437,21 @@ namespace Tycoon.Tasks
             });
 
             for (int i = 0; i < _found.Count && i < MaxLines; i++) Problems.Add(_found[i].item);
+        }
+
+        private readonly Dictionary<int, FlowerBed> _bedBest = new Dictionary<int, FlowerBed>();
+        private readonly Dictionary<int, float> _bedBestDistance = new Dictionary<int, float>();
+
+        /// <summary>A hired gardener is on the beds (they plant, water and harvest by themselves).</summary>
+        private bool GardenerWorksBeds()
+        {
+            for (int i = 0; i < _workers.Length; i++)
+            {
+                var w = _workers[i];
+                if (Live(w) && w.routes != null && w.routes.Length > 0 && w.routes[0] != null && w.routes[0].dropoff is BedStation)
+                    return true;
+            }
+            return false;
         }
 
         private void AddProblem(int severity, string label, StationBase target)
@@ -495,6 +562,15 @@ namespace Tycoon.Tasks
                 Consider(bench, 0d, bench.makes > 1 ? "Grind sausages" : "Cut steaks");
             }
 
+            // The florist: a customer at the counter whose whole bouquet is in stock is a job for the
+            // player (the bouquet minigame, with a tip) - a free step, like opening the shop.
+            for (int i = 0; i < _registers.Length; i++)
+            {
+                if (!(_registers[i] is BouquetCounter florist) || !Live(florist)) continue;
+                if (florist.ReadyCustomer == null || Staffed(florist)) continue;
+                Consider(florist, 0d, "Make a bouquet");
+            }
+
             AddCashGoals();
 
             if (_best != null)
@@ -504,6 +580,14 @@ namespace Tycoon.Tasks
         }
 
         private double _cheapest;
+
+        /// <summary>A hired hand works this square (so it is not a job waiting for the player).</summary>
+        private bool Staffed(StationBase station)
+        {
+            for (int i = 0; i < _workers.Length; i++)
+                if (Live(_workers[i]) && _workers[i].dropoff == station) return true;
+            return false;
+        }
 
         /// <summary>
         /// Purchases are paid from the cash in hand, so a goal the player cannot cover from their

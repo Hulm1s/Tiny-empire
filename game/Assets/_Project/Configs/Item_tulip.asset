@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c8154ee2a02895448ef908b10a18e2c, type: 3}
+  m_Name: Item_tulip
+  m_EditorClassIdentifier: 
+  id: tulip
+  displayName: Tulip
+  color: {r: 0.96, g: 0.26, b: 0.32, a: 1}
+  visualPrefab: {fileID: 1971703805404986806, guid: 931c0c0c29e0bb44aa0853a93d320afa, type: 3}
+  carryMaterial: {fileID: 2100000, guid: a430133be6ed37b449595ca2720f6f25, type: 2}
+  icon: {fileID: 0}
+  stackHeight: 0.48000005
+  basePrice: 18
+  perishable: 0
+  spoilSeconds: 180

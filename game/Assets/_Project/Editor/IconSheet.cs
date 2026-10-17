@@ -36,7 +36,7 @@ namespace Tycoon.EditorTools
 
             // The products too: those are drawn by id rather than by enum, so they would
             // otherwise never appear on the sheet.
-            foreach (var id in new[] { "egg", "milk", "corn", "hay", "trash", "bread", "apples", "yogurt", "meat", "steak", "sausage", "pig" })
+            foreach (var id in new[] { "egg", "milk", "corn", "hay", "trash", "bread", "apples", "yogurt", "meat", "steak", "sausage", "pig", "rose", "tulip", "sunflower", "hydrangea", "watering_can", "bouquet" })
             {
                 var item = ScriptableObject.CreateInstance<Tycoon.Config.ItemDefinition>();
                 item.id = id;

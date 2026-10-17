@@ -35,6 +35,13 @@ namespace Tycoon.Stations
                  "Empty pays the account.")]
         public CashPile pile;
 
+        [Tooltip("Once this purchase is owned (the town), takings go straight to the account at accountShare " +
+                 "instead of onto the pile: the supermarket is let go the way the farm was. Empty keeps the pile.")]
+        public UnlockStation accountWhenUnlocked;
+
+        [Tooltip("Share of a sale that reaches the account once the shop is let go. The same 0.5 the farm tills use.")]
+        [Range(0f, 1f)] public float accountShare = 1f;
+
         /// <summary>Fired with the money taken per unit, for popups and audio.</summary>
         public event Action<double> Sold;
 
@@ -83,8 +90,7 @@ namespace Tycoon.Stations
             if (!customer.ScanNext(out ItemDefinition item) || item == null) return false;
 
             double price = item.basePrice * priceMultiplier * queue.PriceMultiplier;
-            if (pile != null) pile.Deposit(price);
-            else GameRoot.Money?.Add(price);
+            RegisterStation.Takings(pile, accountWhenUnlocked, accountShare, price);
             Sold?.Invoke(price);
 
             SoundFx.PlayAt(Sfx.Coin, transform.position);

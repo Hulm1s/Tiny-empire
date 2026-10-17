@@ -375,12 +375,40 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 | Van model detail (about 4,000 vertices) | `ButcherModels.VanModel` (resolutions per part) |
 | Butcher audit coverage | `SquareAudit.ButcherChain`, `SquareAudit.VanRoute`, `ButcherShell` legs |
 
-## Town (third location, empty)
+## Town (third location)
 
 | I want to change... | Edit |
 |---|---|
-| Town price, size, road, plaza, COMING SOON square | `Editor/TownBuilder.cs` (constants at the top; `TownPrice`, `Offset`, `Edge*`) |
+| Town price, size, road, plaza, COMING SOON square | `Editor/TownBuilder.cs` (constants at the top; `TownPrice`, `Offset`, `Edge*`, `SoonPosition`) |
 | Where the town is on the map (farm-grid offset) | `TownBuilder.Offset` (stay inside the +-80 m walkable ground plane) |
 | Where the supermarket's gate / travel square stand | `TownBuilder.MarketSquarePosition`; the market grass keep-clear rect in `MarketBuilder.BuildGround` must cover it |
 | What unlocks the town | `TownBuilder.Build` (`RevealWhenAll` "TownUnlock" over `MarketBuilder.Result.ButcherExtension/ButcherUnlocks/ButcherMaxed`, filled by `ButcherBuilder.Build`'s `Purchases`) |
-| Put real content in the town | build it in `TownBuilder` as children of the town root and remove the placeholder (`BuildPlaceholder`) |
+| The next business on the street | build it in `TownBuilder.Build` like `FloristBuilder.Build`, where the COMING SOON square is now |
+
+## Florist (town)
+
+| I want to change... | Edit |
+|---|---|
+| Purchase prices (repair, first paint, repaint, tulips, hydrangeas, sunflowers, hires) | `Editor/FloristBuilder.cs` `*Price` constants (all through `Price()`); re-run `plans/econ/market_sim.py` (`FLORIST`; the first two must stay within 3 minutes of buying the town) |
+| What a flower sells for | `FloristBuilder.RosePrice` / `TulipPrice` / `SunflowerPrice` / `HydrangeaPrice` (read by `FarmSceneBuilder.CreateItems`) |
+| Growing spell per flower, flowers per harvest, seconds a bed square takes | `FloristBuilder.SpellSeconds`, `FlowersPerHarvest`, `BedTaskSeconds` (-> `FlowerBed`, `BedStation`) |
+| Seed box / well size and refill | `FloristBuilder.SeedCapacity`, `SeedSecondsPerPacket`, `WellCapacity`, `WellSecondsPerCan` |
+| Litter heaps (where, how many bags), the bin, repair / paint / open squares | `FloristBuilder.TrashPositions`, `BagsPerPile`, `BinAt`, `RepairAt`, `PaintAt`, `OpenAt` |
+| The florist's paint patterns and starting look | `PatternFactory.FloristPatterns`, `FloristBuilder.BuildRenovation` (`decor.patterns`, `startingLook`); the three new samplers are `PatternFactory.SampleFlowers/SampleLeaves/SampleTrellis` |
+| What the gardener does and in what order | `WorkerAgent.ChooseBed`; its routes are built in `FloristBuilder.Build` |
+| Supermarket takings after the town | `TownBuilder.Build` (`accountShare` 0.5 on the checkouts and the butcher counter; `RegisterStation.Takings`) |
+| The stock panel in the HUD (where it shows, size, cell width, red at 0) | `UI/StockPanel.cs` (`CellWidth`, `PanelHeight`, `BottomMargin`; created in `HudRoot.Awake`) and the zone `FloristBuilder.Build` (`StockInfoZone`: `stocks`, `min`, `max`) |
+| Florist queue spacing and bubble size | `FloristBuilder.Slots`, `EntryRoute`, `BubbleScale`; `OrderBubble.LinePitch` (the audit checks the gap against `OrderBubble.CanvasSize`) |
+| Where the water, seed and hire squares are in the meadow | `FloristBuilder` `WellSquareAt`, `SeedBoxAt`, `SeedSquareAt`, `GardenerHireAt` (the squares must stay clear of the beds' squares: the audit says) |
+| The bed models / seed box / wrecks | `Editor/FloristModels.Round2.cs`; preview sheets `Editor/FloristPreview2.cs` |
+| Stock per flower | `FloristBuilder.StockCapacity` |
+| Customer rate, extra demand per flower, queue slots | `FloristBuilder.CustomerIntervalSeconds`, `DemandPerFlower`, `QueueSlots` |
+| Bouquet size (kinds, per flower, total) | `FloristBuilder.BuildCounter` -> `CustomerQueue.maxBouquetLines/maxPerFlower/maxBouquetFlowers` (3 / 3 / 6; the minigame draws at most 6 heads) |
+| Tip per star, wait before the minigame opens | `Stations/BouquetCounter.cs` `tipShare`, `openAfter` |
+| Stars (par time, mistakes) | `UI/BouquetMinigame.cs` `ShowResult` |
+| Minigame gestures (cut band, loop angle, wrap distance, drop radius) | `BouquetMinigame.CutAt` (75 units), `TieDrag` (330 deg a loop), `WrapDrag` (260 units), `Drop` (125 units) |
+| Minigame layout / art | `BouquetMinigame.BuildContent` and the step builders (mock-up coordinates, y down); art `UI/BouquetArt.cs`. **After changing any art, bump `BouquetMinigame.ArtVersion`** (the scene build re-bakes `Resources/Bouquet` via `Editor/BouquetBake.cs`; `Tycoon > Bake Bouquet Art` forces it). The list of baked pictures is `BouquetMinigame.BakeAll`. Texture format / max size: `BouquetBake.ApplyImportSettings` (WebGL ASTC, no re-bake needed - the scene build re-applies it) |
+| Overlay behaviour for every minigame (pause, joystick, safe area, card fit, input) | `UI/MinigameOverlay.cs` |
+| Shop / meadow layout, doors, counter, stands, beds, well, queue, routes | `FloristBuilder` constants (`Shop*`, `Entrance*`, `Exit*`, `BackDoor*`, `CounterAt`, `ServeAt`, `CashAt`, `FloristHireAt`, `CentreStandAt`, `Slots`, `EntryRoute`, `ExitRoute`, `BedX`, `BedZ`, `WellAt`, `WellSquareAt`, `GardenerHireAt`); run the audit after |
+| Florist / gardener colours | material assets `Materials/Fl_Florist_*.mat`, `Fl_Gardener_*.mat` (`FloristBuilder.Dress`) |
+| Florist audit | `SquareAudit.FloristChain` |
