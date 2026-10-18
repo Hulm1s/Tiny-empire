@@ -418,6 +418,36 @@ meant to be the fastest thing on the farm.
 > a queue that times out faster than the player can walk the length of the farm punishes them for
 > playing it as designed.
 
+### 11b. A seated waiting room and service chairs (the salon)
+
+Everything is an extension of `CustomerQueue` / `CustomerAgent`; a till that sets none of it is
+unchanged. To build one (the level builder does all of this; nothing is wired at runtime):
+
+1. **The queue.** An ordinary `CustomerQueue` (spawn, entry route, exit route, exit point), with
+   `seatedWaiting = true`. Each `slots[i]` is a waiting chair: put the transform at the middle of the
+   seat, *seat top − 0.16 m* high, its forward the way the sitter faces. Slot 0 is the head.
+   `minOrder = maxOrder = 1` for one service per customer.
+2. **The chairs.** One `ServiceChair` per chair: `seat` (same height rule), `approach` (a point in
+   front of the chair), `exitRoute` (towards the shop's exit route), `dirtyWhen` (the hair heap).
+   List them in `queue.chairs`; a chair that is not bought yet is simply inactive.
+3. **The STYLE squares.** One `ChairServiceStation` per chair (`LevelBuildKit.Station<...>`):
+   `chair` = its chair, `queue` = the salon queue (**required** — prices read its reputation),
+   `sells` = the services, `pile` = the one reception `CashPile`, `serviceSeconds`. Set
+   `queue.register` to any one of them — the queue reads its menu from there.
+4. **The NEXT square.** A `CallNextStation` with `queue`. A receptionist hire is a worker whose
+   `pickup` and `dropoff` are both this square; a hairdresser hire likewise on its STYLE square.
+5. **Orders need a producer.** A queue only invents orders for things `ProductRegistry.CanProduce`.
+   Register an `IProducer` per service while it is offered (e.g. while the salon is open), or nobody
+   comes. Several services on one menu are fine here, unlike at a till: the head is called to any
+   free chair whatever they want, so nothing can block the queue.
+6. **The minigame.** Subclass `ChairServiceStation` the way `BouquetCounter` subclasses
+   `RegisterStation`: for the player open the minigame on `ReadyOccupant`, and on finish call
+   `ServeWhole(customer)` then `Pay(tip)`.
+7. **Hair.** Subscribe to `ServiceChair.Released`; on `served == true` switch the heap on.
+8. **Audit.** `SquareAudit` already walks every queue that has chairs (`ChairPaths`): in, up the
+   waiting room, head → each chair, each chair → out, and out from any seat on a time-out, against
+   every solid (a seat may sit inside its own chair's footprint), and no seat on a live square.
+
 ---
 
 ## 12. Change what a till sells
@@ -1042,3 +1072,12 @@ big bouquet picture took 3-6 s to paint. Follow `BouquetMinigame.Cached` / `Bake
 every picture is listed in `BakeAll`, painted once by the scene build into `Resources/<folder>`, loaded at
 runtime; bump the version constant when the art changes. Pictures that vary per order are stacked from baked
 layers (`BunchView`) rather than painted.
+
+### 11c. The salon (`Editor/SalonBuilder.cs`)
+
+All tunables are commented constants at the top of `SalonBuilder.cs` (prices, haircut prices, customer interval, demand,
+`BagsPerService`, waiting seats, routes). Wiring reminders: every chair station needs `queue`; the queue's `register` is one
+chair station; an `IProducer` per hairstyle; chair/seat groups need solid names so `SquareAudit.ChairPaths` measures
+them; the hairdresser hire squares share one footprint on purpose. Minigame art is baked (`HaircutBake`, ASTC settings
+via `BouquetBake.ApplyImportSettings`) - re-run the scene build after changing `HaircutArt`. `SquareAudit.SalonChain`
+checks wiring, the hair loop, staff routes, renovation order and one-purchase-at-a-time.

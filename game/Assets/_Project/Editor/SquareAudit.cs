@@ -168,12 +168,14 @@ namespace Tycoon.EditorTools
 
             clashes += SpawnClear(location, entries, solids, tag);
             clashes += ShopperPaths(root, solids, tag);
+            clashes += ChairPaths(root, solids, entries, tag);
             clashes += ButcherShell(root, solids, tag);
             clashes += EdgeOfWorld(root, tag);
             clashes += Progression(root, firstLive, tag);
             clashes += GrowthRules(root, firstLive, firstBuffer, tag);
             clashes += ButcherChain(root, solids, entries, firstLive, tag);
             clashes += FloristChain(root, solids, entries, firstLive, tag);
+            clashes += SalonChain(root, entries, firstLive, tag);
             clashes += LetGoRules(location, tag);
             ReportLayout(root, solids, tag);
 
@@ -383,10 +385,16 @@ namespace Tycoon.EditorTools
                 if (!changed) break;
             }
 
+            // The salon's SWEEP squares are switched on by the hair itself (HairMess), at play time, not by a purchase.
+            var messSquares = new HashSet<GameObject>();
+            foreach (var mess in root.GetComponentsInChildren<HairMess>(true))
+                if (mess.square != null) messSquares.Add(mess.square);
+
             // A square nothing ever switches on cannot be used by anyone.
             foreach (var station in stations)
             {
                 if (firstLive.ContainsKey(station)) continue;
+                if (messSquares.Contains(station.gameObject)) continue;
                 clashes++;
                 Debug.LogWarning($"[Audit] UNREACHABLE {tag} {station.name} ({station.GetType().Name}) " +
                                  "is never switched on by anything.");
@@ -909,6 +917,113 @@ namespace Tycoon.EditorTools
             return faults;
         }
 
+        /// <summary>
+        /// Every walk a customer of a queue WITH CHAIRS (the salon) can take, measured the way they take it:
+        /// in from the road along the entry route to each waiting place, up the waiting room place by place,
+        /// from the head place along each chair's approach to its seat, from each seat along the chair's way
+        /// out and the queue's exit route to the exit point, and from any waiting place out when patience runs
+        /// out. Customers steer in straight lines and cannot see walls, so none of it may pass through anything
+        /// solid. A leg is excused only the solid it sits down in: a waiting place or a seat may stand inside its
+        /// own chair's footprint (a solid that contains the seat itself).
+        ///
+        /// Also: no seat may be on an interaction square that is live once the place is built - a customer
+        /// sitting there for a whole haircut covers the square's card, which is how the player reads it.
+        ///
+        /// Queues without chairs - every till before the salon - are not looked at, so this adds nothing to
+        /// the farm, the market or the florist.
+        /// </summary>
+        private static int ChairPaths(Transform root, List<Solid> solids, List<Entry> entries, string tag)
+        {
+            int faults = 0;
+            void Fault(string what)
+            {
+                faults++;
+                Debug.LogWarning($"[Audit] CHAIRS {tag} {what}");
+            }
+
+            foreach (var queue in root.GetComponentsInChildren<Tycoon.Customers.CustomerQueue>(true))
+            {
+                if (queue.chairs == null || queue.chairs.Length == 0) continue;
+                if (queue.spawnPoint == null || queue.exitPoint == null || queue.slots == null || queue.slots.Length == 0)
+                {
+                    Fault($"{queue.name} has chairs but no spawn point, exit point or waiting places.");
+                    continue;
+                }
+
+                var seats = new List<Vector2>();
+                var legs = new List<Leg>();
+
+                Vector2 at = Flat(root, queue.spawnPoint);
+                if (queue.entryRoute != null)
+                    foreach (var t in queue.entryRoute) if (t != null) { var p = Flat(root, t); legs.Add(new Leg(at, p, "in")); at = p; }
+                foreach (var slot in queue.slots)
+                {
+                    if (slot == null) continue;
+                    legs.Add(new Leg(at, Flat(root, slot), "in to a waiting place"));
+                    if (queue.seatedWaiting) seats.Add(Flat(root, slot));
+                }
+                for (int i = 0; i + 1 < queue.slots.Length; i++)
+                    if (queue.slots[i] != null && queue.slots[i + 1] != null)
+                        legs.Add(new Leg(Flat(root, queue.slots[i + 1]), Flat(root, queue.slots[i]), "up the waiting room"));
+
+                var shopExit = new List<Vector2>();
+                if (queue.exitRoute != null)
+                    foreach (var t in queue.exitRoute) if (t != null) shopExit.Add(Flat(root, t));
+                shopExit.Add(Flat(root, queue.exitPoint));
+                for (int i = 0; i + 1 < shopExit.Count; i++) legs.Add(new Leg(shopExit[i], shopExit[i + 1], "out"));
+
+                // Out of patience in the waiting room: the queue's own exit, then the shop's way out.
+                var fromQueue = new List<Vector2>();
+                if (queue.queueExit != null)
+                    foreach (var t in queue.queueExit) if (t != null) fromQueue.Add(Flat(root, t));
+                fromQueue.Add(shopExit[0]);
+                for (int i = 0; i + 1 < fromQueue.Count; i++) legs.Add(new Leg(fromQueue[i], fromQueue[i + 1], "queue exit"));
+                foreach (var slot in queue.slots)
+                    if (slot != null) legs.Add(new Leg(Flat(root, slot), fromQueue[0], "waiting place to the way out (gave up)"));
+
+                Vector2 head = Flat(root, queue.slots[0]);
+                foreach (var chair in queue.chairs)
+                {
+                    if (chair == null) { Fault($"{queue.name} lists an empty chair."); continue; }
+                    Vector2 seat = Flat(root, chair.Seat);
+                    seats.Add(seat);
+
+                    Vector2 from = head;
+                    if (chair.approach != null)
+                        foreach (var t in chair.approach) if (t != null) { var p = Flat(root, t); legs.Add(new Leg(from, p, $"to {chair.name}")); from = p; }
+                    legs.Add(new Leg(from, seat, $"to {chair.name}"));
+
+                    from = seat;
+                    if (chair.exitRoute != null)
+                        foreach (var t in chair.exitRoute) if (t != null) { var p = Flat(root, t); legs.Add(new Leg(from, p, $"out of {chair.name}")); from = p; }
+                    legs.Add(new Leg(from, shopExit[0], $"out of {chair.name}"));
+                }
+
+                foreach (var leg in legs)
+                    foreach (var solid in solids)
+                    {
+                        if (solid.Area.Contains(leg.A) || solid.Area.Contains(leg.B))
+                        {
+                            // Sitting down in (or getting up out of) a chair is not walking through it.
+                            bool own = false;
+                            foreach (var s in seats) if (solid.Area.Contains(s) && (s == leg.A || s == leg.B)) own = true;
+                            if (own) continue;
+                        }
+                        if (!SegmentHits(leg.A, leg.B, Grow(solid.Area, 0.25f))) continue;
+                        Fault($"a customer walking {leg.Label} ({leg.A.x:0.0},{leg.A.y:0.0}) to ({leg.B.x:0.0},{leg.B.y:0.0}) " +
+                              $"goes through {solid.Name}.");
+                    }
+
+                foreach (var seat in seats)
+                    foreach (var e in entries)
+                        if (e.ActiveWhenBuilt && e.Card.Contains(seat))
+                            Fault($"a seat at ({seat.x:0.0},{seat.y:0.0}) is on {e.Name}.");
+            }
+
+            Debug.Log($"[Audit] {tag} chair paths: {faults} faults.");
+            return faults;
+        }
+
         // ---------------------------------------------------------------- the butcher's chain
 
         /// <summary>
@@ -1225,8 +1340,10 @@ namespace Tycoon.EditorTools
         private static int FloristChain(Transform root, List<Solid> solids, List<Entry> entries,
             Dictionary<StationBase, int> firstLive, string tag)
         {
+            // The florist's own building and meadow: the salon beside it has a repair, a paint and an open of its own.
+            Transform scope = root.Find("Florist") != null ? root.Find("Florist") : root;
             BouquetCounter counter = null;
-            foreach (var c in root.GetComponentsInChildren<BouquetCounter>(true)) counter = c;
+            foreach (var c in scope.GetComponentsInChildren<BouquetCounter>(true)) counter = c;
             if (counter == null) return 0;
 
             int faults = 0;
@@ -1236,18 +1353,18 @@ namespace Tycoon.EditorTools
                 Debug.LogWarning($"[Audit] FLORIST {tag} {what}");
             }
 
-            var beds = root.GetComponentsInChildren<FlowerBed>(true);
-            var offers = root.GetComponentsInChildren<ProductOffer>(true);
+            var beds = scope.GetComponentsInChildren<FlowerBed>(true);
+            var offers = scope.GetComponentsInChildren<ProductOffer>(true);
 
             int LiveAt(StationBase st) => st != null && firstLive.TryGetValue(st, out int r) ? r : -1;
 
             // ---- the renovation ----------------------------------------------------------------------
             var named = new Dictionary<string, StationBase>();
-            foreach (var station in root.GetComponentsInChildren<StationBase>(true))
+            foreach (var station in scope.GetComponentsInChildren<StationBase>(true))
                 if (!named.ContainsKey(station.name)) named[station.name] = station;
 
             var piles = new List<CollectStation>();
-            foreach (var take in root.GetComponentsInChildren<CollectStation>(true))
+            foreach (var take in scope.GetComponentsInChildren<CollectStation>(true))
                 if (IsRubbishSquare(take)) piles.Add(take);
             if (piles.Count == 0) Fault("there is no litter to clear: the shop does not start derelict.");
             foreach (var take in piles)
@@ -1257,7 +1374,7 @@ namespace Tycoon.EditorTools
                     Fault($"{take.name} does not hold worthless rubbish.");
             }
             bool hasBin = false;
-            foreach (var bin in root.GetComponentsInChildren<DiscardStation>(true)) hasBin |= LiveAt(bin) == 0;
+            foreach (var bin in scope.GetComponentsInChildren<DiscardStation>(true)) hasBin |= LiveAt(bin) == 0;
             if (!hasBin) Fault("there is no bin standing from the start for the litter.");
 
             UnlockStation repair = named.TryGetValue("UnlockRepair", out var rs) ? rs as UnlockStation : null;
@@ -1356,7 +1473,7 @@ namespace Tycoon.EditorTools
             }
 
             Tycoon.Upkeep.WorkerAgent gardener = null, florist = null;
-            foreach (var worker in root.GetComponentsInChildren<Tycoon.Upkeep.WorkerAgent>(true))
+            foreach (var worker in scope.GetComponentsInChildren<Tycoon.Upkeep.WorkerAgent>(true))
             {
                 if (worker.dropoff == counter) florist = worker;
                 else if (worker.routes != null && worker.routes.Length > 0 && worker.routes[0].dropoff is BedStation) gardener = worker;
@@ -1512,7 +1629,7 @@ namespace Tycoon.EditorTools
                 walks.Add(new Leg(new Vector2(-5.65f, meadow.y), new Vector2(-5.65f, seed.y), "up the meadow to the seed box"));
                 walks.Add(new Leg(new Vector2(-5.65f, seed.y), seed, "to the seed box"));
             }
-            foreach (var bin in root.GetComponentsInChildren<DiscardStation>(true))
+            foreach (var bin in scope.GetComponentsInChildren<DiscardStation>(true))
             {
                 if (LiveAt(bin) != 0) continue;
                 // Along the pavement outside the south wall and up to the square, which lies south of the can.
@@ -1543,6 +1660,145 @@ namespace Tycoon.EditorTools
                 }
 
             Debug.Log($"[Audit] {tag} florist chain: {faults} faults.");
+            return faults;
+        }
+
+        /// <summary>
+        /// The hairdresser as a whole (town only; it starts from the seated queue): that the customer system is wired the
+        /// way ChairServiceStation expects (every chair station names the queue, its chair and the one cash pile; the
+        /// queue's register is one of them; every haircut is on the menu and advertised), that hair and the broom close
+        /// the loop (each chair's hair heap is its dirtyWhen, its SWEEP square takes the heap's bags, the bin it ends in
+        /// may be used by the cleaner), that every hire can do its job (receptionist on NEXT, a hairdresser on his own
+        /// chair's STYLE square, the cleaner from every heap to the bin), that the renovation runs litter, repair and
+        /// paint, open, and that after OPEN the purchases are offered one at a time. The customers' walks are
+        /// ChairPaths' (every queue with chairs).
+        /// </summary>
+        private static int SalonChain(Transform root, List<Entry> entries, Dictionary<StationBase, int> firstLive, string tag)
+        {
+            var salon = root.Find("Salon");
+            if (salon == null) return 0;
+
+            int faults = 0;
+            void Fault(string what)
+            {
+                faults++;
+                Debug.LogWarning($"[Audit] SALON {tag} {what}");
+            }
+            int LiveAt(StationBase st) => st != null && firstLive.TryGetValue(st, out int r) ? r : -1;
+
+            var queue = salon.GetComponentInChildren<Tycoon.Customers.CustomerQueue>(true);
+            var stations = salon.GetComponentsInChildren<SalonChairStation>(true);
+            if (queue == null || stations.Length == 0) { Fault("there is no seated queue or no chair station."); return faults; }
+
+            if (!queue.seatedWaiting) Fault("the queue is not a seated waiting room.");
+            if (queue.chairs == null || queue.chairs.Length != stations.Length)
+                Fault($"the queue lists {(queue.chairs == null ? 0 : queue.chairs.Length)} chairs for {stations.Length} chair stations.");
+            if (queue.minOrder != 1 || queue.maxOrder != 1) Fault("a customer must want exactly one haircut (minOrder = maxOrder = 1).");
+            if (queue.register == null || System.Array.IndexOf(stations, queue.register as SalonChairStation) < 0)
+                Fault("the queue's register is not one of the chair stations (its menu would be empty).");
+
+            Tycoon.Stations.CashPile pile = null;
+            foreach (var st in stations)
+            {
+                if (st.queue != queue) Fault($"{st.name} (chair {st.chair?.name}) does not name the salon's queue: its haircuts would be free.");
+                if (st.chair == null || System.Array.IndexOf(queue.chairs, st.chair) < 0) Fault($"{st.name}'s chair is not one of the queue's chairs.");
+                if (st.pile == null) Fault($"{st.name} has no cash pile.");
+                else if (pile != null && st.pile != pile) Fault("the chairs do not all pay into the one reception cash pile.");
+                pile = st.pile;
+                if (st.sells == null || st.sells.Length != 4) Fault($"{st.name} does not sell the four haircuts.");
+                if (st.chair != null && (st.chair.seat == null || st.chair.dirtyWhen == null)) Fault($"{st.name}'s chair has no seat or no hair marker.");
+            }
+
+            // Every haircut is a service, on the menu, and advertised while the salon is open.
+            var offers = salon.GetComponentsInChildren<ProductOffer>(true);
+            var menu = stations[0].sells ?? new Tycoon.Config.ItemDefinition[0];
+            foreach (var item in menu)
+            {
+                if (item == null) { Fault("the menu has an empty entry."); continue; }
+                if (!item.service) Fault($"{item.displayName} is on the menu but is not a service (the order bubble would count it).");
+                bool advertised = false;
+                foreach (var o in offers) if (o.item == item && o.transform.IsChildOf(queue.transform)) advertised = true;
+                if (!advertised) Fault($"nothing advertises {item.displayName} with the open shop, so customers would never ask for it.");
+            }
+
+            // The hair and the broom.
+            foreach (var mess in salon.GetComponentsInChildren<HairMess>(true))
+            {
+                var buffer = mess.GetComponent<ItemBuffer>();
+                var take = mess.square != null ? mess.square.GetComponent<CollectStation>() : null;
+                if (mess.chair == null || mess.chair.dirtyWhen != mess.dirty) Fault($"{mess.name}: its marker is not its chair's dirtyWhen.");
+                if (take == null || take.source != buffer) Fault($"{mess.name}: its SWEEP square does not take the heap's bags.");
+                else if (!take.workerCompatible) Fault($"{mess.name}: the cleaner may not use the SWEEP square.");
+                if (buffer == null || buffer.item == null || buffer.item.basePrice > 0d || buffer.capacity < mess.bagsPerService)
+                    Fault($"{mess.name}: hair must be worthless bags and the heap must hold a haircut's worth.");
+                if (mess.heap == null || mess.heap.Length == 0) Fault($"{mess.name} has no heap pictures.");
+                if (mess.dirty != null && mess.dirty.activeSelf) Fault($"{mess.name}: the chair starts out dirty.");
+            }
+            var binSquare = salon.GetComponentInChildren<WorkerBinStation>(true);
+            if (binSquare == null) Fault("there is no bin the cleaner may use.");
+            else
+            {
+                // The whole salon appears at once (when the florist is complete): the bin must stand from then on.
+                int litterAt = int.MaxValue;
+                foreach (var take in salon.GetComponentsInChildren<CollectStation>(true))
+                    if (IsRubbishSquare(take) && LiveAt(take) >= 0) litterAt = Mathf.Min(litterAt, LiveAt(take));
+                if (LiveAt(binSquare) < 0 || LiveAt(binSquare) > litterAt) Fault("the hair bin is not there from the start (the litter goes into it).");
+            }
+
+            // The staff.
+            var next = salon.GetComponentInChildren<CallNextStation>(true);
+            if (next == null || next.queue != queue) Fault("the NEXT square does not call this queue.");
+            bool receptionist = false, cleaner = false;
+            int hairdressers = 0;
+            foreach (var worker in salon.GetComponentsInChildren<Tycoon.Upkeep.WorkerAgent>(true))
+            {
+                if (worker.name == "receptionist")
+                {
+                    receptionist = true;
+                    if (worker.pickup != next || worker.dropoff != next) Fault("the receptionist's route is not the NEXT square.");
+                }
+                else if (worker.name == "cleaner")
+                {
+                    cleaner = true;
+                    if (worker.routes == null || worker.routes.Length != stations.Length) Fault("the cleaner does not have a route from every heap.");
+                    else
+                        foreach (var r in worker.routes)
+                            if (r == null || !(r.pickup is CollectStation c) || !(c.source != null && c.source.GetComponent<HairMess>() != null) || r.dropoff != binSquare)
+                                Fault("a cleaner route is not (a hair heap's SWEEP square) to (the hair bin).");
+                    if (!worker.deliverPartialLoads) Fault("the cleaner would wait at an empty heap for a full load.");
+                }
+                else if (worker.name.StartsWith("hairdresser"))
+                {
+                    hairdressers++;
+                    if (!(worker.pickup is SalonChairStation chairStation) || worker.pickup != worker.dropoff)
+                        Fault($"{worker.name}'s route is not one chair's STYLE square.");
+                }
+            }
+            if (!receptionist) Fault("there is no receptionist.");
+            if (!cleaner) Fault("there is no cleaner.");
+            if (hairdressers != stations.Length) Fault($"{hairdressers} hairdressers for {stations.Length} chairs.");
+
+            // Renovation, then one purchase at a time: from OPEN on, never two of the salon's gates and hires on offer together
+            // (the four hairdresser hires share one square on purpose).
+            var open = salon.GetComponentInChildren<ChoreStation>(true);
+            int openRound = LiveAt(open);
+            if (open == null || openRound < 0) Fault("the OPEN step is never live.");
+            else
+            {
+                var perRound = new Dictionary<int, int>();
+                foreach (var u in salon.GetComponentsInChildren<UnlockStation>(true))
+                {
+                    int r = LiveAt(u);
+                    if (r < 0) { Fault($"{u.name} is never on offer."); continue; }
+                    if (u.name == "UnlockRepair") continue;
+                    if (r <= openRound) Fault($"{u.name} is on offer (stage {r}) before the shop is open (stage {openRound}).");
+                    perRound[r] = perRound.TryGetValue(r, out int n) ? n + 1 : 1;
+                }
+                foreach (var kv in perRound)
+                    if (kv.Value > 1) Fault($"{kv.Value} purchases are on offer together at stage {kv.Key}; the salon sells them one at a time.");
+            }
+
+            Debug.Log($"[Audit] {tag} salon chain: {faults} faults.");
             return faults;
         }
 

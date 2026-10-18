@@ -37,7 +37,7 @@ namespace Tycoon.EditorTools
                 case "grub_paper": return M("Fl_GrubPaper", C(0.74f, 0.69f, 0.56f), 0.10f);
                 case "weed": return M("Fl_Weed", C(0.44f, 0.52f, 0.24f), 0.15f);
             }
-            throw new ArgumentException(k);
+            return LibSalon(k);
         }
 
         private const string PreviewKeyFolder = "";

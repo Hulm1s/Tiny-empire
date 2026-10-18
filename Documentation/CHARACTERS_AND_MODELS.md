@@ -14,7 +14,7 @@ to change a character, and what breaks one.
    script in the whole project is `CharacterVisual.cs` (85 lines).** Nothing can spawn a villager
    at runtime — customers are clones of an inactive template the scene build already placed.
 3. **The rig is Generic, not Humanoid.** One skeleton, 20 bones, shared by every role.
-4. **One animator controller, four clips**, shared by everyone, and it is **deleted and rebuilt
+4. **One animator controller, five clips** (Idle, Walk, CarryIdle, CarryWalk, Sit), shared by everyone, and it is **deleted and rebuilt
    from scratch on every `Spawn` call**.
 5. **Hats are part of the skinned mesh**, joined in Blender and weighted 100% to the `Head` bone.
    There is no accessory-attachment system in Unity.
@@ -28,7 +28,7 @@ to change a character, and what breaks one.
 |---|---|
 | `models/low+poly+humanoid+3d+model.glb` | the original purchased asset (~991k tris, 33.7 MB, **git-tracked**) |
 | `models/pipeline/rig.py` | remesh → retopo → measure → build armature → auto-weight |
-| `models/pipeline/animate.py` | keyframe the four clips, assign material regions |
+| `models/pipeline/animate.py` | keyframe the five clips, assign material regions |
 | `models/pipeline/export_unity.py` | **the live exporter** — build four roles + hats, export 5 FBXs |
 | `models/pipeline/roles.py` | **SUPERSEDED. Do not use.** |
 | `models/pipeline/preview_roles.py` | approval renders only; works against `roles.py` output |
@@ -55,10 +55,10 @@ Blender 4.x — see §10.
 |---|---|---|---|
 | 1 | purchased GLB | `models/low+poly+humanoid+3d+model.glb` | — |
 | 2 | voxel remesh → QuadriFlow retopo → triangulate → flat shade → scale to 1.5 m → **measure joints off the mesh** → 20-bone armature → auto weights | `rig.py` | `humanoid_rigged.blend` + `rig_testpose.png` |
-| 3 | keyframe 4 actions, add cyclic modifiers, assign 4 material slots per-face by body region | `animate.py` | `humanoid_animated.blend` |
+| 3 | keyframe 5 actions, add cyclic modifiers, assign 4 material slots per-face by body region | `animate.py` | `humanoid_animated.blend` |
 | 4 | copy the body ×4, recolour, build + join + head-weight a hat, clear the pose, export 5 FBXs | `export_unity.py` | the 5 FBXs in `Art/Characters/` |
-| 5 | Unity import forced by an `AssetPostprocessor`: flat normals, Generic rig, avatar copy, clip rename + loop, URP material creation | `CharacterImportSettings.cs` | model prefabs, `Villager_RigAvatar`, 4 clips, 22 `.mat` |
-| 6 | animator controller built from code: 4 states, 4 Any-State transitions on one int | `CharacterLibrary.EnsureController()` | `Villager.controller` |
+| 5 | Unity import forced by an `AssetPostprocessor`: flat normals, Generic rig, avatar copy, clip rename + loop, URP material creation | `CharacterImportSettings.cs` | model prefabs, `Villager_RigAvatar`, 5 clips, 22 `.mat` |
+| 6 | animator controller built from code: 5 states, 5 Any-State transitions on one int | `CharacterLibrary.EnsureController()` | `Villager.controller` |
 | 7 | scene build instantiates each FBX as a prefab instance, adds `Animator` + `CharacterVisual`, tints a slot | `CharacterLibrary.Spawn()` | `Farm.unity` |
 | 8 | at runtime, `CharacterVisual` measures its own speed and reads `CarryStack.Count`, sets `State` | `CharacterVisual.cs` | the animator picks a clip |
 
@@ -182,13 +182,13 @@ Tycoon → Verify Character Models          (CharacterLibrary.Verify)
 ```
 
 Every role must report `avatarSetup=CopyFromOther source=set`, `bones=20`, and the controller
-must report `states=4`. Then rebuild the scene.
+must report `states=5`. Then rebuild the scene.
 
 ---
 
 ## 7. Animation
 
-**Four clips, all embedded in `Villager_Rig.fbx` only.** Nothing else in the project contains an
+**Five clips, all embedded in `Villager_Rig.fbx` only.** Nothing else in the project contains an
 `AnimationClip`.
 
 | Clip | Frames | Length | Loops |
@@ -197,6 +197,30 @@ must report `states=4`. Then rebuild the scene.
 | `Walk` | 0 → 24 | 1.00 s | yes |
 | `CarryIdle` | 0 → 89 | 3.71 s | yes |
 | `CarryWalk` | 0 → 24 | 1.00 s | yes |
+| `Sit` | 0 → 89 | 3.71 s | yes (a gentle breath, like `Idle`) |
+
+### The Sit clip (added for the salon, 2026-10)
+
+Authored like the others, in `animate.py` (the `Sit` block), from the measured rig rather than by
+eye: hip joint 0.569 m, knee 0.26, ankle 0.07, so the thigh is 0.309 long. Thighs level and forward
+(X −90), shins straight down (X +90), and `Root` dropped by exactly one thigh length (`SIT_DROP =
+0.309`) so the feet land back on the floor; the body is also slid back `SIT_BACK = 0.12` so the
+character's origin is the middle of the seat. Hands rest on the thighs, a slight lean back, the same
+breathing as `Idle`. `Root`'s location is keyed in its own bone space: Y is world up, Z is the
+villager's front.
+
+Measured on the skinned mesh in Unity (identical to Blender): the underside of the seated body is
+**0.159 m** above the origin, knees reach 0.235 m and toes 0.313 m in front of it, the head top is
+1.19 m. So a seat transform goes at *(seat top − 0.16 m)* — see `ServiceChair.seat`.
+
+To make it: `animate.py` (on `humanoid_rigged.blend`) → `export_unity.py`. **Only
+`Villager_Rig.fbx` was replaced** — the role FBXs carry no animation, and re-exporting them gives
+the same triangles but different bytes, so they were left as shipped. `humanoid_animated.blend`
+was regenerated and checked identical to the previous one apart from the new action (same action
+curves, mesh, weights, regions and bones, by hash).
+
+`CharacterVisual` plays it while the character's `ISeatedPose.IsSeated` is true (only
+`CustomerAgent` implements it). The transition into Sit is 0.25 s; out of it the usual 0.12 s.
 
 Blender writes the takes as `Rig|Idle` etc. `CharacterImportSettings.OnPreprocessAnimation()`
 strips everything up to the last `|` and sets `loopTime = true`.
@@ -204,29 +228,30 @@ strips everything up to the last `|` and sets `loopTime = true`.
 **⚠ That hook is gated on the literal filename `"Villager_Rig.fbx"`.** A rig exported under any
 other name gets neither renamed clips nor looping — which looks exactly like a broken rig.
 
-Each clip has 210 curve bindings over 21 transform paths. The FBX also carries four
-`__preview__Rig|*` artefacts, which the diagnostics skip by prefix.
+Each clip has 210 curve bindings over 21 transform paths. The FBX also carries
+`__preview__Rig|*` artefacts (five now), which the diagnostics skip by prefix.
 
 ### The controller
 
 `Villager.controller` is **deleted and rebuilt from scratch on every single `Spawn` call** — 11
-times per scene build, each logging `[CharacterLibrary] Animator rebuilt: 4 states wired.`
+times per scene build, each logging `[CharacterLibrary] Animator rebuilt: 5 states wired.`
 
 This is deliberate. An earlier version cached it, and a controller once stayed wired to clip names
 that no longer existed — nothing looked wrong until you were in game watching nobody move.
 
-Structure: one int parameter `State`, four states, four Any-State transitions with
+Structure: one int parameter `State`, five states (the clip order is the `State` value, so clips are only
+ever appended), five Any-State transitions with
 `State Equals i`, `hasExitTime = false`, `duration = 0.12`, default state `Idle`.
 
-If fewer than four clips are found it logs:
-`Only {n}/4 states got a clip. Characters will stand still. Re-export the rig from Blender.`
+If fewer than five clips are found it logs:
+`Only {n}/5 states got a clip. Characters will stand still. Re-export the rig from Blender.`
 
 ### What drives it at runtime
 
 `CharacterVisual.cs` — a **watcher, not a controller**:
 
 ```csharp
-enum Motion { Idle = 0, Walk = 1, CarryIdle = 2, CarryWalk = 3 }
+enum Motion { Idle = 0, Walk = 1, CarryIdle = 2, CarryWalk = 3, Sit = 4 }   // Sit: ISeatedPose.IsSeated
 ```
 
 - Re-evaluates every `0.1 s`, with the first evaluation randomly staggered so a crowd does not
@@ -326,8 +351,8 @@ to re-derive a rig rather than import a foreign one.
    "D:\Blender\blender.exe" --background --python "D:\iosGame\models\pipeline\export_unity.py" -- "D:\iosGame\models\pipeline\humanoid_animated.blend" "D:\iosGame\game\Assets\_Project\Art\Characters"
    ```
 7. In Unity: `Tycoon → Reimport Character Models`, then `Tycoon → Verify Character Models`.
-   Every role must read `avatarSetup=CopyFromOther source=set`, `bones=20`, controller `states=4`.
-8. `Tycoon → Diagnose Character Animation` — confirm `drivesLegs=True` on all four clips.
+   Every role must read `avatarSetup=CopyFromOther source=set`, `bones=20`, controller `states=5`.
+8. `Tycoon → Diagnose Character Animation` — confirm `drivesLegs=True` on all five clips.
 9. Rebuild the scene, then run the layout audit.
 
 ### Route B — drop a foreign rigged FBX in directly
@@ -341,8 +366,8 @@ Only viable if its skeleton is **bone-for-bone identical**. Hard requirements:
 - Material slots in exactly the order Shoe, Trouser, Shirt, Skin (+ Hat, HatTrim).
 - Headwear **joined into the skinned mesh and weighted 100% to `Head`**, not a child object.
 - ~1.5 m tall at `globalScale 1`, standing on y=0, facing Unity +Z.
-- A `Villager_Rig.fbx` in the same folder with the four takes named `*|Idle`, `*|Walk`,
-  `*|CarryIdle`, `*|CarryWalk`.
+- A `Villager_Rig.fbx` in the same folder with the five takes named `*|Idle`, `*|Walk`,
+  `*|CarryIdle`, `*|CarryWalk`, `*|Sit`.
 
 Then: add `public const string <Role> = "<Role>";` to `CharacterLibrary.cs`; add it to the
 `new[] { Owner, Farmer, Cashier, Customer }` arrays in **both** `ReimportRoles()` **and**
@@ -467,3 +492,9 @@ Both are batch-runnable:
 ```bash
 "D:/unity/unity engine/6000.1.6f1/Editor/Unity.exe" -quit -batchmode -nographics -projectPath D:/iosGame/game -executeMethod Tycoon.EditorTools.CharacterDiagnostics.Run -logFile D:/iosGame/build-diag.log
 ```
+
+### Salon staff models
+
+Hairdressers use the Customer model recoloured (smock and hat tint), the receptionist the Cashier model, the cleaner the
+Farmer model (`FarmSceneBuilder.BuildHire` model mapping). Salon customers sit with the Sit clip. A different hairdresser
+head colour would be a Blender change.

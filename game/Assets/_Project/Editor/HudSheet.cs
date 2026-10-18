@@ -219,8 +219,12 @@ namespace Tycoon.EditorTools
             }
         }
 
+        /// <summary>Shift applied to every plotted pixel: the landscape haircut mock draws the portrait layout's header and body side by side.</summary>
+        internal static int _sx, _sy;
+
         internal static void Plot(int x, int y, Color src, float cover)
         {
+            x += _sx; y += _sy;
             if (x < 0 || y < 0 || x >= _w || y >= _h) return;
             int i = (_h - 1 - y) * _w + x;
             float sa = src.a * cover;

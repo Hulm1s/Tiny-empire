@@ -110,14 +110,23 @@ namespace Tycoon.Stations
             else pile.Deposit(price);
         }
 
-        public override bool IsOperational => queue != null && queue.Front != null;
+        /// <summary>
+        /// The one customer this square serves right now. For a till that is the head of its queue
+        /// (<see cref="CustomerQueue.Front"/>), and every till so far leaves it at that. A square that
+        /// serves someone else - the salon's chair (<see cref="ChairServiceStation"/>), whose customer has
+        /// left the queue and is sitting in its chair - overrides only this, and the ring, the icon, the
+        /// count and the display-counter serve all follow it.
+        /// </summary>
+        protected virtual CustomerAgent Serving => queue != null ? queue.Front : null;
+
+        public override bool IsOperational => Serving != null;
 
         /// <summary>The ring fills as the front customer's order is completed.</summary>
         protected override float TransferProgress
         {
             get
             {
-                var customer = queue != null ? queue.Front : null;
+                var customer = Serving;
                 if (customer == null || customer.Requested <= 0) return 0f;
                 return 1f - (float)customer.Remaining / customer.Requested;
             }
@@ -127,7 +136,7 @@ namespace Tycoon.Stations
         {
             get
             {
-                var customer = queue != null ? queue.Front : null;
+                var customer = Serving;
                 if (customer == null) return "-";
                 return customer.Wanted == null ? string.Empty : "x" + customer.Remaining;
             }
@@ -141,7 +150,7 @@ namespace Tycoon.Stations
         {
             get
             {
-                var customer = queue != null ? queue.Front : null;
+                var customer = Serving;
                 if (customer != null && customer.Wanted != null) return customer.Wanted;
 
                 // Nobody waiting: show what this till deals in, so an idle counter still says
@@ -157,7 +166,7 @@ namespace Tycoon.Stations
             if (queue == null) return false;
             if (HasDisplay) return TickCounter();
 
-            var customer = queue.Front;
+            var customer = Serving;
             if (customer == null) return false;
 
             var wanted = customer.Wanted;
@@ -188,7 +197,7 @@ namespace Tycoon.Stations
             // Any case holding something the front customer still wants: for a one-product shopper
             // that is exactly their product; for a bouquet (several products) whichever of its
             // flowers is in stock, so one sold-out flower does not hold up the rest of the order.
-            var customer = queue.Front;
+            var customer = Serving;
             if (customer != null)
             {
                 for (int i = 0; i < stock.Length; i++)

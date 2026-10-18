@@ -58,6 +58,9 @@ namespace Tycoon.EditorTools
             // The bouquet minigame's pictures, painted once here rather than on the phone (re-baked only
             // when BouquetMinigame.ArtVersion changes).
             BouquetBake.EnsureBaked();
+            // The haircut minigame's, the same way; and the hair bag's model (a good, like the flowers).
+            HaircutBake.EnsureBaked();
+            SalonBuilder.EnsureGoods();
 
             var items = CreateItems();
             BuildEnvironment();
@@ -158,6 +161,13 @@ namespace Tycoon.EditorTools
             public ItemDefinition Water;
             public ItemDefinition Seed;
             public ItemDefinition Bouquet;
+
+            // The salon's (town): four haircuts (services, nothing is carried) and the hair bag that is swept up and binned.
+            public ItemDefinition HairShort;
+            public ItemDefinition HairBob;
+            public ItemDefinition HairLong;
+            public ItemDefinition HairQuiff;
+            public ItemDefinition HairBag;
         }
 
         /// <summary>A modelled good's height, so carried stacks close up exactly (FloristModels' goods).</summary>
@@ -253,6 +263,24 @@ namespace Tycoon.EditorTools
                 Bouquet = LevelBuildKit.Item(
                     "bouquet", "Bouquet", new Color(1.00f, 0.72f, 0.80f),
                     price: 0d, perishable: false, stackHeight: GoodHeight("bouquet", 0.5f)),
+
+                // The salon: a haircut is a service (the price is what the chair charges; a bubble shows the picture alone).
+                HairShort = LevelBuildKit.Item(
+                    "hair_short", "Short", new Color(0.62f, 0.40f, 0.24f),
+                    price: SalonBuilder.ShortPrice, perishable: false, stackHeight: 0.3f, service: true),
+                HairBob = LevelBuildKit.Item(
+                    "hair_bob", "Bob", new Color(0.98f, 0.58f, 0.30f),
+                    price: SalonBuilder.BobPrice, perishable: false, stackHeight: 0.3f, service: true),
+                HairLong = LevelBuildKit.Item(
+                    "hair_long", "Layers", new Color(1.00f, 0.88f, 0.46f),
+                    price: SalonBuilder.LongPrice, perishable: false, stackHeight: 0.3f, service: true),
+                HairQuiff = LevelBuildKit.Item(
+                    "hair_quiff", "Quiff", new Color(0.40f, 0.42f, 0.56f),
+                    price: SalonBuilder.QuiffPrice, perishable: false, stackHeight: 0.3f, service: true),
+                // Worth nothing and sold nowhere: it only ever goes from a heap of hair to the bin.
+                HairBag = LevelBuildKit.Item(
+                    "hair_bag", "Hair", new Color(0.62f, 0.40f, 0.24f),
+                    price: 0d, perishable: false, stackHeight: GoodHeight("hair_bag", 0.5f)),
             };
         }
 
@@ -964,9 +992,11 @@ namespace Tycoon.EditorTools
         {
             // Field hands wear the straw hat, till staff the cap. Derived from the role
             // name so adding a hire does not mean remembering to pass a model as well.
+            // The hairdresser is a bare head (the customer's model, in a salon smock): no cap to cover the cut.
             string model = role.StartsWith("Cashier") || role.StartsWith("Milk") || role.StartsWith("Butcher")
-                           || role.StartsWith("Florist")
+                           || role.StartsWith("Florist") || role.StartsWith("Receptionist")
                 ? CharacterLibrary.Cashier
+                : role.StartsWith("Hairdresser") ? CharacterLibrary.Customer
                 : CharacterLibrary.Farmer;
 
             var worker = LevelBuildKit.BuildWorker(id, root, position, pickup, dropoff,

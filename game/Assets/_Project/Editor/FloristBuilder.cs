@@ -147,7 +147,8 @@ namespace Tycoon.EditorTools
             new Vector3(-4.6f, 0f, 3.1f), new Vector3(-4.0f, 0f, 0.6f), new Vector3(-4.0f, 0f, TownBuilder.RoadZ),
         };
         private static readonly Vector3 SpawnPoint = new Vector3(-17.5f, 0f, TownBuilder.RoadZ);
-        private static readonly Vector3 ExitPoint = new Vector3(18f, 0f, TownBuilder.RoadZ);
+        // Beyond the town's east fence (x 22), where the salon's ground ends: nobody vanishes in plain sight on the road.
+        private static readonly Vector3 ExitPoint = new Vector3(24f, 0f, TownBuilder.RoadZ);
 
         // ---- the meadow ------------------------------------------------------------------------
         internal const float MeadowNorth = 17.2f;
@@ -194,7 +195,8 @@ namespace Tycoon.EditorTools
             public readonly List<DecorSurface> Surfaces = new List<DecorSurface>();
         }
 
-        internal static void Build(Transform town, FarmSceneBuilder.Items items)
+        /// <summary>Builds the florist. Returns the gardener's hire square: the last purchase of the chain, which the salon waits on.</summary>
+        internal static UnlockStation Build(Transform town, FarmSceneBuilder.Items items)
         {
             var florist = new GameObject("Florist").transform;
             florist.SetParent(town, false);
@@ -302,6 +304,7 @@ namespace Tycoon.EditorTools
 
             // ---- the renovation: litter, repair + paint, open ------------------------------------
             BuildRenovation(florist, shell, items, shop, lines[0].Group, wellGroup, seedGroup, gateTulip);
+            return gardHire;
         }
 
         /// <summary>Where a flower's purchase square goes: between its two beds.</summary>
@@ -763,7 +766,7 @@ namespace Tycoon.EditorTools
         // ---- helpers -------------------------------------------------------------------------------
 
         /// <summary>Puts the approved florist/gardener colours (material ASSETS from the art pass) on a worker.</summary>
-        private static void Dress(Transform worker, string prefix, int[] slots)
+        internal static void Dress(Transform worker, string prefix, int[] slots)
         {
             var renderer = worker.GetComponentInChildren<SkinnedMeshRenderer>(true);
             if (renderer == null) return;
@@ -778,7 +781,7 @@ namespace Tycoon.EditorTools
         }
 
         /// <summary>An invisible solid: a collider the player is stopped by and a navmesh obstacle that carves it.</summary>
-        private static GameObject Solid(Transform parent, string name, Vector3 centre, Vector3 size)
+        internal static GameObject Solid(Transform parent, string name, Vector3 centre, Vector3 size)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
@@ -791,7 +794,7 @@ namespace Tycoon.EditorTools
             return go;
         }
 
-        private static Transform Marker(Transform parent, string name, Vector3 position)
+        internal static Transform Marker(Transform parent, string name, Vector3 position)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
@@ -799,7 +802,7 @@ namespace Tycoon.EditorTools
             return go.transform;
         }
 
-        private static Transform[] Markers(Transform parent, string prefix, Vector3[] points)
+        internal static Transform[] Markers(Transform parent, string prefix, Vector3[] points)
         {
             var result = new Transform[points.Length];
             for (int i = 0; i < points.Length; i++) result[i] = Marker(parent, $"{prefix}_{i}", points[i]);

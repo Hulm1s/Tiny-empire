@@ -81,6 +81,12 @@ namespace Tycoon.Customers
     /// down, which both thins the queue and cuts the price everything sells for. A shop left
     /// unattended does not simply stop earning, it gets worse - and it recovers only by being
     /// served properly again.
+    ///
+    /// Two ways to be served. A till serves the head of the queue where it stands (<see cref="Front"/>,
+    /// read by RegisterStation). A salon instead calls the head out to a free <see cref="ServiceChair"/>
+    /// (<see cref="DispatchFront(ServiceChair)"/>) and serves them there, several chairs at once, while the
+    /// queue - a seated waiting room (<see cref="seatedWaiting"/>) - moves up and refills behind them.
+    /// A queue with no <see cref="chairs"/> and seatedWaiting off is exactly the till queue it always was.
     /// </summary>
     public class CustomerQueue : MonoBehaviour, ISaveable
     {
@@ -186,6 +192,19 @@ namespace Tycoon.Customers
         [Min(1)] public int maxPerFlower = 3;
         [Min(1)] public int maxBouquetFlowers = 6;
 
+        [Header("Waiting room and chairs (salon only)")]
+        [Tooltip("Off for every till that is queued at standing up. On for a waiting room: each of `slots` is a " +
+                 "chair, and a customer waiting at one sits on it facing the slot's forward (the Sit clip); the " +
+                 "slot's height is placed like ServiceChair.seat (seat top - 0.16 m). " +
+                 "They still shuffle up a place when the head leaves - standing, walking, sitting again - so " +
+                 "slot 0 is always the next one to be called.")]
+        public bool seatedWaiting;
+
+        [Tooltip("Chairs the head of the queue can be sent to (DispatchFront). Leave empty for a till: with no " +
+                 "chairs nothing about the queue changes. A chair that is not bought yet (inactive), not " +
+                 "clean (ServiceChair.dirtyWhen) or taken is skipped. FreeChair offers them in this order.")]
+        public ServiceChair[] chairs;
+
         [Header("Reputation")]
         [Range(0f, 1f)] public float startingReputation = 1f;
         public float reputationPerHappy = 0.05f;
@@ -194,6 +213,8 @@ namespace Tycoon.Customers
 
         private readonly List<CustomerAgent> _waiting = new List<CustomerAgent>();
         private readonly List<CustomerAgent> _browsing = new List<CustomerAgent>();
+        // Sent to a chair: out of the queue (their place went to the next one), still this shop's.
+        private readonly List<CustomerAgent> _atChairs = new List<CustomerAgent>();
         private float _spawnTimer;
         private float _reputation = -1f;
 
@@ -284,6 +305,65 @@ namespace Tycoon.Customers
             }
         }
 
+        /// <summary>People in the queue (walking to it or waiting in it), not counting anyone in a chair.</summary>
+        public int WaitingCount => _waiting.Count;
+
+        /// <summary>People this queue has sent to a chair who have not left yet.</summary>
+        public int AtChairCount => _atChairs.Count;
+
+        /// <summary>The first of <see cref="chairs"/> that a customer can be sent to now, or null.</summary>
+        public ServiceChair FreeChair
+        {
+            get
+            {
+                if (chairs == null) return null;
+                for (int i = 0; i < chairs.Length; i++)
+                    if (chairs[i] != null && chairs[i].IsFree) return chairs[i];
+                return null;
+            }
+        }
+
+        /// <summary>Somebody is ready at the head of the queue AND a chair is free: a call would succeed.</summary>
+        public bool CanDispatch => Front != null && FreeChair != null;
+
+        /// <summary>Sends the head of the queue to the first free chair. See <see cref="DispatchFront(ServiceChair)"/>.</summary>
+        public bool DispatchFront() => DispatchFront(FreeChair);
+
+        /// <summary>
+        /// The salon's "next, please": the customer at the head of the queue (<see cref="Front"/> - arrived,
+        /// waiting, order not filled) gets up and goes to <paramref name="chair"/>, and everybody behind them
+        /// moves up a place. Returns false and changes nothing if there is nobody ready or the chair is not
+        /// <see cref="ServiceChair.IsFree"/>.
+        ///
+        /// The chair is claimed here, synchronously, so two callers in one frame (the player and the
+        /// receptionist) can never send two customers to one chair. The customer stays this queue's: its
+        /// reputation and its exit route still apply when they leave.
+        /// </summary>
+        public bool DispatchFront(ServiceChair chair)
+        {
+            var customer = Front;
+            if (customer == null || chair == null || !chair.Claim(customer)) return false;
+
+            _waiting.Remove(customer);
+            _atChairs.Add(customer);
+
+            var route = new List<Vector3>();
+            chair.AppendApproach(route);
+            customer.GoToChair(chair, route);
+
+            // Everybody behind shuffles up one place, exactly as when somebody leaves.
+            for (int i = 0; i < _waiting.Count; i++)
+                if (_waiting[i] != null) _waiting[i].MoveToSlot(SlotPosition(i), SeatAt(i));
+            return true;
+        }
+
+        /// <summary>The seat at place <paramref name="index"/> when the waiting room is seated, else null.</summary>
+        private Transform SeatAt(int index)
+        {
+            if (!seatedWaiting || slots == null || slots.Length == 0) return null;
+            return slots[Mathf.Clamp(index, 0, slots.Length - 1)];
+        }
+
         private void Awake()
         {
             if (_reputation < 0f) _reputation = startingReputation;
@@ -296,6 +376,7 @@ namespace Tycoon.Customers
         {
             _waiting.RemoveAll(c => c == null);
             _browsing.RemoveAll(c => c == null);
+            _atChairs.RemoveAll(c => c == null);
 
             if (customerTemplate == null || slots == null || slots.Length == 0) return;
 
@@ -519,7 +600,8 @@ namespace Tycoon.Customers
             }
 
             _waiting.Add(agent);
-            agent.Begin(this, item, count, SlotPosition(_waiting.Count - 1), RandomTint(), way);
+            agent.Begin(this, item, count, SlotPosition(_waiting.Count - 1), RandomTint(), way,
+                SeatAt(_waiting.Count - 1));
         }
 
         /// <summary>
@@ -574,7 +656,8 @@ namespace Tycoon.Customers
             }
 
             _waiting.Add(agent);
-            agent.BeginOrder(this, sortedItems, sortedCounts, SlotPosition(_waiting.Count - 1), RandomTint(), way);
+            agent.BeginOrder(this, sortedItems, sortedCounts, SlotPosition(_waiting.Count - 1), RandomTint(), way,
+                SeatAt(_waiting.Count - 1));
         }
 
         /// <summary>
@@ -623,15 +706,16 @@ namespace Tycoon.Customers
         public void OnCustomerLeft(CustomerAgent customer, bool happy)
         {
             _browsing.Remove(customer);
+            _atChairs.Remove(customer);
             int index = _waiting.IndexOf(customer);
             if (index >= 0) _waiting.RemoveAt(index);
 
             AdjustReputation(happy ? reputationPerHappy : -reputationPerAngry);
 
-            // Everybody behind shuffles up one place.
+            // Everybody behind shuffles up one place. (Seated customers already in the right seat stay put.)
             for (int i = 0; i < _waiting.Count; i++)
             {
-                if (_waiting[i] != null) _waiting[i].MoveToSlot(SlotPosition(i));
+                if (_waiting[i] != null) _waiting[i].MoveToSlot(SlotPosition(i), SeatAt(i));
             }
         }
 

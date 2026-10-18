@@ -31,10 +31,10 @@ namespace Tycoon.EditorTools
     {
         private const int Cw = 1080, Ch = 1920;
 
-        private static readonly Color Ink = new Color(0.15f, 0.08f, 0.04f);
-        private static readonly Color White = Color.white;
-        private static readonly Color Cream = new Color(1f, 0.93f, 0.70f);
-        private static readonly Color GoldText = new Color(1f, 0.86f, 0.36f);
+        internal static readonly Color Ink = new Color(0.15f, 0.08f, 0.04f);
+        internal static readonly Color White = Color.white;
+        internal static readonly Color Cream = new Color(1f, 0.93f, 0.70f);
+        internal static readonly Color GoldText = new Color(1f, 0.86f, 0.36f);
 
         // The body: everything under the header belongs to the current step.
         private const float BodyX = 100f, BodyY = 660f, BodyW = 880f, BodyH = 1125f;
@@ -67,7 +67,7 @@ namespace Tycoon.EditorTools
 
         // ------------------------------------------------------------------ the screen
 
-        private static void Begin(int w, int h)
+        internal static void Begin(int w, int h)
         {
             HudSheet._w = w; HudSheet._h = h;
             HudSheet._ox = 0f; HudSheet._oy = 0f;
@@ -109,7 +109,7 @@ namespace Tycoon.EditorTools
             Save(file);
         }
 
-        private static HudArt.Look Mat()
+        internal static HudArt.Look Mat()
         {
             var l = HudArt.Looks.Green;
             l.bodyTop = new Color(0.50f, 0.72f, 0.48f);
@@ -119,7 +119,7 @@ namespace Tycoon.EditorTools
         }
 
         /// <summary>A florist's cutting mat: a faint grid, a stronger line every fourth.</summary>
-        private static void CuttingMat()
+        internal static void CuttingMat()
         {
             for (int y = (int)InY0; y < (int)InY1; y++)
                 for (int x = (int)InX0; x < (int)InX1; x++)
@@ -436,7 +436,7 @@ namespace Tycoon.EditorTools
         }
 
         /// <summary>Draws a y-up texture with its top-left at (left, top), 1:1.</summary>
-        private static void Put(Texture2D tex, float left, float top, float alpha = 1f)
+        internal static void Put(Texture2D tex, float left, float top, float alpha = 1f)
         {
             var src = tex.GetPixels();
             int tw = tex.width, th = tex.height;
@@ -451,7 +451,7 @@ namespace Tycoon.EditorTools
         }
 
         /// <summary>Draws a texture centred at (cx, cy), <paramref name="size"/> px across (its own size if 0).</summary>
-        private static void PutCentred(Texture2D tex, float cx, float cy, float size = 0f, float alpha = 1f, float dark = 0f)
+        internal static void PutCentred(Texture2D tex, float cx, float cy, float size = 0f, float alpha = 1f, float dark = 0f)
         {
             if (size <= 0f || Mathf.Abs(size - tex.width) < 0.5f)
             {
@@ -481,7 +481,7 @@ namespace Tycoon.EditorTools
                 }
         }
 
-        private static void Pill(string s, float cx, float cy, float w)
+        internal static void Pill(string s, float cx, float cy, float w)
         {
             HudSheet.Plate(cx - w * 0.5f, cy - 26f, w, 52f, 26f, HudArt.Looks.Tab, false);
             Text(s, cx, cy, 24, Cream, 0, 0.08f);
@@ -489,9 +489,9 @@ namespace Tycoon.EditorTools
 
         // ------------------------------------------------------------------ shapes (px, y down)
 
-        private delegate float Sdf(float x, float y);
+        internal delegate float Sdf(float x, float y);
 
-        private static float Capsule(float x, float y, float ax, float ay, float bx, float by, float r)
+        internal static float Capsule(float x, float y, float ax, float ay, float bx, float by, float r)
         {
             float px = x - ax, py = y - ay, ex = bx - ax, ey = by - ay;
             float h = Mathf.Clamp01((px * ex + py * ey) / Mathf.Max(1e-5f, ex * ex + ey * ey));
@@ -499,14 +499,14 @@ namespace Tycoon.EditorTools
             return r - Mathf.Sqrt(dx * dx + dy * dy);
         }
 
-        private static float RBox(float x, float y, float cx, float cy, float hw, float hh, float r)
+        internal static float RBox(float x, float y, float cx, float cy, float hw, float hh, float r)
         {
             float qx = Mathf.Abs(x - cx) - (hw - r), qy = Mathf.Abs(y - cy) - (hh - r);
             float outside = Mathf.Sqrt(Mathf.Max(qx, 0f) * Mathf.Max(qx, 0f) + Mathf.Max(qy, 0f) * Mathf.Max(qy, 0f));
             return r - (outside + Mathf.Min(Mathf.Max(qx, qy), 0f));
         }
 
-        private static void Shape(Sdf d, float x0, float y0, float x1, float y1, Color top, Color bottom, float outline, float alpha)
+        internal static void Shape(Sdf d, float x0, float y0, float x1, float y1, Color top, Color bottom, float outline, float alpha)
         {
             for (int py = Mathf.FloorToInt(y0 - outline - 2); py <= Mathf.CeilToInt(y1 + outline + 2); py++)
                 for (int px = Mathf.FloorToInt(x0 - outline - 2); px <= Mathf.CeilToInt(x1 + outline + 2); px++)
@@ -525,14 +525,14 @@ namespace Tycoon.EditorTools
                 }
         }
 
-        private static void Disc(float cx, float cy, float r, Color top, Color bottom, float outline, float alpha = 1f) =>
+        internal static void Disc(float cx, float cy, float r, Color top, Color bottom, float outline, float alpha = 1f) =>
             Shape((x, y) => r - Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)), cx - r, cy - r, cx + r, cy + r, top, bottom, outline, alpha);
 
-        private static void Line(float ax, float ay, float bx, float by, float r, Color c) =>
+        internal static void Line(float ax, float ay, float bx, float by, float r, Color c) =>
             Shape((x, y) => Capsule(x, y, ax, ay, bx, by, r), Mathf.Min(ax, bx) - r, Mathf.Min(ay, by) - r,
                 Mathf.Max(ax, bx) + r, Mathf.Max(ay, by) + r, c, c, 0f, 1f);
 
-        private static void Ellipse(float cx, float cy, float rx, float ry, Color c)
+        internal static void Ellipse(float cx, float cy, float rx, float ry, Color c)
         {
             for (int y = Mathf.FloorToInt(cy - ry - 2); y <= Mathf.CeilToInt(cy + ry + 2); y++)
                 for (int x = Mathf.FloorToInt(cx - rx - 2); x <= Mathf.CeilToInt(cx + rx + 2); x++)
@@ -545,7 +545,7 @@ namespace Tycoon.EditorTools
                 }
         }
 
-        private static void Chevron(float cx, float cy, float s, Color c)
+        internal static void Chevron(float cx, float cy, float s, Color c)
         {
             Line(cx - s * 0.3f, cy - s * 0.6f, cx + s * 0.3f, cy, s * 0.2f, c);
             Line(cx + s * 0.3f, cy, cx - s * 0.3f, cy + s * 0.6f, s * 0.2f, c);
@@ -594,7 +594,7 @@ namespace Tycoon.EditorTools
         /// Lettering with its capitals centred on y. align 0 centred, -1 starts at x, 1 ends at x.
         /// <paramref name="bottom"/> gives a vertical gradient; <paramref name="edgeScale"/> 0 drops the edge.
         /// </summary>
-        private static void Text(string s, float x, float y, float cap, Color fill, int align, float track,
+        internal static void Text(string s, float x, float y, float cap, Color fill, int align, float track,
             Color? bottom = null, float edgeScale = 1f)
         {
             var font = GameFont();

@@ -1,5 +1,6 @@
 using Tycoon.Audio;
 using System.Collections.Generic;
+using Tycoon.Characters;
 using Tycoon.Config;
 using Tycoon.UI;
 using UnityEngine;
@@ -26,11 +27,16 @@ namespace Tycoon.Customers
     /// somebody is at the counter wanting eggs, so an unattended shop stops earning even
     /// while the coops keep producing.
     /// </summary>
-    public class CustomerAgent : MonoBehaviour
+    public class CustomerAgent : MonoBehaviour, ISeatedPose
     {
         // Shopping is last on purpose: the values are never saved, but nothing that already
-        // reads Arriving, Waiting or Leaving should have to care that browsing exists.
-        public enum Phase { Arriving, Waiting, Leaving, Shopping }
+        // reads Arriving, Waiting or Leaving should have to care that browsing exists. The chair
+        // phases come after it for the same reason: a customer only ever enters them when a
+        // queue sends them to a ServiceChair (CustomerQueue.DispatchFront), so a till that has
+        // no chairs never sees them.
+        //   ToChair - called out of the queue, walking to the chair (ServiceChair.approach, then the seat)
+        //   AtChair - sitting in the chair waiting to be served; patience and bubble as at a till
+        public enum Phase { Arriving, Waiting, Leaving, Shopping, ToChair, AtChair }
 
         [Header("Movement")]
         public float moveSpeed = 2.7f;
@@ -90,6 +96,19 @@ namespace Tycoon.Customers
         // (BeginOrder), and is handed over line by line by Deliver rather than scanned.
         private bool _isOrder;
 
+        // Seated customers (the salon). _seat is the seat they are walking to or sitting on - a
+        // waiting-room place of a queue with seatedWaiting, or a ServiceChair's seat - and null for
+        // every standing customer, which is every customer of every other shop. _chair is the
+        // chair they were sent to; it stays set until they get up to leave.
+        private Transform _seat;
+        private ServiceChair _chair;
+
+        // A seat may stand higher than the floor (a hydraulic salon chair): the customer is lifted onto
+        // it and walks back down to _groundY - the height they came in at - once they get up. Off for
+        // anyone who has never sat on a raised seat, so nobody else's height is ever touched.
+        private float _groundY;
+        private bool _raised;
+
         private class BasketLine
         {
             public ItemDefinition item;
@@ -106,16 +125,39 @@ namespace Tycoon.Customers
         /// <summary>Ready to be served: standing still at the counter with an unfilled order.</summary>
         public bool IsWaiting => CurrentPhase == Phase.Waiting;
 
+        /// <summary>Sitting in a <see cref="ServiceChair"/>, waiting to be served there.</summary>
+        public bool IsAtChair => CurrentPhase == Phase.AtChair;
+
+        /// <summary>The chair this customer was sent to (walking there, or in it); null for everyone else.</summary>
+        public ServiceChair Chair => _chair;
+
+        /// <summary>
+        /// On a seat right now - a waiting-room chair or a service chair. Read by
+        /// <see cref="CharacterVisual"/>, which plays the Sit clip while it is true.
+        /// </summary>
+        public bool IsSeated => _seat != null && (CurrentPhase == Phase.Waiting || CurrentPhase == Phase.AtChair);
+
+        /// <summary>Where an order can be handed over: at the front of a queue, or in a chair.</summary>
+        private bool IsServable => CurrentPhase == Phase.Waiting || CurrentPhase == Phase.AtChair;
+
         /// <param name="entryRoute">
         /// Optional waypoints to walk before heading for the slot - the butcher's shoppers come off the
         /// street and must go in through the door, not straight across the wall. A farm customer has
         /// none and walks the straight line, as it always did.
         /// </param>
+        /// <param name="seat">
+        /// The waiting-room seat at <paramref name="slot"/> when the queue's places are chairs
+        /// (<see cref="CustomerQueue.seatedWaiting"/>); null for a standing queue - every till so far.
+        /// </param>
         public void Begin(CustomerQueue queue, ItemDefinition item, int count, Vector3 slot, Color tint,
-            IList<Vector3> entryRoute = null)
+            IList<Vector3> entryRoute = null, Transform seat = null)
         {
             _queue = queue;
             _isOrder = false;
+            _seat = seat;
+            _chair = null;
+            _groundY = transform.position.y;
+            _raised = false;
             _basket.Clear();
             _wanted = item;
             _requested = Mathf.Max(1, count);
@@ -153,10 +195,14 @@ namespace Tycoon.Customers
         /// over one flower at a time through <see cref="Deliver"/>, in any order.
         /// </summary>
         public void BeginOrder(CustomerQueue queue, IList<ItemDefinition> items, IList<int> counts, Vector3 slot,
-            Color tint, IList<Vector3> entryRoute = null)
+            Color tint, IList<Vector3> entryRoute = null, Transform seat = null)
         {
             _queue = queue;
             _isOrder = true;
+            _seat = seat;
+            _chair = null;
+            _groundY = transform.position.y;
+            _raised = false;
             _stops = null;
             _basket.Clear();
             _requested = 0;
@@ -193,7 +239,7 @@ namespace Tycoon.Customers
         /// <summary>Would this customer take one of these now? The till's one question.</summary>
         public bool Wants(ItemDefinition item)
         {
-            if (item == null || !IsWaiting || IsSatisfied) return false;
+            if (item == null || !IsServable || IsSatisfied) return false;
             if (!_isOrder) return item == _wanted;
             for (int i = 0; i < _basket.Count; i++)
                 if (_basket[i].item == item && _basket[i].scanned < _basket[i].count) return true;
@@ -228,6 +274,10 @@ namespace Tycoon.Customers
         {
             _queue = queue;
             _isOrder = false;
+            _seat = null;
+            _chair = null;
+            _groundY = transform.position.y;
+            _raised = false;
             _stops = stops;
             _stopIndex = 0;
             _takeTimer = 0f;
@@ -253,11 +303,37 @@ namespace Tycoon.Customers
         }
 
         /// <summary>Called when the queue shuffles forward.</summary>
-        public void MoveToSlot(Vector3 slot)
+        /// <param name="seat">The seat at that place when the waiting room is seated; null when standing.</param>
+        public void MoveToSlot(Vector3 slot, Transform seat = null)
         {
             if (CurrentPhase == Phase.Leaving) return;
+            // Already out of the queue (sent to a chair): the queue no longer moves them.
+            if (CurrentPhase == Phase.ToChair || CurrentPhase == Phase.AtChair) return;
+            // Already sitting in that very seat: stay seated rather than stand up and sit down again.
+            // Standing customers keep the old behaviour exactly (a frame of Arriving, then Waiting).
+            if (seat != null && seat == _seat && CurrentPhase == Phase.Waiting) return;
+
+            _seat = seat;
             _target = slot;
             if (CurrentPhase == Phase.Waiting) CurrentPhase = Phase.Arriving;
+        }
+
+        /// <summary>
+        /// Called by <see cref="CustomerQueue.DispatchFront(ServiceChair)"/>: leave the queue (standing up
+        /// if seated), walk <paramref name="route"/> and sit in <paramref name="chair"/> to be served.
+        /// Patience starts again in full: being called is progress, and a customer who had nearly run out
+        /// in the waiting room must not storm out of the chair a second after sitting down.
+        /// </summary>
+        public void GoToChair(ServiceChair chair, IList<Vector3> route)
+        {
+            _chair = chair;
+            _seat = chair != null ? chair.Seat : null;
+            _route.Clear();
+            if (route != null) _route.AddRange(route);
+            _target = _seat != null ? _seat.position : transform.position;
+            _patienceLeft = patienceSeconds;
+            CurrentPhase = Phase.ToChair;
+            ShowBubble();
         }
 
         /// <summary>
@@ -350,6 +426,26 @@ namespace Tycoon.Customers
 
                 case Phase.Waiting:
                     Bob(delta, false);
+                    if (_seat != null) SettleOnSeat(delta);
+                    _patienceLeft -= delta;
+                    if (bubble != null) bubble.SetPatience(_patienceLeft / Mathf.Max(1f, patienceSeconds));
+                    if (_patienceLeft <= 0f) Leave(false);
+                    break;
+
+                case Phase.ToChair:
+                    if (_route.Count > 0)
+                    {
+                        if (StepTowards(_route[0], delta)) _route.RemoveAt(0);
+                    }
+                    else if (StepTowards(_target, delta))
+                    {
+                        CurrentPhase = Phase.AtChair;
+                    }
+                    break;
+
+                case Phase.AtChair:
+                    Bob(delta, false);
+                    SettleOnSeat(delta);
                     _patienceLeft -= delta;
                     if (bubble != null) bubble.SetPatience(_patienceLeft / Mathf.Max(1f, patienceSeconds));
                     if (_patienceLeft <= 0f) Leave(false);
@@ -496,10 +592,32 @@ namespace Tycoon.Customers
             Bob(delta, false);
         }
 
+        /// <summary>
+        /// Onto the seat exactly and facing its way. Arrival counts within <see cref="arriveRadius"/>,
+        /// which is fine standing but reads as hovering beside the chair once seated.
+        /// </summary>
+        private void SettleOnSeat(float delta)
+        {
+            Vector3 here = transform.position;
+            Vector3 at = _seat.position;
+            // Up onto a raised seat, too (the seat transform's height is where the feet go).
+            if (!Mathf.Approximately(at.y, here.y)) _raised = true;
+            transform.position = Vector3.MoveTowards(here, _raised ? at : new Vector3(at.x, here.y, at.z),
+                moveSpeed * 0.5f * delta);
+
+            Vector3 facing = _seat.forward;
+            facing.y = 0f;
+            if (facing.sqrMagnitude > 0.0001f)
+                transform.rotation = Quaternion.RotateTowards(
+                    transform.rotation, Quaternion.LookRotation(facing.normalized), turnSpeed * delta);
+        }
+
         private void Leave(bool happy)
         {
             bool fromQueue = CurrentPhase == Phase.Arriving || CurrentPhase == Phase.Waiting;
+            bool fromChair = _chair != null && (CurrentPhase == Phase.ToChair || CurrentPhase == Phase.AtChair);
             CurrentPhase = Phase.Leaving;
+            _seat = null;
             if (bubble != null) bubble.SetVisible(false);
 
             SoundFx.PlayAt(happy ? Sfx.Happy : Sfx.Grumble, transform.position);
@@ -515,10 +633,22 @@ namespace Tycoon.Customers
                 _route.Clear();
                 // Out of the aisle first, if they are still in one (empty-handed, or timed out).
                 StoreShelf.Unwind(_trail, _route);
-                if (fromQueue) _queue.AppendQueueExit(_route);
+                // Out of a chair by the chair's own way out; out of the queue by the queue's.
+                if (fromChair) _chair.AppendExit(_route);
+                else if (fromQueue) _queue.AppendQueueExit(_route);
                 _queue.AppendExitRoute(_route);
-                _queue.OnCustomerLeft(this, happy);
             }
+
+            // The chair is given up before the queue hears about it, so whatever the salon does on
+            // ServiceChair.Released (hair on the floor) is in place before anybody can be called to it.
+            if (_chair != null)
+            {
+                var chair = _chair;
+                _chair = null;
+                chair.Release(this, happy);
+            }
+
+            if (_queue != null) _queue.OnCustomerLeft(this, happy);
         }
 
         /// <summary>Returns true once standing on the target.</summary>
@@ -534,7 +664,14 @@ namespace Tycoon.Customers
                 return true;
             }
 
-            transform.position = here + flat.normalized * moveSpeed * delta;
+            Vector3 next = here + flat.normalized * moveSpeed * delta;
+            if (_raised)
+            {
+                // Down off a raised seat while walking away from it.
+                next.y = Mathf.MoveTowards(here.y, _groundY, moveSpeed * delta);
+                if (Mathf.Approximately(next.y, _groundY)) _raised = false;
+            }
+            transform.position = next;
             transform.rotation = Quaternion.RotateTowards(
                 transform.rotation, Quaternion.LookRotation(flat.normalized), turnSpeed * delta);
 
@@ -545,6 +682,16 @@ namespace Tycoon.Customers
         private void FaceCounter(float delta)
         {
             if (_queue == null) return;
+            // Somebody taking a seat turns the way the seat faces (SettleOnSeat finishes the turn).
+            if (_seat != null && (CurrentPhase == Phase.Arriving || CurrentPhase == Phase.ToChair))
+            {
+                Vector3 facing = _seat.forward;
+                facing.y = 0f;
+                if (facing.sqrMagnitude > 0.0001f)
+                    transform.rotation = Quaternion.RotateTowards(
+                        transform.rotation, Quaternion.LookRotation(facing.normalized), turnSpeed * delta);
+                return;
+            }
             // A browsing shopper looks at the shelf in front of them; everyone else at the till.
             Vector3 toCounter = (_hasFacePoint ? _facePoint : _queue.CounterPosition) - transform.position;
             toCounter.y = 0f;

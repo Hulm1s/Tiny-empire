@@ -124,6 +124,46 @@ for f, breathe in ((1, 0.0), (45, -0.010), (90, 0.0)):
     })
 cyclic(bpy.data.actions["CarryIdle"])
 
+# ------------------------------------------------------------------- sit
+# Seated on a chair: the salon's waiting room and its styling chairs. Added after the
+# other four on purpose - nothing that already plays Idle/Walk/CarryIdle/CarryWalk moves.
+#
+# The pose is worked out from the measured rig, not eyeballed: hip joint 0.569, knee 0.26,
+# ankle 0.07, so the thigh is 0.309 long and the shin 0.19. With the thigh level and the
+# shin straight down the ankle lands back at 0.07 exactly when the hips drop by one thigh
+# length - the feet stay on the floor at any chair built to SEAT_HEIGHT.
+#
+# Root's location is in Root's own bone space: Root points up, so its Y is world up and its
+# Z is world -Y, which is the villager's FRONT (Blender -Y; Unity +Z after export). The body
+# is also slid back by SIT_BACK so the character's origin - the point a seat transform puts
+# it on - is the middle of the seat, not the back edge of it: pelvis behind, knees in front.
+SIT_DROP = 0.309
+SIT_BACK = 0.12
+
+
+def key_root(frame, up, forward):
+    pb = arm.pose.bones["Root"]
+    pb.location = (0, up, forward)
+    pb.keyframe_insert("location", frame=frame)
+
+
+new_action("Sit")
+for f, breathe in ((1, 0.0), (45, -0.008), (90, 0.0)):
+    key_root(f, -SIT_DROP + breathe, -SIT_BACK)
+    key(f, {
+        # Thighs level and forward, shins straight down: knees bent square.
+        "Thigh.L": (FWD * 90, 0, -4), "Thigh.R": (FWD * 90, 0, 4),
+        "Shin.L": (BACK * 90, 0, 0), "Shin.R": (BACK * 90, 0, 0),
+        # Leaning back a touch, chest breathing as in the idle.
+        "Spine": (-4, 0, 0),
+        "Chest": (breathe * 90, 0, 0),
+        "Head": (4 - breathe * 60, 0, 0),
+        # Hands resting on the thighs.
+        "UpperArm.L": (FWD * 16, 0, 8), "UpperArm.R": (FWD * 16, 0, -8),
+        "Forearm.L": (FWD * 30, 0, 6), "Forearm.R": (FWD * 30, 0, -6),
+    })
+cyclic(bpy.data.actions["Sit"])
+
 print("ACTIONS " + ", ".join(a.name for a in bpy.data.actions))
 
 

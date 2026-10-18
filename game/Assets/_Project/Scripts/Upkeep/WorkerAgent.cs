@@ -68,6 +68,7 @@ namespace Tycoon.Upkeep
         public StockRoute[] routes;
 
         [Tooltip("Off for every farm hand, stocker and cashier, which fill up before they deliver. " +
+                 "On for the salon's cleaner too (its pickup is a heap of hair that empties). " +
                  "On for the butcher: its pickup is the cutting table, which can run dry, and a worker " +
                  "that waited there for a FULL load would leave the counter empty while it did. With " +
                  "this on, a part load is taken to the dropoff as soon as the pickup (a CutStation) " +
@@ -576,7 +577,8 @@ namespace Tycoon.Upkeep
             if (_carry.IsFull) _headingToDropoff = true;
             else if (_carry.IsEmpty) _headingToDropoff = false;
             else if (deliverPartialLoads && !_headingToDropoff &&
-                     pickup is CutStation cutter && cutter.HasNothingToDo(_carry))
+                     ((pickup is CutStation cutter && cutter.HasNothingToDo(_carry)) ||
+                      (pickup is CollectStation heap && heap.source != null && heap.source.IsEmpty)))
                 _headingToDropoff = true;
         }
 

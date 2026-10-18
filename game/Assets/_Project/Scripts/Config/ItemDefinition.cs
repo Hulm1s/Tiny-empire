@@ -42,6 +42,10 @@ namespace Tycoon.Config
         [Tooltip("Money paid per unit at a sell counter, before any level or reputation multiplier.")]
         public double basePrice = 3d;
 
+        [Tooltip("A service rather than goods (a haircut): nothing is carried or counted, so an order bubble shows " +
+                 "the picture alone, with no \"x1\".")]
+        public bool service;
+
         [Header("Upkeep")]
         [Tooltip("Perishable goods rot in stockpiles, which stops the player hoarding output " +
                  "and is one of the pressures that keeps a finished business demanding attention.")]

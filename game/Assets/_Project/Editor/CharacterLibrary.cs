@@ -146,7 +146,9 @@ namespace Tycoon.EditorTools
             foreach (var child in machine.states)
                 machine.RemoveState(child.state);
 
-            string[] clips = { "Idle", "Walk", "CarryIdle", "CarryWalk" };
+            // The index is the value of State, so the order is CharacterVisual.Motion's and new
+            // clips are only ever appended. Sit (4) came with the salon's seated customers.
+            string[] clips = { "Idle", "Walk", "CarryIdle", "CarryWalk", "Sit" };
             int wired = 0;
 
             for (int i = 0; i < clips.Length; i++)
@@ -163,7 +165,9 @@ namespace Tycoon.EditorTools
                 var transition = machine.AddAnyStateTransition(state);
                 transition.AddCondition(AnimatorConditionMode.Equals, i, "State");
                 transition.hasExitTime = false;
-                transition.duration = 0.12f;
+                // Sitting down is a bigger move than starting to walk (the hips drop 0.31 m), so it
+                // blends in over longer; standing back up is an ordinary 0.12 s change to Walk/Idle.
+                transition.duration = clips[i] == "Sit" ? 0.25f : 0.12f;
                 // Without this a state re-enters itself every time the parameter is set.
                 transition.canTransitionToSelf = false;
             }

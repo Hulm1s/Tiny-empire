@@ -96,10 +96,12 @@ namespace Tycoon.EditorTools
         /// <summary>Small pictures (badges, scissors, sparkles: 256 px or less) get ASTC 4x4 - 8 bits a pixel, still tiny in memory - because a crisp small outline shows 6x6's softness (PSNR 34-36 dB against 41-47 for the big ones).</summary>
         private const TextureImporterFormat WebFormatSmall = TextureImporterFormat.ASTC_4x4;
 
-        private static TextureImporterFormat FormatFor(string key)
+        private static TextureImporterFormat FormatFor(string key) => FormatFor(Folder, key);
+
+        private static TextureImporterFormat FormatFor(string folder, string key)
         {
             // The PNG header holds the size: 4 bytes width then 4 bytes height at offset 16.
-            using (var f = File.OpenRead(Path.GetFullPath($"{Folder}/{key}.png")))
+            using (var f = File.OpenRead(Path.GetFullPath($"{folder}/{key}.png")))
             {
                 var h = new byte[24];
                 f.Read(h, 0, 24);
@@ -112,20 +114,28 @@ namespace Tycoon.EditorTools
         /// <summary>Largest picture is 879 px; nothing is shown bigger than its own pixels (the card never scales above 1).</summary>
         private const int MaxSize = 1024;
 
-        private static void ApplyImportSettings(System.Collections.Generic.List<string> keys)
+        private static void ApplyImportSettings(System.Collections.Generic.List<string> keys) =>
+            ApplyImportSettings(Folder, keys, key => key.StartsWith("b"));
+
+        /// <summary>
+        /// The same WebGL import settings for any folder of baked pictures (the haircut minigame's too):
+        /// <paramref name="mipmaps"/> says which keys are shown small as well as big.
+        /// </summary>
+        internal static void ApplyImportSettings(string folder, System.Collections.Generic.List<string> keys,
+            System.Func<string, bool> mipmaps)
         {
             bool changed = false;
             foreach (var key in keys)
             {
-                var importer = AssetImporter.GetAtPath($"{Folder}/{key}.png") as TextureImporter;
+                var importer = AssetImporter.GetAtPath($"{folder}/{key}.png") as TextureImporter;
                 if (importer == null) continue;
-                if (!NeedsImport(importer, key)) continue;
+                if (!NeedsImport(importer, folder, key, mipmaps(key))) continue;
                 importer.textureType = TextureImporterType.Default;
                 importer.alphaIsTransparency = true;
                 importer.npotScale = TextureImporterNPOTScale.None;
                 importer.wrapMode = TextureWrapMode.Clamp;
                 // The bouquet is also shown small (the ORDER header, the result), so it needs mipmaps.
-                importer.mipmapEnabled = key.StartsWith("b");
+                importer.mipmapEnabled = mipmaps(key);
                 importer.isReadable = false;
                 importer.maxTextureSize = MaxSize;
                 importer.textureCompression = TextureImporterCompression.Compressed;
@@ -134,7 +144,7 @@ namespace Tycoon.EditorTools
                     name = "WebGL",
                     overridden = true,
                     maxTextureSize = MaxSize,
-                    format = FormatFor(key),
+                    format = FormatFor(folder, key),
                     textureCompression = TextureImporterCompression.Compressed,
                     compressionQuality = 50,
                 });
@@ -142,15 +152,15 @@ namespace Tycoon.EditorTools
                 importer.SaveAndReimport();
                 changed = true;
             }
-            if (changed) Debug.Log("[BouquetBake] import settings applied (WebGL ASTC 6x6, small ones 4x4)");
+            if (changed) Debug.Log($"[BouquetBake] import settings applied in {folder} (WebGL ASTC 6x6, small ones 4x4)");
         }
 
-        private static bool NeedsImport(TextureImporter importer, string key)
+        private static bool NeedsImport(TextureImporter importer, string folder, string key, bool mipmaps)
         {
             var web = importer.GetPlatformTextureSettings("WebGL");
-            return !web.overridden || importer.GetPlatformTextureSettings("Standalone").overridden || web.format != FormatFor(key) || web.maxTextureSize != MaxSize
+            return !web.overridden || importer.GetPlatformTextureSettings("Standalone").overridden || web.format != FormatFor(folder, key) || web.maxTextureSize != MaxSize
                 || importer.textureCompression != TextureImporterCompression.Compressed
-                || importer.mipmapEnabled != key.StartsWith("b");
+                || importer.mipmapEnabled != mipmaps;
         }
 
         /// <summary>The smallest rectangle holding every pixel that is not fully transparent, with a pixel to spare.</summary>

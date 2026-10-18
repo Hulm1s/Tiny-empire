@@ -134,6 +134,9 @@ namespace Tycoon.UI
             // counter, built the first time it opens. Same layer as the paint menu.
             BouquetMinigame.Create(_safeArea, joystick.gameObject);
 
+            // The salon's haircut minigame: opened by standing in a chair's STYLE square, same frame, same layer.
+            HaircutMinigame.Create(_safeArea, joystick.gameObject);
+
             // Last, so it covers the whole screen including the pause panel. It is the full
             // canvas rather than the safe area: a fade that stopped short of the notch would
             // leave a strip of the old location showing.

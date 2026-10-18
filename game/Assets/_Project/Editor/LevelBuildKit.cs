@@ -59,7 +59,7 @@ namespace Tycoon.EditorTools
         }
 
         public static ItemDefinition Item(string id, string displayName, Color color, double price,
-            bool perishable = false, float spoilSeconds = 180f, float stackHeight = 0.28f)
+            bool perishable = false, float spoilSeconds = 180f, float stackHeight = 0.28f, bool service = false)
         {
             EnsureFolder(ConfigFolder);
             string path = $"{ConfigFolder}/Item_{id}.asset";
@@ -78,6 +78,7 @@ namespace Tycoon.EditorTools
             item.perishable = perishable;
             item.spoilSeconds = spoilSeconds;
             item.stackHeight = stackHeight;
+            item.service = service;
 
             // Give the item a real material asset so carried units are not rendered with the
             // built-in default material, which is magenta in a URP build.
@@ -895,7 +896,7 @@ namespace Tycoon.EditorTools
         /// See <see cref="DiscardStation"/> for why that matters.
         /// </summary>
         public static DiscardStation BuildBin(string id, string name, Transform parent, Vector3 position,
-            bool squareToSouth = false)
+            bool squareToSouth = false, bool workers = false)
         {
             // The square normally lies on the north side of the can, which is the far side from
             // the camera. A bin that has to stand NORTH of the ground its square needs (the
@@ -949,9 +950,12 @@ namespace Tycoon.EditorTools
             // what lets this square afford to be small.
             var zone = new Vector2(1.7f, 1.5f);
 
-            var station = Station<DiscardStation>($"{id}.discard", "Discard", root.transform,
-                new Vector3(0f, 0f, 1.7f * side), zone, "Bin",
-                new Color(0.72f, 0.76f, 0.82f), smallestCard: zone);
+            // The salon's hair bin is also the cleaner's (a bin a worker may stand in); every other is the player's alone.
+            var at = new Vector3(0f, 0f, 1.7f * side);
+            var colour = new Color(0.72f, 0.76f, 0.82f);
+            DiscardStation station = workers
+                ? Station<WorkerBinStation>($"{id}.discard", "Discard", root.transform, at, zone, "Bin", colour, smallestCard: zone)
+                : Station<DiscardStation>($"{id}.discard", "Discard", root.transform, at, zone, "Bin", colour, smallestCard: zone);
 
             // Fast, once you are actually in it. This is a way out of a mistake, not a chore -
             // nobody should stand in the bin for four seconds paying for having picked up the

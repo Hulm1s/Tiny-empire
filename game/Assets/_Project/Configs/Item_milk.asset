@@ -20,5 +20,6 @@ MonoBehaviour:
   icon: {fileID: 0}
   stackHeight: 0.48
   basePrice: 12
+  service: 0
   perishable: 1
   spoilSeconds: 120

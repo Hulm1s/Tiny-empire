@@ -88,6 +88,22 @@ resized or added anything.
 > ⚠ **One product per till.** `CustomerQueue.Front` still head-of-line blocks; the single-product
 > menus are what stop it firing.
 
+### Seated waiting room and service chairs (salon)
+
+| I want to change… | Go to | Current |
+|---|---|---|
+| Waiting places are chairs (customers sit) | `CustomerQueue.seatedWaiting` | off on every till |
+| Which chairs the head can be sent to, in order | `CustomerQueue.chairs` (`ServiceChair[]`) | none on every till |
+| Where a customer sits / faces | `ServiceChair.seat` (origin at seat top − 0.16 m, forward = facing) | — |
+| How they walk to / from the chair | `ServiceChair.approach`, `ServiceChair.exitRoute` | — |
+| What blocks a chair (hair on the floor) | `ServiceChair.dirtyWhen` (active = dirty) | — |
+| Seconds a server stands for one service | `ChairServiceStation.serviceSeconds` | 3 s |
+| A hired server's wage per service | the worker's `WorkerAgent.feePerDelivery` (charged by `ChairServiceStation`) | per hire |
+| How long a call takes on the NEXT square | `CallNextStation.taskDuration` | StationBase default 1.2 s |
+| Patience at the chair | `CustomerAgent.patienceSeconds` (restarts in full when called) | 75 s |
+
+> Full design and the wiring checklist: `GAMEPLAY_SYSTEMS.md` §9, "Seated waiting room and service chairs".
+
 ---
 
 ## Player, workers and camera
@@ -228,6 +244,8 @@ resized or added anything.
 | Which model a hire uses | FSB:581-583 — ⚠ derived from the role **label string** |
 | Body shape / proportions | `models/pipeline/humanoid_animated.blend`, object `Body` |
 | An animation clip | `models/pipeline/animate.py` |
+| The sitting pose (salon customers) | `models/pipeline/animate.py`, the `Sit` block (`SIT_DROP`, `SIT_BACK`, the bone angles) |
+| How fast a villager sits down | `Editor/CharacterLibrary.cs` `EnsureController`, Sit transition 0.25 s |
 | A hat shape | `models/pipeline/export_unity.py` |
 | Canonical role colours | `models/pipeline/export_unity.py:87-98` |
 | Walk/idle threshold | `Scripts/Characters/CharacterVisual.cs` `walkThreshold` (0.25 m/s) |
@@ -379,11 +397,11 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 
 | I want to change... | Edit |
 |---|---|
-| Town price, size, road, plaza, COMING SOON square | `Editor/TownBuilder.cs` (constants at the top; `TownPrice`, `Offset`, `Edge*`, `SoonPosition`) |
+| Town price, size, road, plaza (the COMING SOON square is gone; EdgeEast 22, ATM at (1.7, 3.0)) | `Editor/TownBuilder.cs` (constants at the top; `TownPrice`, `Offset`, `Edge*`, `SoonPosition`) |
 | Where the town is on the map (farm-grid offset) | `TownBuilder.Offset` (stay inside the +-80 m walkable ground plane) |
 | Where the supermarket's gate / travel square stand | `TownBuilder.MarketSquarePosition`; the market grass keep-clear rect in `MarketBuilder.BuildGround` must cover it |
 | What unlocks the town | `TownBuilder.Build` (`RevealWhenAll` "TownUnlock" over `MarketBuilder.Result.ButcherExtension/ButcherUnlocks/ButcherMaxed`, filled by `ButcherBuilder.Build`'s `Purchases`) |
-| The next business on the street | build it in `TownBuilder.Build` like `FloristBuilder.Build`, where the COMING SOON square is now |
+| The next business on the street | build it in `TownBuilder.Build` like `FloristBuilder.Build`, after `SalonBuilder.Build` (the next business goes east of the salon) |
 
 ## Florist (town)
 
@@ -412,3 +430,17 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 | Shop / meadow layout, doors, counter, stands, beds, well, queue, routes | `FloristBuilder` constants (`Shop*`, `Entrance*`, `Exit*`, `BackDoor*`, `CounterAt`, `ServeAt`, `CashAt`, `FloristHireAt`, `CentreStandAt`, `Slots`, `EntryRoute`, `ExitRoute`, `BedX`, `BedZ`, `WellAt`, `WellSquareAt`, `GardenerHireAt`); run the audit after |
 | Florist / gardener colours | material assets `Materials/Fl_Florist_*.mat`, `Fl_Gardener_*.mat` (`FloristBuilder.Dress`) |
 | Florist audit | `SquareAudit.FloristChain` |
+
+## Salon (town, `Editor/SalonBuilder.cs`)
+
+| I want to change... | Edit |
+|---|---|
+| Salon prices (repair, paint, chairs, staff, haircut prices), customer interval, demand | constants at the top of `SalonBuilder.cs` |
+| Salon size / position / door routes | `SalonBuilder` Shop W/E/S/N and Entry/QueueExit/exit routes; keep `SalonBuilder.Bounds` in TownBuilder's grass keep-clear |
+| The haircut minigame (steps, tolerances, stars, tips) | `UI/HaircutMinigame.cs` (RubNeeded, tolerance, bins); `tipShare` in `Stations/SalonChairStation.cs` |
+| Hairstyle art / guide lines | `UI/HaircutArt.cs`; re-baked by `Editor/HaircutBake.cs` into `Resources/Haircut` (bump version when art changes) |
+| Hairstyle / hair bag icons | `UI/IconFactory.Salon.cs`, listed in `IconSheet.cs` |
+| Hair heap per haircut, sweep square | `Stations/HairMess.cs` (`bagsPerService`), `SalonBuilder` BagsPerService |
+| The cleaner's bin | `Stations/WorkerBinStation.cs` (via `LevelBuildKit.BuildBin(..., workers:true)`) |
+| Salon task-list lines | `Tasks/TaskBoard.cs` `AddSalonGoals` |
+| Salon decor pattern list | `PatternFactory.SalonPatterns` |

@@ -96,6 +96,7 @@ namespace Tycoon.Tasks
         private DepositStation[] _deposits;
         private RegisterStation[] _registers;
         private CutStation[] _benches;
+        private CallNextStation[] _calls;
         private FlowerBed[] _beds;
         private WorkerAgent[] _workers;
         private DiscardStation[] _bins;
@@ -203,6 +204,7 @@ namespace Tycoon.Tasks
             _deposits = FindObjectsByType<DepositStation>(inactive, none);
             _registers = FindObjectsByType<RegisterStation>(inactive, none);
             _benches = FindObjectsByType<CutStation>(inactive, none);
+            _calls = FindObjectsByType<CallNextStation>(inactive, none);
             _beds = FindObjectsByType<FlowerBed>(inactive, none);
             _workers = FindObjectsByType<WorkerAgent>(inactive, none);
             _bins = FindObjectsByType<DiscardStation>(inactive, none);
@@ -571,12 +573,65 @@ namespace Tycoon.Tasks
                 Consider(florist, 0d, "Make a bouquet");
             }
 
+            AddSalonGoals();
+
             AddCashGoals();
 
             if (_best != null)
                 Goals.Add(new TaskItem { kind = TaskKind.Goal, label = _bestLabel, target = _best });
             if (_second != null)
                 Goals.Add(new TaskItem { kind = TaskKind.Goal, label = _secondLabel, target = _second, dim = true });
+        }
+
+        /// <summary>
+        /// The salon's free jobs, in the order the loop runs: call the next customer from the waiting room, give the
+        /// haircut (the minigame, with a tip), sweep the hair and take it to the bin. Each only while nobody on the
+        /// payroll does it (the receptionist, the hairdresser at that chair, the cleaner).
+        /// </summary>
+        private void AddSalonGoals()
+        {
+            for (int i = 0; i < _calls.Length; i++)
+            {
+                var call = _calls[i];
+                if (!Live(call) || !call.IsOperational || Staffed(call)) continue;
+                Consider(call, 0d, "Call the next customer");
+            }
+
+            for (int i = 0; i < _registers.Length; i++)
+            {
+                if (!(_registers[i] is SalonChairStation chair) || !Live(chair)) continue;
+                if (chair.ReadyCustomer == null || Staffed(chair)) continue;
+                Consider(chair, 0d, "Give a haircut");
+            }
+
+            bool cleaner = CleanerWorks();
+            Tycoon.Config.ItemDefinition hair = null;
+            for (int i = 0; i < _collects.Length; i++)
+            {
+                var c = _collects[i];
+                if (c.source == null || c.source.item == null || c.source.item.id != "hair_bag") continue;
+                hair = c.source.item;          // known even when the heap is gone and its square is off
+                if (!Live(c) || c.source.IsEmpty || cleaner) continue;
+                if (_carry != null && _carry.Has(hair)) continue;      // already holding some: the bin is next
+                Consider(c, 0d, "Sweep up the hair");
+            }
+            if (hair != null && _carry != null && _carry.Has(hair))
+            {
+                var bin = NearestBin();
+                if (bin != null) Consider(bin, 0d, "Take the hair to the bin");
+            }
+        }
+
+        /// <summary>A hired cleaner is on the payroll (a worker whose route ends at a bin, from a hair heap).</summary>
+        private bool CleanerWorks()
+        {
+            for (int i = 0; i < _workers.Length; i++)
+            {
+                var w = _workers[i];
+                if (!Live(w) || w.routes == null || w.routes.Length == 0 || w.routes[0] == null) continue;
+                if (w.routes[0].dropoff is WorkerBinStation) return true;
+            }
+            return false;
         }
 
         private double _cheapest;

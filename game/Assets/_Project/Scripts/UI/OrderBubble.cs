@@ -138,6 +138,12 @@ namespace Tycoon.UI
 
             _countLabel.text = "x" + Mathf.Max(0, remaining);
             SetLineMode(0);
+
+            // A service (a haircut) is one thing and is not counted: the picture alone, centred.
+            _countLabel.gameObject.SetActive(!item.service);
+            var at = _iconImage.rectTransform;
+            at.anchorMin = at.anchorMax = new Vector2(item.service ? 0.5f : 0.31f, 0.63f);
+            at.sizeDelta = item.service ? new Vector2(112f, 112f) : new Vector2(94f, 94f);
             SetVisible(true);
         }
 

@@ -11,8 +11,8 @@ namespace Tycoon.EditorTools
     ///
     ///     a walled patch of ground with a fence, a road stub, a paved square, grass,
     ///     an arrival point, and the travel squares in and out
-    ///     one "COMING SOON" square (a <see cref="LockedStation"/>: drawn and labelled like any
-    ///     other square, never operational, not for sale)
+    ///     the florist (FloristBuilder) and the hairdresser salon (SalonBuilder) on the street
+    ///     (EdgeEast is 22; the ATM stands at (1.7, 3.0); the old COMING SOON square is gone)
     ///
     /// It is written the way <see cref="MarketBuilder"/> is - a second root in the same scene, turned
     /// the same 45 degrees, every number a commented constant - and reuses the same parts: Location,
@@ -43,7 +43,8 @@ namespace Tycoon.EditorTools
         // Small on purpose: an empty town only has to look like a place. The fence, the invisible
         // wall and the grass all read these.
         private const float EdgeWest = -16f;
-        private const float EdgeEast = 16f;
+        // East grew from 16 to 22 for the hairdresser (SalonBuilder: the shop stands at x 4.8..18.2, its bin at 20).
+        private const float EdgeEast = 22f;
         private const float EdgeSouth = -12f;
         // North grew from 13 to 19.5 for the florist's meadow (FloristBuilder.MeadowNorth 17.2 + room for the fence).
         private const float EdgeNorth = 19.5f;
@@ -53,8 +54,8 @@ namespace Tycoon.EditorTools
 
         // ---- the paved square ----------------------------------------------------------
         // North of the road, east of the florist: where the next businesses of the street will stand.
-        private const float PlazaWest = 1f, PlazaEast = 13f;
-        private const float PlazaSouth = -1.4f, PlazaNorth = 9.5f;
+        private const float PlazaWest = 1f, PlazaEast = 21f;
+        private const float PlazaSouth = -1.4f, PlazaNorth = 10.4f;
 
         // ---- travel --------------------------------------------------------------------
         // The way back sits on the west end of the road, and the player lands a few metres inside
@@ -70,11 +71,8 @@ namespace Tycoon.EditorTools
         private static readonly Vector3 MarketSquarePosition = new Vector3(14.2f, 0f, -3.8f);
 
         /// <summary>The cash machine on the paving east of the florist; its squares lie south of it.</summary>
-        private static readonly Vector3 AtmPosition = new Vector3(2.6f, 0f, 3.0f);
-
-        // ---- the placeholder -----------------------------------------------------------
-        private static readonly Vector3 SoonPosition = new Vector3(7f, 0f, 4.5f);
-        private static readonly Vector2 SoonSize = new Vector2(3.4f, 2.6f);
+        // (Moved 2.6 -> 1.7 for the hairdresser: its deposit square stands 1.9 m east of the machine and must clear the salon's west wall.)
+        private static readonly Vector3 AtmPosition = new Vector3(1.7f, 0f, 3.0f);
 
         // ---- price ---------------------------------------------------------------------
         // From the pacing simulation (plans/econ/market_sim.py, proposal B): the butcher's last
@@ -114,9 +112,15 @@ namespace Tycoon.EditorTools
             back.destination = market.Location;
             back.taskDuration = 1.2f;
 
-            // The first business of the street; the COMING SOON square east of it is the next one.
-            FloristBuilder.Build(root, items);
-            BuildPlaceholder(root);
+            // The first business of the street, and the second east of it: the hairdresser's derelict shop appears
+            // when the florist's last purchase (the gardener) is made.
+            var gardenerHire = FloristBuilder.Build(root, items);
+            var salon = SalonBuilder.Build(root, items);
+            var salonWatcher = new GameObject("SalonReveal");
+            salonWatcher.transform.SetParent(root, false);
+            var salonReveal = salonWatcher.AddComponent<RevealWhenAll>();
+            salonReveal.unlocks = new[] { gardenerHire };
+            salonReveal.reveal = new[] { salon };
 
             // ---- the way in, from the supermarket ----------------------------------------
             var marketRoot = market.Root.transform;
@@ -213,35 +217,12 @@ namespace Tycoon.EditorTools
                     (FloristBuilder.MeadowNorth - FloristBuilder.ShopSouth) + 1.6f),
                 // The florist's bin on the pavement west of the street door: its pad, its square and the walk to it.
                 new Rect(FloristBuilder.BinAt.x - 1.8f, FloristBuilder.BinAt.z - 2.9f, 3.6f, 5.3f),
+                // The hairdresser: the shop and its bin outside the side door.
+                SalonBuilder.Bounds,
             };
 
             LevelBuildKit.BuildGrass(root, area, keepClear, tufts: 420, seed: 20261014,
                 meshName: "TownGrassCover", objectName: "Grass");
-        }
-
-        // ---- the placeholder -----------------------------------------------------------
-
-        /// <summary>
-        /// "COMING SOON": a locked square on the paved area and a plain board behind it. Nothing
-        /// can be bought, nothing changes and there is no state, so it can never be a state the
-        /// player is stuck in. Replaced by real content when the town is designed.
-        /// </summary>
-        private static void BuildPlaceholder(Transform root)
-        {
-            var soon = LevelBuildKit.Station<LockedStation>("town.locked.soon", "ComingSoon", root,
-                SoonPosition, SoonSize, "Coming Soon", new Color(0.75f, 0.75f, 0.78f));
-
-            var wood = LevelBuildKit.Mat("Town_SignWood", new Color(0.46f, 0.34f, 0.24f));
-            var board = LevelBuildKit.Mat("Town_SignBoard", new Color(0.93f, 0.80f, 0.40f));
-
-            // Two posts and a board across the top of the paved square, facing the camera (south).
-            float z = PlazaNorth - 0.7f;
-            float cx = SoonPosition.x;
-            foreach (float x in new[] { cx - 2.6f, cx + 2.6f })
-                LevelBuildKit.Box("SignPost", root, new Vector3(x, 1.1f, z), new Vector3(0.2f, 2.2f, 0.2f),
-                    wood, castShadow: false);
-            LevelBuildKit.Box("SignBoard", root, new Vector3(cx, 1.9f, z - 0.05f), new Vector3(6f, 1.0f, 0.14f),
-                board, castShadow: false);
         }
     }
 }

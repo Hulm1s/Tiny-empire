@@ -92,6 +92,8 @@ namespace Tycoon.UI
                 case "watering_can": return Get("watering_can", DrawWateringCan, Supersample);
                 case "seed": return Get("seed", DrawSeedPacket, Supersample);
                 case "bouquet": return Get("bouquet", DrawBouquet, Supersample);
+                case "hair_bag": return Get("hair_bag", DrawHairBag, Supersample);
+                case "hair_short": case "hair_bob": case "hair_long": case "hair_quiff": return SalonIcon(item.id);
             }
 
             // Unknown product: the old behaviour, a plain disc the caller tints.
@@ -125,7 +127,7 @@ namespace Tycoon.UI
                 item.id == "sausage" || item.id == "pig" ||
                 item.id == "rose" || item.id == "tulip" || item.id == "sunflower" ||
                 item.id == "hydrangea" || item.id == "watering_can" || item.id == "bouquet" ||
-                item.id == "seed");
+                item.id == "seed" || item.id == "hair_bag" || item.id.StartsWith("hair_"));
 
         public static Sprite Action(SquareIcon kind)
         {

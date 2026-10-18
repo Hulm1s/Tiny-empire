@@ -173,6 +173,7 @@ Written in `MarketBuilder.cs` (and `FarmSceneBuilder.BuildMarketLink` for the tw
 | `farm.travel.town` | the farm-side travel square (not saveable, but identified) |
 | `market.travel.farm` | the market-side travel square (not saveable, but identified) |
 | `town.unlock` | the $12,000 town purchase (`UnlockStation`, in the market root, hidden until the butcher is complete; `TownBuilder.cs`). Reveals the town root and the travel square |
+| `town.salon.*`, `town.hire.*` | the salon (see GAMEPLAY_SYSTEMS, the hairdresser salon): purchases, decor, queue, `HairMess` heap (saved ItemBuffer), cash pile |
 | `market.travel.town`, `town.travel.market`, `town.locked.soon` | the market-side and town-side travel squares and the COMING SOON placeholder (identified, not saveable) |
 | `market.trash.1` … `market.trash.4` | the four rubbish piles: an `ItemBuffer` of `Trash` (4 bags each); a half-cleared pile restores with the bags it had left. `ClearablePile` keeps no state |
 | `market.trashcollect.1` … `.4` | the piles' collect squares (identified, not saveable) |

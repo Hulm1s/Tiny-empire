@@ -77,6 +77,12 @@ Why `Transfer` is one unit at a time (`StationBase.cs:26-28`):
 Multiple actors can stand in one square at once. Each gets its own `Occupant` record with its
 own `TransferTimer`, `TaskTimer` and `CooldownLeft` — so one actor's progress is never another's.
 
+Occupants are added by `OnTriggerEnter` and removed by `OnTriggerExit`, and Unity delivers neither to an inactive
+object. An actor standing in a square when it is switched off therefore stays on its list, and if the square is
+switched back on later it keeps working on that actor from wherever they are. `ClearOccupants()` drops the list;
+call it before switching off a square that will come back (`HairMess` does, for the SWEEP square). Squares that are
+switched off for good never notice.
+
 ### Player priority — and why it exists
 
 `StationBase.cs:74-79`, quoted in full because it is the clearest statement of the design:
@@ -464,6 +470,67 @@ time if a worker carries goods to a till whose `sells` does not include them:
 > This is the exact mistake that made milk shoppers unservable [...] It is invisible in the
 > editor and only shows up as a customer standing at a counter forever.
 
+### Seated waiting room and service chairs (the salon)
+
+A till serves the head of its queue where they stand. A salon instead **calls the head out to a
+free chair** and serves them there, several chairs at once, while the waiting room moves up and
+refills. This is an extension of the same queue and the same customer — not a second customer
+system. A queue with no `chairs` and `seatedWaiting` off (every till before the salon) is
+unchanged; the play-mode regression over all six queues in `Farm.unity` confirmed it.
+
+```
+Spawn → entryRoute → a waiting seat (CustomerQueue.slots, seatedWaiting = true)
+  ↓  Phase.Waiting, SITTING (faces the slot's forward, Sit clip), patience ticks as at a till
+NEXT square / receptionist → CustomerQueue.DispatchFront(chair)      (chair claimed here, synchronously)
+  ↓  Phase.ToChair — stands up, walks ServiceChair.approach then the seat; everyone behind moves up a seat
+Reaches the seat
+  ↓  Phase.AtChair — sits, patience restarts at full, bubble as at a till
+ChairServiceStation (the STYLE square) serves them: Settle per unit → the pile it names
+  ↓            (or patience hits zero)
+Phase.Leaving — chair.Release(served) fires ServiceChair.Released, then the queue's OnCustomerLeft
+  ↓  walks ServiceChair.exitRoute, then CustomerQueue.exitRoute, then exitPoint
+Destroy
+```
+
+| Piece | File | What it is |
+|---|---|---|
+| `CustomerQueue.seatedWaiting` | `Customers/CustomerQueue.cs` | Each slot is a chair; waiting customers sit on it. They still shuffle up a seat when the head leaves (stand, walk, sit), so slot 0 is always next. A customer already in the right seat is never stood up. |
+| `CustomerQueue.chairs` | same | The `ServiceChair`s the head can be sent to. `FreeChair` offers them in list order. |
+| `DispatchFront(chair)` / `DispatchFront()` / `CanDispatch` | same | Send `Front` to that chair (or the first free one). False and no change if nobody is ready or the chair is not `IsFree`. |
+| `WaitingCount`, `AtChairCount` | same | For square labels and the receptionist. The spawn cap is still `slots.Length` people *waiting*, so the room refills while the chairs work. |
+| `ServiceChair` | `Customers/ServiceChair.cs` | Seat transform, `approach` and `exitRoute` waypoints, `dirtyWhen` (a GameObject; while it is active the chair is not clean), `Occupant`, `ReadyOccupant`, `IsClean`, `IsFree`, and the `Released(chair, customer, served)` event. |
+| `ChairServiceStation` | `Stations/ChairServiceStation.cs` | A `RegisterStation` that serves its chair's occupant instead of the queue's head: stand here `serviceSeconds` and the whole order is settled. `ServeWhole(customer)` is the hook a minigame subclass finishes through. Charges a hired server's `feePerDelivery` per unit, as `CheckoutStation` does. |
+| `CallNextStation` | `Stations/CallNextStation.cs` | The NEXT square: Task mode, one `DispatchFront()` per ring, the ring only runs while a call would succeed. Free, so it never needs money. |
+| `RegisterStation.Serving` | `Stations/RegisterStation.cs` | New protected virtual: who this square serves. Default `queue.Front`, so every till is unchanged; the chair station overrides only this. |
+
+**Payment is the till's payment.** A chair station is a `RegisterStation`, so the price is
+`item.basePrice × priceMultiplier × queue.PriceMultiplier`, paid through `Settle` → `Pay` →
+`Takings(pile, accountWhenUnlocked, accountShare, …)`. Point every chair's `pile` at the one
+reception `CashPile` and every service lands there. **Set each chair station's `queue`** — with no
+queue, `UnitPrice` is 0 and the haircut is free.
+
+**The minigame (player only)** follows `BouquetCounter`: subclass `ChairServiceStation`, override
+`TickWithPlayer`, and when `Carry.CompareTag("Player")` open the minigame for `ReadyOccupant`
+instead of counting `serviceSeconds`; when it finishes call `ServeWhole(customer)` (pays the base
+price, unit by unit, then the customer leaves happy) and `Pay(tip)`. Workers fall through to the
+base class and are served at the base price after `serviceSeconds`.
+
+**Hair on the floor.** Subscribe to `ServiceChair.Released`; when `served` is true, switch the hair
+heap on and make it the chair's `dirtyWhen`. Nobody is sent to a dirty chair. Sweeping it away
+(switching it off) frees the chair. A walk-out (`served == false`) drops nothing.
+
+**Seat height.** The seat transform is where the seated customer's origin goes: the middle of the
+seat in plan, forward = the way they face. The Sit clip puts the underside of the body **0.16 m**
+above the origin, so place the seat transform at *(seat top − 0.16 m)*. On a seat higher than that
+(the phase-1 salon chair's top is ~0.575 m, the waiting chair's ~0.445 m) the customer is lifted onto it and
+walks back down to the height they came in at when they get up.
+
+**Nothing to get stuck.** Customers are not saved (a reload starts with an empty shop), the
+chair's occupant is read through Unity's null (a destroyed customer frees it at once) and must
+still be heading for or sitting in that chair, an unserved customer times out and frees it, and
+every location stays live while the player is elsewhere. The one persistent thing is `dirtyWhen`,
+which is the salon's own saved object, and clearing it is free.
+
 ---
 
 ## 10. Workers
@@ -756,8 +823,12 @@ One animator controller, `Animation/Villager.controller`, shared by everyone.
 `Characters/CharacterVisual.cs` drives it:
 
 ```csharp
-enum Motion { Idle = 0, Walk = 1, CarryIdle = 2, CarryWalk = 3 }   // → animator int "State"
+enum Motion { Idle = 0, Walk = 1, CarryIdle = 2, CarryWalk = 3, Sit = 4 }   // → animator int "State"
 ```
+
+`Sit` is the one state it cannot measure (a seated villager is standing still, like an idle one),
+so a character that can sit says so through `ISeatedPose.IsSeated` — only `CustomerAgent`
+implements it, true while seated in a waiting room or a service chair. It beats every other state.
 
 It is **a watcher, not a controller** — it measures speed from transform movement rather than
 reading any motor:
@@ -765,7 +836,8 @@ reading any motor:
 > That means the player, workers and customers all animate correctly without a single line
 > changing in PlayerMotor, WorkerAgent or CustomerAgent.
 
-Customers have no `CarryStack`, so they only ever reach `Idle` / `Walk`.
+Customers have no `CarryStack`, so they only ever reach `Idle` / `Walk` — and `Sit` in a seated
+waiting room or a service chair.
 
 Two settings that exist because of real failures: `Animator.cullingMode = AlwaysAnimate` and
 `SkinnedMeshRenderer.updateWhenOffscreen = true` — *"wrong bounds make it vanish at the edges"*
@@ -1356,3 +1428,47 @@ Purchases, one step offered at a time (all prices through `Price()`; all in the 
   bench has nothing to do instead of waiting for a full one.
 * **`StationBase.AdoptIfInside`**: a worker whose route changes to a square it is already standing in (the pig hand
   crossing E1 to reach E2) is enrolled; before this it stood in the field doing nothing.
+
+---
+
+## The hairdresser salon (`Editor/SalonBuilder.cs`): the second business on the town street
+
+Built on the seated-waiting-room extension above (`CustomerQueue.seatedWaiting`/`chairs`, `ServiceChair`,
+`ChairServiceStation`, `CallNextStation`). Shop x 4.8..18.2, z -0.8..9.6 (town grid); EdgeEast is 22.
+
+**Reveal.** `SalonReveal` (RevealWhenAll in `TownBuilder`) watches the florist gardener hire (`FloristBuilder.Build`
+returns it) and reveals the salon root. The florist is NOT let go; its cash piles stay.
+
+**Chain.** litter (12 bags, free) -> Repair $2,800 -> Paint $1,400 (decor `town.salon.decor`, `PatternFactory.SalonPatterns`,
+repaint $200) -> OPEN (chair 1) -> chair 2 $4,500 / 3 $7,000 / 4 $12,000; receptionist $5,500; hairdressers 1-4
+$6,500 / 8,000 / 12,000 / 15,000 (their four squares share one footprint: only one is live at a time); cleaner $6,000.
+One purchase live at a time (UnlockStation chain; SquareAudit `SalonChain` checks it).
+
+**Customers.** One cash pile at reception, a waiting room with 4 seats (`seatedWaiting`), `CallNextStation` (NEXT square;
+the receptionist is a WorkerAgent on it). Four hairstyles (Short 80, Bob 110, Long 160, Quiff 120), each an
+`IProducer`/`ProductOffer` with `ItemDefinition.service = true` (the order bubble shows the icon only). Interval 40 s,
+demand 0.25/capacity, max 11. Each chair after the first adds 7 capacity and each hired hairdresser 4 (a `ProductOffer` under the worker), so a full salon sees about 13 arrivals a minute and keeps its 4 chairs busy (measured 3.1 of 4 busy, 35 haircuts per chair in 10 min). A hairdresser takes 10 s per haircut (`ServiceSeconds`).
+
+**Chair loop.** `SalonChairStation` (STYLE square). Player: after `openAfter`, `HaircutMinigame.Open` (Look, Cut, Dry,
+Result; 1-3 stars; 3 stars pays about price x1.75 with the tip, `tipShare` 0.2/0.45/0.75); closing the overlay abandons
+and the square re-arms on exit. Hairdresser worker: plain timed service, no minigame. `ServeWhole` is used so the
+customer leaves at once. `HairMess` listens to `ServiceChair.Released`: each served haircut adds `BagsPerService` (3)
+hair bags to its saved `ItemBuffer`; while non-empty the SWEEP square is on and the chair is `dirtyWhen`-blocked.
+The player sweeps (hair bag on the CarryStack) to the side-door bin (`WorkerBinStation`, a DiscardStation that workers
+may use). Cleaner = WorkerAgent, route heap -> bin, `deliverPartialLoads` (extended in WorkerAgent to also apply when
+the pickup is a `CollectStation` whose source is empty).
+The SWEEP square is switched off when the heap is gone and back on with the next haircut, so `HairMess` calls
+`StationBase.ClearOccupants()` first; without it the sweeper's record outlived the first sweep and the next heap was
+swept into their arms from anywhere (hair "spawning in the hands").
+
+**Models.** hairdresser = Customer model recoloured, receptionist = Cashier model, cleaner = Farmer model.
+
+**Tasks.** TaskBoard `AddSalonGoals`: Call the next customer, Give a haircut, Sweep up the hair, Take the hair to the bin.
+
+**Economy (market_sim.py, `Salon` agent).** Reveal at the gardener (about 107.8 min); repair+paint paid 2.8 min after,
+OPEN 1.3-1.5 min gaps; last hire about 36.6 min after the reveal (gaps 3.5-4.5 min); salon about $1,800/min fully staffed; total about $3,400/min.
+
+**Save ids.** `town.salon.*` and `town.hire.*`. The hair heap quantity is saved; inactive objects do not register, so a
+save restores along the reveal chain.
+
+**Moved for the salon.** Florist `ExitPoint` x 18 -> 24; town EdgeEast 16 -> 22; the ATM now stands at (1.7, 3.0).

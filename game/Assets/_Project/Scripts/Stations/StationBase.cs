@@ -257,6 +257,26 @@ namespace Tycoon.Stations
             OnPlayerExit();
         }
 
+        /// <summary>
+        /// Forgets everyone standing here. For a square that is about to be switched off and may be switched
+        /// on again.
+        ///
+        /// Unity never delivers OnTriggerExit to an object that is inactive, so an actor who is in the square
+        /// when it is switched off stays on the list for good - walks away, and is still "here" when the
+        /// square comes back, and the square keeps working on them from wherever they are (the salon's SWEEP
+        /// square handed hair bags to a player on the other side of the town). A square that is switched off
+        /// for good never notices, which is why only the salon's, which comes back with every haircut, did.
+        /// An actor who is still overlapping when the square returns is let in again by Unity's own
+        /// OnTriggerEnter.
+        /// </summary>
+        public void ClearOccupants()
+        {
+            if (_occupants.Count == 0) return;
+            _occupants.Clear();
+            _displayedTaskProgress = 0f;
+            OnPlayerExit();
+        }
+
         protected virtual void Update()
         {
             TickAlways(Time.deltaTime);
