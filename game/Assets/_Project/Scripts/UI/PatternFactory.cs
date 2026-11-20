@@ -82,6 +82,9 @@ namespace Tycoon.UI
         /// The salon's: the clean, tiled patterns of a hairdresser's (its walls are 0.7 m, so no wainscot, and no
         /// florist's flowers), all of them patterns the other shops already draw.
         /// </summary>
+        /// <summary>The cafe's: warm walls and tiles, the patterns the other shops already draw.</summary>
+        public static readonly int[] CafePatterns = { Plain, Stripes, Checker, Subway, Diamonds, Waves, Herringbone, Dots };
+
         public static readonly int[] SalonPatterns = { Plain, Stripes, Subway, Checker, Diamonds, Waves, Herringbone, Dots };
 
         public static readonly string[] PatternNames =

@@ -174,6 +174,7 @@ Written in `MarketBuilder.cs` (and `FarmSceneBuilder.BuildMarketLink` for the tw
 | `market.travel.farm` | the market-side travel square (not saveable, but identified) |
 | `town.unlock` | the $12,000 town purchase (`UnlockStation`, in the market root, hidden until the butcher is complete; `TownBuilder.cs`). Reveals the town root and the travel square |
 | `town.salon.*`, `town.hire.*` | the salon (see GAMEPLAY_SYSTEMS, the hairdresser salon): purchases, decor, queue, `HairMess` heap (saved ItemBuffer), cash pile |
+| `town.cafe.*`, `town.hire.barista`, `.waiter`, `.baker` | the café (see GAMEPLAY_SYSTEMS, the café): purchases (`town.cafe.unlock.*`, repair, paint, `chore.open`), decor, queue reputation (`town.cafe`), buffers (`fridge`, `coffee.out`, `crate.milk`, `crate.eggs`, `dish`, `eggfridge`, `oven.out`, `case`, one `*.cup` per table, `trash.1-3`), the two `ProducerMachine`s (`coffee.machine`, `oven.machine`), the cash pile. The van, the LATTE square and the customers are not saved |
 | `market.travel.town`, `town.travel.market`, `town.locked.soon` | the market-side and town-side travel squares and the COMING SOON placeholder (identified, not saveable) |
 | `market.trash.1` … `market.trash.4` | the four rubbish piles: an `ItemBuffer` of `Trash` (4 bags each); a half-cleared pile restores with the bags it had left. `ClearablePile` keeps no state |
 | `market.trashcollect.1` … `.4` | the piles' collect squares (identified, not saveable) |

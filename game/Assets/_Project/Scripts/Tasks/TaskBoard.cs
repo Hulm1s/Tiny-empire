@@ -97,6 +97,7 @@ namespace Tycoon.Tasks
         private RegisterStation[] _registers;
         private CutStation[] _benches;
         private CallNextStation[] _calls;
+        private LatteStation[] _lattes;
         private FlowerBed[] _beds;
         private WorkerAgent[] _workers;
         private DiscardStation[] _bins;
@@ -205,6 +206,7 @@ namespace Tycoon.Tasks
             _registers = FindObjectsByType<RegisterStation>(inactive, none);
             _benches = FindObjectsByType<CutStation>(inactive, none);
             _calls = FindObjectsByType<CallNextStation>(inactive, none);
+            _lattes = FindObjectsByType<LatteStation>(inactive, none);
             _beds = FindObjectsByType<FlowerBed>(inactive, none);
             _workers = FindObjectsByType<WorkerAgent>(inactive, none);
             _bins = FindObjectsByType<DiscardStation>(inactive, none);
@@ -575,6 +577,8 @@ namespace Tycoon.Tasks
 
             AddSalonGoals();
 
+            AddCafeGoals();
+
             AddCashGoals();
 
             if (_best != null)
@@ -619,6 +623,97 @@ namespace Tycoon.Tasks
             {
                 var bin = NearestBin();
                 if (bin != null) Consider(bin, 0d, "Take the hair to the bin");
+            }
+        }
+
+        /// <summary>
+        /// The cafe's free jobs, in the order the loop runs: unpack the delivery into the fridge, pick up what a waiting table
+        /// ordered (the coffee, the cake, or make the latte), serve it, clear the cup and wash it. Each only while nobody on the
+        /// payroll does it (the barista, the waiter, the baker).
+        /// </summary>
+        private void AddCafeGoals()
+        {
+            bool barista = false, waiter = false, baker = false;
+            for (int i = 0; i < _workers.Length; i++)
+            {
+                var w = _workers[i];
+                if (!Live(w) || w.routes == null || w.routes.Length == 0 || w.routes[0] == null) continue;
+                var r = w.routes[0];
+                if (r.dropoff is ChairServiceStation t && t.serveFromCarry)
+                {
+                    if (r.pickup is CollectStation c0 && c0.source != null && c0.source.item != null && c0.source.item.id == "cake") waiter = true;
+                    else barista = true;
+                }
+                if (r.pickup is CollectStation pc && pc.source != null && pc.source.item != null && pc.source.item.id == "dirty_cup") waiter = true;
+                if (r.pickup is CollectStation oc && oc.source != null && oc.source.item != null && oc.source.item.id == "egg") baker = true;
+            }
+
+            for (int i = 0; i < _registers.Length; i++)
+            {
+                var table = _registers[i] as ChairServiceStation;
+                if (table == null || !table.serveFromCarry || !Live(table)) continue;
+                var customer = table.ServingNow;
+                if (customer == null) continue;
+
+                bool holding = false;
+                if (_carry != null)
+                {
+                    if (customer.IsOrder)
+                    {
+                        for (int line = 0; line < customer.OrderLines; line++)
+                            if (customer.Wants(customer.OrderItem(line)) && _carry.Has(customer.OrderItem(line))) holding = true;
+                    }
+                    else if (customer.Wanted != null) holding = _carry.Has(customer.Wanted);
+                }
+                if (holding) { Consider(table, 0d, "Serve the table"); continue; }
+                if (barista && waiter) continue;
+
+                for (int k = 0; k < _collects.Length; k++)
+                {
+                    var c = _collects[k];
+                    if (!Live(c) || c.source == null || c.source.item == null || c.source.IsEmpty) continue;
+                    if (!customer.Wants(c.source.item)) continue;
+                    bool cake = c.source.item.id == "cake";
+                    if ((cake && waiter) || (!cake && barista)) continue;
+                    Consider(c, 0d, cake ? "Pick up the cake" : "Pick up the coffee");
+                }
+                if (!barista)
+                    for (int k = 0; k < _lattes.Length; k++)
+                    {
+                        var l = _lattes[k];
+                        if (!Live(l) || !l.CanMake || !customer.Wants(l.premiumItem)) continue;
+                        Consider(l, 0d, "Make a latte");
+                    }
+            }
+
+            Tycoon.Config.ItemDefinition cup = null, milk = null, egg = null;
+            for (int i = 0; i < _collects.Length; i++)
+            {
+                var c = _collects[i];
+                if (c.source == null || c.source.item == null) continue;
+                string id = c.source.item.id;
+                if (id == "dirty_cup")
+                {
+                    cup = c.source.item;
+                    if (Live(c) && !c.source.IsEmpty && !waiter && !(_carry != null && _carry.Has(cup))) Consider(c, 0d, "Clear the table");
+                }
+                else if ((id == "milk" || id == "egg") && c.GetComponent<SupplyFeed>() == null && c.source.GetComponent<SupplyFeed>() != null &&
+                         c.GetComponentInParent<Location>() is Location where && where.locationId == "town")
+                {
+                    if (id == "milk") milk = c.source.item; else egg = c.source.item;
+                    bool staffed = id == "egg" ? baker : barista;
+                    if (Live(c) && !c.source.IsEmpty && !staffed && !(_carry != null && _carry.Has(c.source.item)))
+                        Consider(c, 0d, id == "milk" ? "Unpack the milk" : "Unpack the eggs");
+                }
+            }
+            for (int i = 0; i < _deposits.Length; i++)
+            {
+                var d = _deposits[i];
+                if (!Live(d) || d.target == null || d.target.item == null || d.target.IsFull || _carry == null) continue;
+                var item = d.target.item;
+                if (item == cup && _carry.Has(cup)) Consider(d, 0d, "Wash the cups");
+                else if (item == milk && milk != null && _carry.Has(milk)) Consider(d, 0d, "Put the milk in the fridge");
+                else if (item == egg && egg != null && _carry.Has(egg)) Consider(d, 0d, "Put the eggs in the fridge");
             }
         }
 

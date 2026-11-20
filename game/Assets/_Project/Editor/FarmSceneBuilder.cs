@@ -60,7 +60,10 @@ namespace Tycoon.EditorTools
             BouquetBake.EnsureBaked();
             // The haircut minigame's, the same way; and the hair bag's model (a good, like the flowers).
             HaircutBake.EnsureBaked();
+            // The latte-art minigame's the same way (Resources/Latte, ASTC).
+            LatteBake.EnsureBaked();
             SalonBuilder.EnsureGoods();
+            CafeBuilder.EnsureGoods();
 
             var items = CreateItems();
             BuildEnvironment();
@@ -168,6 +171,13 @@ namespace Tycoon.EditorTools
             public ItemDefinition HairLong;
             public ItemDefinition HairQuiff;
             public ItemDefinition HairBag;
+
+            // The cafe's (town): a coffee, the premium (latte-art) coffee, a slice of cake and the dirty cup a table is left with.
+            // Milk and Egg above are the delivery's.
+            public ItemDefinition Coffee;
+            public ItemDefinition PremiumCoffee;
+            public ItemDefinition Cake;
+            public ItemDefinition DirtyCup;
         }
 
         /// <summary>A modelled good's height, so carried stacks close up exactly (FloristModels' goods).</summary>
@@ -281,6 +291,20 @@ namespace Tycoon.EditorTools
                 HairBag = LevelBuildKit.Item(
                     "hair_bag", "Hair", new Color(0.62f, 0.40f, 0.24f),
                     price: 0d, perishable: false, stackHeight: GoodHeight("hair_bag", 0.5f)),
+
+                // The cafe: what a table orders and what it is left with. The dirty cup is worth nothing and sold nowhere.
+                Coffee = LevelBuildKit.Item(
+                    "coffee", "Coffee", new Color(0.50f, 0.30f, 0.16f),
+                    price: CafeBuilder.CoffeePrice, perishable: false, stackHeight: GoodHeight("coffee", 0.4f)),
+                PremiumCoffee = LevelBuildKit.Item(
+                    "premium_coffee", "Latte", new Color(0.95f, 0.80f, 0.40f),
+                    price: CafeBuilder.PremiumPrice, perishable: false, stackHeight: GoodHeight("premium_coffee", 0.4f)),
+                Cake = LevelBuildKit.Item(
+                    "cake", "Cake", new Color(1.00f, 0.74f, 0.84f),
+                    price: CafeBuilder.CakePrice, perishable: false, stackHeight: GoodHeight("cake", 0.4f)),
+                DirtyCup = LevelBuildKit.Item(
+                    "dirty_cup", "Dirty cup", new Color(0.62f, 0.58f, 0.52f),
+                    price: 0d, perishable: false, stackHeight: GoodHeight("dirty_cup", 0.4f)),
             };
         }
 
@@ -994,9 +1018,9 @@ namespace Tycoon.EditorTools
             // name so adding a hire does not mean remembering to pass a model as well.
             // The hairdresser is a bare head (the customer's model, in a salon smock): no cap to cover the cut.
             string model = role.StartsWith("Cashier") || role.StartsWith("Milk") || role.StartsWith("Butcher")
-                           || role.StartsWith("Florist") || role.StartsWith("Receptionist")
+                           || role.StartsWith("Florist") || role.StartsWith("Receptionist") || role.StartsWith("Barista")
                 ? CharacterLibrary.Cashier
-                : role.StartsWith("Hairdresser") ? CharacterLibrary.Customer
+                : role.StartsWith("Hairdresser") || role.StartsWith("Waiter") || role.StartsWith("Baker") ? CharacterLibrary.Customer
                 : CharacterLibrary.Farmer;
 
             var worker = LevelBuildKit.BuildWorker(id, root, position, pickup, dropoff,

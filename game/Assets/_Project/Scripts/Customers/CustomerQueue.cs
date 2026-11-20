@@ -192,6 +192,18 @@ namespace Tycoon.Customers
         [Min(1)] public int maxPerFlower = 3;
         [Min(1)] public int maxBouquetFlowers = 6;
 
+        [Header("Café orders (café only)")]
+        [Tooltip("Off for every other shop. On for the café: each customer wants one DRINK from the register's menu that " +
+                 "the café can make right now (the premium coffee only after the upgrade), and with a chance of " +
+                 "cakeChance a slice of cake as well - a two-line order, served when both are delivered, like a bouquet.")]
+        public bool cafeOrders;
+
+        [Tooltip("The menu item that is the cake, not a drink. Its line is added to an order with chance cakeChance, " +
+                 "when the café can make it (a baker, an oven and a stocked case).")]
+        public Tycoon.Config.ItemDefinition cakeItem;
+
+        [Range(0f, 1f)] public float cakeChance = 0.35f;
+
         [Header("Waiting room and chairs (salon only)")]
         [Tooltip("Off for every till that is queued at standing up. On for a waiting room: each of `slots` is a " +
                  "chair, and a customer waiting at one sits on it facing the slot's forward (the Sit clip); the " +
@@ -199,6 +211,10 @@ namespace Tycoon.Customers
                  "They still shuffle up a place when the head leaves - standing, walking, sitting again - so " +
                  "slot 0 is always the next one to be called.")]
         public bool seatedWaiting;
+
+        [Tooltip("The café's seating: the head of the waiting room sits down at a free, clean chair by itself the moment " +
+                 "there is one - no NEXT square, no receptionist. Off for the salon, which calls its customers.")]
+        public bool autoSeat;
 
         [Tooltip("Chairs the head of the queue can be sent to (DispatchFront). Leave empty for a till: with no " +
                  "chairs nothing about the queue changes. A chair that is not bought yet (inactive), not " +
@@ -379,6 +395,9 @@ namespace Tycoon.Customers
             _atChairs.RemoveAll(c => c == null);
 
             if (customerTemplate == null || slots == null || slots.Length == 0) return;
+
+            // The café seats its own customers: one call per frame, whenever the head is ready and a table is free and clean.
+            if (autoSeat && seatedWaiting && CanDispatch) DispatchFront();
 
             if (IsBrowsing)
             {
@@ -575,6 +594,12 @@ namespace Tycoon.Customers
                 return;
             }
 
+            if (cafeOrders)
+            {
+                SpawnCafe(go, agent);
+                return;
+            }
+
             var item = PickOrderableItem();
 
             // Two separate reasons to turn a shopper away at the door, and both matter:
@@ -602,6 +627,47 @@ namespace Tycoon.Customers
             _waiting.Add(agent);
             agent.Begin(this, item, count, SlotPosition(_waiting.Count - 1), RandomTint(), way,
                 SeatAt(_waiting.Count - 1));
+        }
+
+        /// <summary>
+        /// A café customer: one drink the café can make now, and sometimes a slice of cake too (two order lines). Turned away
+        /// at the door when no drink is on yet, like any customer.
+        /// </summary>
+        private void SpawnCafe(GameObject go, CustomerAgent agent)
+        {
+            var menu = register != null ? register.sells : null;
+            var drinks = new List<ItemDefinition>();
+            bool cake = false;
+            if (menu != null)
+                foreach (var item in menu)
+                {
+                    if (item == null || !ProductRegistry.CanProduce(item)) continue;
+                    if (item == cakeItem) cake = true; else drinks.Add(item);
+                }
+
+            if (drinks.Count == 0)
+            {
+                Destroy(go);
+                return;
+            }
+
+            var items = new List<ItemDefinition> { drinks[UnityEngine.Random.Range(0, drinks.Count)] };
+            var counts = new List<int> { 1 };
+            if (cake && cakeItem != null && UnityEngine.Random.value < cakeChance) { items.Add(cakeItem); counts.Add(1); }
+
+            List<Vector3> way = null;
+            if (entryRoute != null && entryRoute.Length > 0)
+            {
+                way = new List<Vector3>(entryRoute.Length);
+                foreach (var point in entryRoute)
+                    if (point != null) way.Add(point.position);
+            }
+
+            _waiting.Add(agent);
+            if (items.Count == 1)
+                agent.Begin(this, items[0], 1, SlotPosition(_waiting.Count - 1), RandomTint(), way, SeatAt(_waiting.Count - 1));
+            else
+                agent.BeginOrder(this, items, counts, SlotPosition(_waiting.Count - 1), RandomTint(), way, SeatAt(_waiting.Count - 1));
         }
 
         /// <summary>

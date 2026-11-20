@@ -75,6 +75,12 @@ namespace Tycoon.Upkeep
                  "has nothing left to do for it.")]
         public bool deliverPartialLoads;
 
+        [Tooltip("Only take a trip whose whole load fits where it goes: a drop-off hopper with less free room than the load " +
+                 "(the smaller of the arms' capacity and what the pickup holds) is not offered. The cafe's baker carries eggs and " +
+                 "milk into hoppers the oven and the machine drain: without this he could stand at a nearly full egg fridge holding " +
+                 "the rest of his load, and with his arms full he never goes to empty the oven.")]
+        public bool onlyFittingLoads;
+
         [Header("Movement")]
         public float moveSpeed = 3.1f;
         public float turnSpeed = 720f;
@@ -242,8 +248,21 @@ namespace Tycoon.Upkeep
             var crate = (from as CollectStation)?.source;
             var shelf = (to as DepositStation)?.target;
             if (crate != null && crate.IsEmpty) return false;
+
+            // A café table's SERVE square (or any till a worker carries goods to): only worth the walk while someone is
+            // waiting there AND still wants what this trip would bring. Without it a waiter with several tables would
+            // keep choosing the first one, with nobody sitting at it.
+            if (to is RegisterStation till)
+            {
+                var asking = till.ServingNow;
+                if (asking == null) return false;
+                var bringing = crate != null ? crate.item : (from as LatteStation)?.premiumItem;
+                if (bringing != null && !asking.Wants(bringing)) return false;
+                if (from is LatteStation latte && !latte.CanMake) return false;
+            }
             if (shelf == null) return true;
             if (shelf.IsFull) return false;
+            if (onlyFittingLoads && _carry != null && shelf.FreeSpace < Mathf.Min(_carry.capacity, crate != null ? crate.Count : _carry.capacity)) return false;
 
             return !Claims.TryGetValue(shelf, out var owner) || owner == this ||
                    owner == null || !owner.isActiveAndEnabled;
@@ -264,6 +283,15 @@ namespace Tycoon.Upkeep
             if (routes[0] != null && routes[0].dropoff is BedStation)
             {
                 ChooseBed();
+                return;
+            }
+
+            // The cafe's staff serve different tables and clear different cups: what they carry may stop being wanted where they were
+            // heading (the customer gave up, or somebody else brought it). Re-aim at a drop-off that does want it - a table whose customer
+            // still asks for it, or a hopper that takes it - rather than standing at the old one holding it.
+            if (!_carry.IsEmpty && deliverPartialLoads && HasTillRoute())
+            {
+                ChooseForHeld();
                 return;
             }
 
@@ -323,6 +351,45 @@ namespace Tycoon.Upkeep
             {
                 _claimed = target;
                 Claims[target] = this;
+            }
+        }
+
+        private int _tillRoutes = -1;
+
+        private bool HasTillRoute()
+        {
+            if (_tillRoutes < 0)
+            {
+                _tillRoutes = 0;
+                if (routes != null)
+                    foreach (var r in routes)
+                        if (r != null && r.dropoff is RegisterStation) { _tillRoutes = 1; break; }
+            }
+            return _tillRoutes == 1;
+        }
+
+        private static bool Accepts(StationBase to, Tycoon.Config.ItemDefinition item)
+        {
+            if (to is RegisterStation till) return till.ServingNow != null && till.ServingNow.Wants(item);
+            if (to is DepositStation dep) return dep.target != null && dep.target.item == item && !dep.target.IsFull;
+            return false;
+        }
+
+        private void ChooseForHeld()
+        {
+            var held = _carry.Item;
+            if (held == null || routes == null) return;
+            if (dropoff != null && dropoff.isActiveAndEnabled && Accepts(dropoff, held)) return;
+
+            foreach (var route in routes)
+            {
+                if (route == null || route.dropoff == null || !route.dropoff.isActiveAndEnabled || !Accepts(route.dropoff, held)) continue;
+                pickup = route.pickup;
+                dropoff = route.dropoff;
+                _routedTo = null;
+                _headingToDropoff = true;
+                AdoptRoute();
+                return;
             }
         }
 

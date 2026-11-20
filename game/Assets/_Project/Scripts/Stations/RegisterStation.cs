@@ -119,6 +119,9 @@ namespace Tycoon.Stations
         /// </summary>
         protected virtual CustomerAgent Serving => queue != null ? queue.Front : null;
 
+        /// <summary>The customer this square serves right now (a worker's route reads it: is anyone waiting here?).</summary>
+        public CustomerAgent ServingNow => Serving;
+
         public override bool IsOperational => Serving != null;
 
         /// <summary>The ring fills as the front customer's order is completed.</summary>
@@ -166,12 +169,33 @@ namespace Tycoon.Stations
             if (queue == null) return false;
             if (HasDisplay) return TickCounter();
 
+            return ServeFromArms();
+        }
+
+        /// <summary>
+        /// Hands over one unit of what the customer asks for, out of the arms of whoever stands here, and takes the
+        /// payment. A single-product customer wants <see cref="CustomerAgent.Wanted"/>; a customer with several order
+        /// lines (the café's coffee and cake) takes whichever line the arms can fill, so a carried cake is not held up
+        /// behind a coffee that is not there yet. A table's SERVE square (<see cref="ChairServiceStation.serveFromCarry"/>)
+        /// serves through this too.
+        /// </summary>
+        protected bool ServeFromArms()
+        {
             var customer = Serving;
-            if (customer == null) return false;
+            if (customer == null || Carry == null) return false;
 
             var wanted = customer.Wanted;
+            if (customer.IsOrder)
+            {
+                // The first line still open that the arms hold.
+                for (int line = 0; line < customer.OrderLines; line++)
+                {
+                    var item = customer.OrderItem(line);
+                    if (customer.Wants(item) && Carry.Has(item)) { wanted = item; break; }
+                }
+            }
             if (wanted == null) return false;
-            if (Carry == null || !Carry.Has(wanted)) return false;
+            if (!Carry.Has(wanted)) return false;
 
             if (!Carry.TryRemove(wanted)) return false;
 

@@ -1472,3 +1472,71 @@ OPEN 1.3-1.5 min gaps; last hire about 36.6 min after the reveal (gaps 3.5-4.5 m
 save restores along the reveal chain.
 
 **Moved for the salon.** Florist `ExitPoint` x 18 -> 24; town EdgeEast 16 -> 22; the ATM now stands at (1.7, 3.0).
+
+---
+
+## The café (`Editor/CafeBuilder.cs`): the third business on the town street
+
+East of the salon (shop x 24..38, z 2..13, town grid; the street garden on the pavement z -1.2..2, the back lane and the van x 38..45;
+`TownBuilder.EdgeEast` is 46, the plaza 1..45). Built on the same seated-waiting-room extension as the salon, with three small
+extensions of existing types (below), and no new customer system.
+
+**Reveal.** `CafeReveal` (RevealWhenAll in `TownBuilder`) watches salon hairdresser 4 (`SalonBuilder.Build(..., out last)`) and reveals the
+café root. The salon is NOT let go; its cash piles stay.
+
+**Chain.** litter (3 heaps, free) -> Repair $4,000 -> Paint $2,000 (decor `town.cafe.decor`, `PatternFactory.CafePatterns`, repaint $200)
+-> OPEN (free: tables 1 and 2, the counter, the machine, the small fridge, the dishwasher, the milk and egg crates) -> Table 3 $11,000 ->
+Barista $13,000 -> Cakes (case + oven + egg fridge) $14,000 -> Waiter $13,000 -> Table 4 $15,000 -> Baker $15,000 -> Premium machine
+$18,000 -> garden tables 1-4 $14,000 / 16,000 / 19,000 / 21,000 -> Tables 5, 6 $19,000 / 21,000. One purchase live at a time (an
+`UnlockStation` chain; `SquareAudit.CafeChain` checks it, and that the free loop is live right after OPEN).
+
+**Customers.** One cash pile by the street door. Two waiting stools on the pavement (`seatedWaiting`), customers arrive from the EAST end of
+the street (west-bound lane z -2.4) and leave on the east-bound lane z -3.8. `CustomerQueue.autoSeat` seats the head of the room at the first free,
+CLEAN table (`ServiceChair.IsFree`), inside tables first, then the garden - no NEXT square, no receptionist. `CustomerQueue.cafeOrders`:
+each customer wants one drink from the register's menu that the café can make now (`ProductRegistry.CanProduce`: the premium coffee only
+after the upgrade) and, with chance `cakeChance` (0.35) when cakes can be made, a slice of cake as well - a two-line order
+(`CustomerAgent.BeginOrder`, the bubble shows both icons), served when both are delivered. Interval 30 s, demand 0.25/capacity, max 12.
+Items: Coffee $55, Latte (premium) $110, Cake $85, Dirty cup $0.
+
+**Table loop.** Each table is a group `Table{n}` / `Garden{n}`: models (table + customer chair + spare chair), a `ServiceChair`
+(seat, approach, exit), a SERVE `ChairServiceStation` and a CLEAR `CollectStation`. SERVE has `serveFromCarry = true`: it hands over what the
+player or worker CARRIES through `RegisterStation.ServeFromArms` (the till's own hand-over; a customer with several order lines takes whichever
+line the arms can fill) and the till's price goes to the pile. After a served customer leaves, `HairMess` (reused unchanged, one dirty cup
+per table, `bagsPerService = 1`, incl. its `ClearOccupants` fix) shows the cup, switches the CLEAR square on and makes the chair not free
+until the cup is cleared. Cups go to the dishwasher: a `DepositStation` whose target is a `dirty_cup` buffer (a DepositStation takes ONLY its target
+item, so nothing else in the arms is touched) drained by `Dishwasher`. Everything on the loop is free: no money is needed to escape.
+
+**Coffee.** The small fridge at the counter IS the machine's milk hopper (`ProducerMachine.input`, milk only - the beans refill by themselves, so
+the machine keeps its single input). Milk arrives free: `SupplyFeed` into a crate at the back door, UNPACK square -> carry -> FRIDGE square.
+The machine makes a cup per milk (4 s) into an output buffer; the MACHINE square collects it. The egg fridge is the oven's hopper the same way
+(2 eggs a cake, 10 s) and the display case is a buffer between a DepositStation (the baker) and a TAKE CAKE `CollectStation` (the waiter / player).
+The cakes use eggs only: a `ProducerMachine` has one input, and milk is the coffee's.
+
+**Delivery.** `DeliveryVan` is scenery that moves (appears at the east end of the street, drives up the back lane, stands 7 s, leaves, every 70 s;
+no collider, nothing saved). It touches no buffer: the crates' `SupplyFeed` fills them whether or not it is visible, and nothing is taken from the farm.
+
+**Premium.** The Premium gate stands at the UPGRADE square, hides the basic machine model and reveals a `LatteStation` on the same spot
+(the salon's gate-over-station pattern). The player there opens `LatteMinigame` (`MinigameOverlay`: LOOK a heart / leaf / smiley, POUR - hold to
+fill the meter and let go in the green, DRAW - trace the pattern, RESULT - 1-3 stars, tip `tipShare` 0.2/0.45/0.75 of the base price into the pile)
+for ONE premium coffee, which lands in the arms (one milk taken from the fridge); a hired barista makes it by timer at the base price. Closing the overlay
+makes nothing. The art is `LatteArt`, painted from distance shapes and BAKED in the editor (`Editor/LatteBake.cs`, bumped by `LatteArt.ArtVersion`, run by the scene build) into `Resources/Latte` with the shared ASTC import settings, exactly like the haircut's; the minigame only loads textures (measured on this machine: painting the 18 pictures took about 4.5-6.7 s, the baked first open 2.4 s of which almost all is building the screen - `LatteStation.Start` prewarms it when the premium machine is bought - and a repeat open 1-15 ms).
+
+**Staff.** Barista (Cashier model): routes machine / LATTE -> each table's SERVE (a route is only usable while that table has someone waiting who still
+wants what the route brings: `WorkerAgent.RouteUsable` extended for a `RegisterStation` drop-off). Waiter (Customer model): each CLEAR -> dishwasher, TAKE CAKE -> each
+table. Baker (Farmer model): unpack eggs -> egg fridge, oven -> case, and the milk too (unpack milk -> small fridge, six a trip). The barista and waiter carry ONE item a
+trip (`CarryStack.capacity = 1`) because they serve different tables (a worker only re-chooses its route with empty arms, so a barista holding three cups would stand at
+the first table until someone sat there again); that is why the milk is NOT the barista's job (a one-unit milk run was a 12 s round trip). Until the baker is hired the
+player keeps the small fridge stocked; it holds 24 and the crate 24. `deliverPartialLoads` on all three, and `WorkerAgent.onlyFittingLoads` on the baker (a hopper with less free room than the load is not offered, so he never stands at a nearly full egg fridge holding the rest of his eggs with his arms full and the oven blocked behind him). Each table and each hire is a `ProductOffer` (more demand), like the salon's chairs.
+
+**Tasks.** TaskBoard `AddCafeGoals`: Unpack the milk / eggs, Put it in the fridge, Pick up the coffee / cake, Make a latte, Serve the table,
+Clear the table, Wash the cups - each only while nobody on the payroll does it.
+
+**Economy (market_sim.py, `Cafe` agent; backup `market_sim_before_cafe.py`).** Reveal at hd4 (about 144.4 min, about $3,400/min account-wide);
+OPEN about 1.8 min after the reveal; gaps 2.9-4.5 min; last step about 49 min after the reveal; the café alone about $1,200/min at the end; account about $4,700/min.
+
+**Save ids.** `town.cafe.*` and `town.hire.barista|waiter|baker`. Buffers (fridges, crates, cups, case, oven out, dishes), the two machines, the cash pile,
+the purchases and the decor save; the van, the latte square and the customers do not. Inactive objects do not register, so a save restores along the reveal chain.
+
+**The town look (`TownBuilder.BuildGround`).** The town floor inside the fence is one sidewalk mesh (`TownPaving`, UVs in metres, one tile texture `Textures/Town_Paving.png` repeating, one material `Town_Paving`, no runtime Material), with the road a hair proud of it between two kerbs, the café's back lane (the delivery van's road, x 42.6..45, widening to a parking bay beside the back door) and the florist's meadow left out of the paving; no grass tufts inside the fence. Across the street (south) a small park: lawn, gravel path with a branch to the sidewalk, nine trees, four benches, a low hedge (primitives and a few shared asset materials, no colliders, no squares). Paving top 0.05 is what every pad, the café's garden and the stools stand on; the road is 0.06.
+
+**Moved for the café.** `TownBuilder.EdgeEast` 22 -> 46, plaza east 21 -> 45; `SquareAudit` round cap 24 -> 64 (three shops are 45 purchases deep).

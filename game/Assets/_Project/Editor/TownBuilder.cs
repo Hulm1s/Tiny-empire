@@ -1,6 +1,7 @@
 using Tycoon.Core;
 using Tycoon.Stations;
 using Tycoon.UI;
+using UnityEditor;
 using UnityEngine;
 
 namespace Tycoon.EditorTools
@@ -44,7 +45,8 @@ namespace Tycoon.EditorTools
         // wall and the grass all read these.
         private const float EdgeWest = -16f;
         // East grew from 16 to 22 for the hairdresser (SalonBuilder: the shop stands at x 4.8..18.2, its bin at 20).
-        private const float EdgeEast = 22f;
+        // East grew again from 22 to 46 for the cafe (CafeBuilder: the shop stands at x 24..38, its back lane and the van at 40..44).
+        private const float EdgeEast = 46f;
         private const float EdgeSouth = -12f;
         // North grew from 13 to 19.5 for the florist's meadow (FloristBuilder.MeadowNorth 17.2 + room for the fence).
         private const float EdgeNorth = 19.5f;
@@ -54,7 +56,7 @@ namespace Tycoon.EditorTools
 
         // ---- the paved square ----------------------------------------------------------
         // North of the road, east of the florist: where the next businesses of the street will stand.
-        private const float PlazaWest = 1f, PlazaEast = 21f;
+        private const float PlazaWest = 1f, PlazaEast = 45f;
         private const float PlazaSouth = -1.4f, PlazaNorth = 10.4f;
 
         // ---- travel --------------------------------------------------------------------
@@ -115,12 +117,20 @@ namespace Tycoon.EditorTools
             // The first business of the street, and the second east of it: the hairdresser's derelict shop appears
             // when the florist's last purchase (the gardener) is made.
             var gardenerHire = FloristBuilder.Build(root, items);
-            var salon = SalonBuilder.Build(root, items);
+            var salon = SalonBuilder.Build(root, items, out var salonLast);
             var salonWatcher = new GameObject("SalonReveal");
             salonWatcher.transform.SetParent(root, false);
             var salonReveal = salonWatcher.AddComponent<RevealWhenAll>();
             salonReveal.unlocks = new[] { gardenerHire };
             salonReveal.reveal = new[] { salon };
+
+            // The third, east of the salon: the cafe's derelict shop appears when the salon's last purchase (hairdresser 4) is made.
+            var cafe = CafeBuilder.Build(root, items);
+            var cafeWatcher = new GameObject("CafeReveal");
+            cafeWatcher.transform.SetParent(root, false);
+            var cafeReveal = cafeWatcher.AddComponent<RevealWhenAll>();
+            cafeReveal.unlocks = new[] { salonLast };
+            cafeReveal.reveal = new[] { cafe };
 
             // ---- the way in, from the supermarket ----------------------------------------
             var marketRoot = market.Root.transform;
@@ -173,56 +183,240 @@ namespace Tycoon.EditorTools
             return location;
         }
 
-        // ---- ground, road, grass -------------------------------------------------------
+        // ---- ground, road, paving, park -----------------------------------------------------------
+
+        private const float PaveTop = 0.05f;          // the sidewalk's top: what the cafe's garden, the stools and every pad stand on
+        private const float RoadTop = 0.06f;          // the road stands a hair proud of it, with a kerb between
+
+        /// <summary>The town park, opposite the shops across the street (south of the road): a lawn with a path, trees, benches and a low hedge.</summary>
+        private static readonly Rect ParkLawn = new Rect(-12.5f, -10.8f, 29f, 4.6f);
+
+        /// <summary>Everything in <paramref name="area"/> that is not in any of <paramref name="holes"/>, as rectangles.</summary>
+        private static System.Collections.Generic.List<Rect> Subtract(Rect area, Rect[] holes)
+        {
+            var parts = new System.Collections.Generic.List<Rect> { area };
+            foreach (var h in holes)
+            {
+                var next = new System.Collections.Generic.List<Rect>();
+                foreach (var r in parts)
+                {
+                    if (!r.Overlaps(h)) { next.Add(r); continue; }
+                    if (h.yMin > r.yMin) next.Add(Rect.MinMaxRect(r.xMin, r.yMin, r.xMax, h.yMin));
+                    if (h.yMax < r.yMax) next.Add(Rect.MinMaxRect(r.xMin, h.yMax, r.xMax, r.yMax));
+                    float y0 = Mathf.Max(r.yMin, h.yMin), y1 = Mathf.Min(r.yMax, h.yMax);
+                    if (h.xMin > r.xMin) next.Add(Rect.MinMaxRect(r.xMin, y0, h.xMin, y1));
+                    if (h.xMax < r.xMax) next.Add(Rect.MinMaxRect(h.xMax, y0, r.xMax, y1));
+                }
+                parts = next;
+            }
+            return parts;
+        }
+
+        /// <summary>
+        /// The sidewalk: ONE mesh (saved as an asset, like the grass cover) of flat quads whose UVs are metres, so one small tile texture
+        /// repeats as continuous paving slabs over the whole town floor; one material, no runtime Material. Left out: the road, the lane,
+        /// the florist's meadow and the park, which have their own ground.
+        /// </summary>
+        private static void BuildPaving(Transform root, Rect[] holes)
+        {
+            var tex = EnsurePavingTexture();
+            var paving = LevelBuildKit.Mat("Town_Paving", Color.white, 0.05f);
+            paving.mainTexture = tex;
+            if (paving.HasProperty("_BaseMap")) paving.SetTexture("_BaseMap", tex);
+            if (paving.HasProperty("_BaseColor")) paving.SetColor("_BaseColor", Color.white);
+            if (paving.HasProperty("_Color")) paving.SetColor("_Color", Color.white);
+            EditorUtility.SetDirty(paving);
+
+            var area = Rect.MinMaxRect(EdgeWest, EdgeSouth, EdgeEast, EdgeNorth);
+            var vertices = new System.Collections.Generic.List<Vector3>();
+            var uvs = new System.Collections.Generic.List<Vector2>();
+            var triangles = new System.Collections.Generic.List<int>();
+            const float repeat = 2f;                     // metres per texture repeat (2 x 2 slabs of 1 m)
+            foreach (var r in Subtract(area, holes))
+            {
+                if (r.width < 0.01f || r.height < 0.01f) continue;
+                int b = vertices.Count;
+                vertices.Add(new Vector3(r.xMin, PaveTop, r.yMin)); uvs.Add(new Vector2(r.xMin / repeat, r.yMin / repeat));
+                vertices.Add(new Vector3(r.xMin, PaveTop, r.yMax)); uvs.Add(new Vector2(r.xMin / repeat, r.yMax / repeat));
+                vertices.Add(new Vector3(r.xMax, PaveTop, r.yMax)); uvs.Add(new Vector2(r.xMax / repeat, r.yMax / repeat));
+                vertices.Add(new Vector3(r.xMax, PaveTop, r.yMin)); uvs.Add(new Vector2(r.xMax / repeat, r.yMin / repeat));
+                triangles.AddRange(new[] { b, b + 1, b + 2, b, b + 2, b + 3 });
+            }
+
+            var mesh = new Mesh { name = "TownPaving" };
+            mesh.SetVertices(vertices);
+            mesh.SetUVs(0, uvs);
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            const string path = "Assets/_Project/Meshes/TownPaving.asset";
+            var existing = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (existing != null) { EditorUtility.CopySerialized(mesh, existing); Object.DestroyImmediate(mesh); mesh = existing; EditorUtility.SetDirty(mesh); }
+            else AssetDatabase.CreateAsset(mesh, path);
+
+            var go = new GameObject("Paving");
+            go.transform.SetParent(root, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = paving;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+
+        /// <summary>A small slab texture (2 x 2 one-metre slabs, a joint between, slightly different greys), written once and imported repeating.</summary>
+        private static Texture2D EnsurePavingTexture()
+        {
+            const string path = "Assets/_Project/Textures/Town_Paving.png";
+            if (!AssetDatabase.IsValidFolder("Assets/_Project/Textures")) AssetDatabase.CreateFolder("Assets/_Project", "Textures");
+            if (!System.IO.File.Exists(System.IO.Path.GetFullPath(path)))
+            {
+                const int n = 128;
+                var tex = new Texture2D(n, n, TextureFormat.RGBA32, false);
+                var grey = new[] { 0.80f, 0.76f, 0.73f, 0.78f };
+                for (int y = 0; y < n; y++)
+                    for (int x = 0; x < n; x++)
+                    {
+                        int sx = x / 64, sy = y / 64;
+                        float g = grey[sx + 2 * sy];
+                        // A dark joint on each slab's first and last pixels, a worn edge inside it.
+                        int lx = x % 64, ly = y % 64;
+                        int edge = Mathf.Min(Mathf.Min(lx, 63 - lx), Mathf.Min(ly, 63 - ly));
+                        if (edge < 2) g *= 0.72f; else if (edge < 4) g *= 0.93f;
+                        g += ((x * 7 + y * 13) % 11 - 5) * 0.003f;
+                        tex.SetPixel(x, y, new Color(g, g * 0.985f, g * 0.96f, 1f));
+                    }
+                tex.Apply();
+                System.IO.File.WriteAllBytes(System.IO.Path.GetFullPath(path), tex.EncodeToPNG());
+                Object.DestroyImmediate(tex);
+                AssetDatabase.ImportAsset(path);
+            }
+            var importer = (TextureImporter)AssetImporter.GetAtPath(path);
+            if (importer != null && (importer.wrapMode != TextureWrapMode.Repeat || !importer.mipmapEnabled))
+            {
+                importer.wrapMode = TextureWrapMode.Repeat;
+                importer.mipmapEnabled = true;
+                importer.filterMode = FilterMode.Bilinear;
+                importer.anisoLevel = 4;
+                importer.maxTextureSize = 128;
+                importer.textureCompression = TextureImporterCompression.Compressed;
+                importer.SaveAndReimport();
+            }
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
 
         private static void BuildGround(Transform root)
         {
             var tarmac = LevelBuildKit.Mat("Road", new Color(0.36f, 0.36f, 0.39f));
             var markings = LevelBuildKit.Mat("RoadLine", new Color(0.88f, 0.88f, 0.8f));
-            var paving = LevelBuildKit.Mat("Town_Paving", new Color(0.70f, 0.69f, 0.66f));
+            var kerb = LevelBuildKit.Mat("Town_Kerb", new Color(0.86f, 0.85f, 0.82f));
 
-            // The road stub runs right through the fence gaps at both ends, as the market's does.
+            // The road runs right through the fence gaps at both ends, as the market's does. It stands a hair above the sidewalk.
             const float roadWest = EdgeWest - 1f;
             const float roadEast = EdgeEast + 4f;
-            LevelBuildKit.Box("Road", root, new Vector3((roadWest + roadEast) * 0.5f, 0.02f, RoadZ),
-                new Vector3(roadEast - roadWest, 0.04f, 2.8f), tarmac, castShadow: false);
-
+            LevelBuildKit.Box("Road", root, new Vector3((roadWest + roadEast) * 0.5f, RoadTop * 0.5f, RoadZ),
+                new Vector3(roadEast - roadWest, RoadTop, 2.8f), tarmac, castShadow: false);
             for (int x = (int)roadWest; x <= (int)roadEast; x += 2)
             {
-                LevelBuildKit.Box($"Line_{x}", root, new Vector3(x, 0.05f, RoadZ),
-                    new Vector3(0.9f, 0.04f, 0.14f), markings, castShadow: false);
+                LevelBuildKit.Box($"Line_{x}", root, new Vector3(x, RoadTop, RoadZ),
+                    new Vector3(0.9f, 0.03f, 0.14f), markings, castShadow: false);
             }
+            // The kerbs, either side.
+            foreach (float side in new[] { -1.5f, 1.5f })
+                LevelBuildKit.Box("Kerb", root, new Vector3((roadWest + roadEast) * 0.5f, 0.075f, RoadZ + side),
+                    new Vector3(roadEast - roadWest, 0.05f, 0.12f), kerb, castShadow: false);
 
-            LevelBuildKit.Box("Plaza", root,
-                new Vector3((PlazaWest + PlazaEast) * 0.5f, 0.025f, (PlazaSouth + PlazaNorth) * 0.5f),
-                new Vector3(PlazaEast - PlazaWest, 0.05f, PlazaNorth - PlazaSouth), paving, castShadow: false);
+            // The back lane: the delivery van's road, off the street at x 43.8 up behind the cafe to its back door, widening to a bay where it parks.
+            var laneRect = new Rect(CafeBuilder.LaneWest, RoadZ + 1.4f, CafeBuilder.LaneEast - CafeBuilder.LaneWest, CafeBuilder.LaneNorth - (RoadZ + 1.4f));
+            var bayRect = new Rect(CafeBuilder.BayWest, CafeBuilder.BayZ0, CafeBuilder.LaneWest - CafeBuilder.BayWest, CafeBuilder.LaneNorth - CafeBuilder.BayZ0);
+            foreach (var r in new[] { laneRect, bayRect })
+                LevelBuildKit.Box("Lane", root, new Vector3(r.center.x, RoadTop * 0.5f, r.center.y), new Vector3(r.width, RoadTop, r.height), tarmac, castShadow: false);
+            for (float z = RoadZ + 2.0f; z < CafeBuilder.LaneNorth - 0.8f; z += 2f)
+                LevelBuildKit.Box("LaneLine", root, new Vector3((CafeBuilder.LaneWest + CafeBuilder.LaneEast) * 0.5f, RoadTop, z), new Vector3(0.14f, 0.03f, 0.9f), markings, castShadow: false);
+            LevelBuildKit.Box("LaneKerb", root, new Vector3(CafeBuilder.LaneWest - 0.06f, 0.075f, (laneRect.yMin + laneRect.yMax) * 0.5f), new Vector3(0.12f, 0.05f, laneRect.height), kerb, castShadow: false);
 
-            // Grass wherever the road and the paving are not. Kept clear of every square, which is
-            // painted 9 cm up (a tuft is up to 40 cm tall).
+            // The sidewalk: paving over the whole town floor except the road, the lane, the florist's meadow (a garden) and the park.
+            var roadRect = new Rect(roadWest - 2f, RoadZ - 1.4f, roadEast - roadWest + 4f, 2.8f);
+            var meadow = new Rect(FloristBuilder.ShopWest - 0.1f, FloristBuilder.ShopNorth, FloristBuilder.ShopEast - FloristBuilder.ShopWest + 0.2f,
+                FloristBuilder.MeadowNorth - FloristBuilder.ShopNorth);
+            BuildPaving(root, new[] { roadRect, laneRect, bayRect, meadow, ParkLawn });
+
+            BuildPark(root);
+
+            // No plain grass inside the fence: the tufts go only outside it (the park and the florist's meadow have their own ground).
             const float beyond = 8f;
             var area = new Rect(EdgeWest - beyond, EdgeSouth - beyond,
                                 (EdgeEast - EdgeWest) + beyond * 2f,
                                 (EdgeNorth - EdgeSouth) + beyond * 2f);
-
             var keepClear = new[]
             {
                 // The road and the strip either side of it, out to the end of the tarmac.
                 new Rect(roadWest - 1f, RoadZ - 2.2f, (roadEast - roadWest) + 2f, 4.4f),
-                // The paved square and the margin round it.
-                new Rect(PlazaWest - 1f, PlazaSouth - 1f, (PlazaEast - PlazaWest) + 2f,
-                    (PlazaNorth - PlazaSouth) + 2f),
-                // The florist: the shop and its fenced meadow, which has its own lawn.
-                new Rect(FloristBuilder.ShopWest - 0.8f, FloristBuilder.ShopSouth - 0.8f,
-                    (FloristBuilder.ShopEast - FloristBuilder.ShopWest) + 1.6f,
-                    (FloristBuilder.MeadowNorth - FloristBuilder.ShopSouth) + 1.6f),
-                // The florist's bin on the pavement west of the street door: its pad, its square and the walk to it.
-                new Rect(FloristBuilder.BinAt.x - 1.8f, FloristBuilder.BinAt.z - 2.9f, 3.6f, 5.3f),
-                // The hairdresser: the shop and its bin outside the side door.
-                SalonBuilder.Bounds,
+                // The whole town floor inside the fence (and a margin round it).
+                new Rect(EdgeWest - 1f, EdgeSouth - 1f, (EdgeEast - EdgeWest) + 2f, (EdgeNorth - EdgeSouth) + 2f),
             };
 
             LevelBuildKit.BuildGrass(root, area, keepClear, tufts: 420, seed: 20261014,
                 meshName: "TownGrassCover", objectName: "Grass");
+        }
+
+        /// <summary>
+        /// The park across the street from the shops: a lawn, a gravel path with a branch to the sidewalk, nine trees, four benches and a low hedge.
+        /// A few shared materials, plain primitives, no colliders (nobody has any business in it, and nothing in it is a square).
+        /// </summary>
+        private static void BuildPark(Transform root)
+        {
+            var park = new GameObject("Park").transform;
+            park.SetParent(root, false);
+            var lawn = LevelBuildKit.Mat("Town_ParkLawn", new Color(0.48f, 0.72f, 0.34f), 0.05f);
+            var path = LevelBuildKit.Mat("Town_ParkPath", new Color(0.84f, 0.77f, 0.60f), 0.05f);
+            var trunk = LevelBuildKit.Mat("Town_Trunk", new Color(0.42f, 0.28f, 0.17f), 0.1f);
+            var leafA = LevelBuildKit.Mat("Town_LeafA", new Color(0.26f, 0.55f, 0.24f), 0.1f);
+            var leafB = LevelBuildKit.Mat("Town_LeafB", new Color(0.36f, 0.62f, 0.26f), 0.1f);
+            var hedge = LevelBuildKit.Mat("Town_Hedge", new Color(0.22f, 0.46f, 0.22f), 0.1f);
+            var wood = LevelBuildKit.Mat("Town_BenchWood", new Color(0.62f, 0.42f, 0.24f), 0.15f);
+            var iron = LevelBuildKit.Mat("Town_BenchIron", new Color(0.20f, 0.22f, 0.24f), 0.3f);
+
+            var c = ParkLawn.center;
+            LevelBuildKit.Box("Lawn", park, new Vector3(c.x, 0.03f, c.y), new Vector3(ParkLawn.width, 0.06f, ParkLawn.height), lawn, castShadow: false);
+            float pathZ = c.y;
+            LevelBuildKit.Box("Path", park, new Vector3(c.x, 0.065f, pathZ), new Vector3(ParkLawn.width - 1f, 0.02f, 1.3f), path, castShadow: false);
+            LevelBuildKit.Box("PathBranch", park, new Vector3(2.0f, 0.065f, (pathZ + ParkLawn.yMax) * 0.5f), new Vector3(1.3f, 0.02f, ParkLawn.yMax - pathZ), path, castShadow: false);
+
+            // The low hedge along the south side, with a gap, and short runs at the ends of the north side.
+            foreach (var run in new[] { new Vector2(-12.2f, -3.0f), new Vector2(-1.0f, 16.2f) })
+                LevelBuildKit.Box("Hedge", park, new Vector3((run.x + run.y) * 0.5f, 0.35f, ParkLawn.yMin + 0.3f), new Vector3(run.y - run.x, 0.6f, 0.5f), hedge, castShadow: false);
+            foreach (var run in new[] { new Vector2(-12.2f, -8.0f), new Vector2(12.0f, 16.2f) })
+                LevelBuildKit.Box("Hedge", park, new Vector3((run.x + run.y) * 0.5f, 0.35f, ParkLawn.yMax - 0.3f), new Vector3(run.y - run.x, 0.6f, 0.5f), hedge, castShadow: false);
+
+            var treeAt = new[]
+            {
+                new Vector2(-10.5f, -9.4f), new Vector2(-6.5f, -7.6f), new Vector2(-3.2f, -9.6f), new Vector2(0.2f, -7.4f), new Vector2(4.6f, -9.5f),
+                new Vector2(7.4f, -7.5f), new Vector2(10.4f, -9.4f), new Vector2(13.6f, -7.7f), new Vector2(15.2f, -9.8f),
+            };
+            for (int i = 0; i < treeAt.Length; i++)
+            {
+                float h = 1.5f + (i % 3) * 0.35f, r = 1.0f + (i % 2) * 0.25f;
+                LevelBuildKit.Cylinder("Trunk", park, new Vector3(treeAt[i].x, 0.06f + h * 0.5f, treeAt[i].y), new Vector3(0.28f, h * 0.5f, 0.28f), trunk, castShadow: false);
+                var crown = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                crown.name = "Crown";
+                Object.DestroyImmediate(crown.GetComponent<Collider>());
+                crown.transform.SetParent(park, false);
+                crown.transform.localPosition = new Vector3(treeAt[i].x, 0.06f + h + r * 0.55f, treeAt[i].y);
+                crown.transform.localScale = new Vector3(r * 2f, r * 1.7f, r * 2f);
+                var rend = crown.GetComponent<Renderer>();
+                rend.sharedMaterial = i % 2 == 0 ? leafA : leafB;
+                rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+
+            // Benches along the path, seats facing it.
+            foreach (var at in new[] { new Vector2(-8.2f, pathZ + 1.0f), new Vector2(-1.8f, pathZ - 1.0f), new Vector2(5.4f, pathZ + 1.0f), new Vector2(11.2f, pathZ - 1.0f) })
+            {
+                float side = at.y > pathZ ? 1f : -1f;
+                LevelBuildKit.Box("BenchSeat", park, new Vector3(at.x, 0.46f, at.y), new Vector3(1.5f, 0.07f, 0.45f), wood, castShadow: false);
+                LevelBuildKit.Box("BenchBack", park, new Vector3(at.x, 0.78f, at.y + side * 0.2f), new Vector3(1.5f, 0.36f, 0.06f), wood, castShadow: false);
+                foreach (float lx in new[] { -0.65f, 0.65f })
+                    LevelBuildKit.Box("BenchLeg", park, new Vector3(at.x + lx, 0.25f, at.y), new Vector3(0.07f, 0.42f, 0.4f), iron, castShadow: false);
+            }
         }
     }
 }

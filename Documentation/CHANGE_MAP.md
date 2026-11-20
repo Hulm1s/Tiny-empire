@@ -444,3 +444,34 @@ supermarket was added and may have drifted by a few dozen lines; search by name.
 | The cleaner's bin | `Stations/WorkerBinStation.cs` (via `LevelBuildKit.BuildBin(..., workers:true)`) |
 | Salon task-list lines | `Tasks/TaskBoard.cs` `AddSalonGoals` |
 | Salon decor pattern list | `PatternFactory.SalonPatterns` |
+
+## Café (town, `Editor/CafeBuilder.cs`)
+
+| I want to change... | Edit |
+|---|---|
+| Café prices (repair, paint, tables, staff, cakes, premium, garden), customer interval, demand, cake chance | constants at the top of `CafeBuilder.cs`; item prices `CoffeePrice/PremiumPrice/CakePrice` (read by `FarmSceneBuilder.CreateItems`) |
+| Café size / position / doors / table positions / routes | `CafeBuilder` Shop W/E/S/N, door constants, `BuildTableSpecs` (approach and exit points), `*At` square constants; keep `CafeBuilder.Bounds` in TownBuilder's grass keep-clear; then run SquareAudit |
+| How fast coffee / cakes are made, fridge and case sizes, the free delivery rate | `CoffeeSeconds`, `CakeSeconds`, `EggsPerCake`, `FridgeCapacity`, `CaseCapacity`, `MilkSecondsPerUnit`, `EggSecondsPerUnit` in `CafeBuilder` |
+| The delivery van (route, interval, stop) | `CafeBuilder.VanRoute`, `BuildVan`; `Stations/DeliveryVan.cs` |
+| The latte minigame (rates, tolerance, stars, tip) | `UI/LatteMinigame.cs` (`PourRate`, `GreenFrom/To`, `Tolerance`); `tipShare` and `makeSeconds` in `Stations/LatteStation.cs` |
+| Latte art / cup / jug pictures | `UI/LatteArt.cs`, re-baked by `Editor/LatteBake.cs` into `Resources/Latte` (bump `LatteArt.ArtVersion` after changing a picture or the list in `BakeAll`) |
+| Coffee / cake / dirty cup icons | `UI/IconFactory.Cafe.cs`, wired in `IconFactory.For`, listed in `IconSheet.cs` |
+| Café models (tables, counter, machines, oven, case, fridge, dishwasher, crates, van, goods) | `Editor/FloristModels.Cafe.cs` (baked on demand under Meshes/Florist/Cafe; goods under Meshes/Goods by `EnsureCafeGoods`) |
+| Café staff colours | `CafeBuilder.CafeDress` (material assets `Materials/Fl_CafeBarista_*`, `Fl_CafeWaiter_*`, `Fl_CafeBaker_*`) |
+| What a table does with a carried item (serve) | `ChairServiceStation.serveFromCarry` -> `RegisterStation.ServeFromArms` |
+| Auto-seating, two-line (drink + cake) orders | `CustomerQueue.autoSeat`, `cafeOrders`, `cakeItem`, `cakeChance`, `SpawnCafe` |
+| Which tables a worker walks to; whether a load must fit | `WorkerAgent.RouteUsable` (a till drop-off needs someone waiting who wants the load; `onlyFittingLoads`) |
+| Dirty cup per table | `Stations/HairMess.cs` (reused, `bagsPerService = 1`); dishwasher `Stations/Dishwasher.cs` |
+| Café task-list lines | `Tasks/TaskBoard.cs` `AddCafeGoals` |
+| Café decor pattern list | `PatternFactory.CafePatterns` |
+| Café audit | `SquareAudit.CafeChain` |
+| Lane widths (two workers passing) | `SquareAudit.LaneWidths` (the front row of tables: `CafeBuilder.RowZ`, `NeckZ`, `KitchenSouth`) |
+
+## Town ground (`Editor/TownBuilder.cs`)
+
+| I want to change... | Edit |
+|---|---|
+| The sidewalk (slab size, colours, what is left unpaved) | `TownBuilder.BuildPaving` / `EnsurePavingTexture` (`Textures/Town_Paving.png`, delete it to re-draw); the holes list in `BuildGround` |
+| The road, kerbs, the back lane and the van's parking bay | `TownBuilder.BuildGround`; the lane numbers are `CafeBuilder.LaneWest/LaneEast/LaneNorth/BayWest/BayZ0` (keep the van route `CafeBuilder.VanRoute` on it) |
+| The park | `TownBuilder.ParkLawn` and `BuildPark` (trees, benches, hedge, path) |
+| Grass tufts | only outside the fence now: the `keepClear` in `BuildGround` |

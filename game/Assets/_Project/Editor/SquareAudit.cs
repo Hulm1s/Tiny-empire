@@ -176,6 +176,8 @@ namespace Tycoon.EditorTools
             clashes += ButcherChain(root, solids, entries, firstLive, tag);
             clashes += FloristChain(root, solids, entries, firstLive, tag);
             clashes += SalonChain(root, entries, firstLive, tag);
+            clashes += CafeChain(root, entries, firstLive, tag);
+            clashes += LaneWidths(root, tag);
             clashes += LetGoRules(location, tag);
             ReportLayout(root, solids, tag);
 
@@ -290,7 +292,8 @@ namespace Tycoon.EditorTools
 
             int clashes = 0;
             int round = 0;
-            const int maxRounds = 24;
+            // Three shops on the town street (florist, salon, cafe) are 45 purchases deep.
+            const int maxRounds = 64;
 
             for (; round < maxRounds; round++)
             {
@@ -1024,6 +1027,192 @@ namespace Tycoon.EditorTools
             return faults;
         }
 
+        // ---------------------------------------------------------------- lane widths
+
+        /// <summary>
+        /// The narrowest place on every route a hire or a customer of the cafe walks, against two of them passing.
+        ///
+        /// The navigation mesh is baked for an agent of radius NavMesh.GetSettingsByID(0).agentRadius (0.5), so a
+        /// corridor of clear width W leaves the agent's CENTRE a lane of W - 2 x 0.5; two agents (radius 0.3) side by
+        /// side need their centres 0.6 apart, plus a margin. So the clear width between solids must be at least
+        /// 2 x 0.5 + 0.6 + 0.1 = 1.7 m at every point of the best route, or two workers meeting there stop and wait
+        /// for each other (the jam at table 4: the way from the tables' south side to the kitchen pass ran through a
+        /// 1.35 m neck beside the last chair).
+        ///
+        /// Measured on the level's own grid: every carving box (NavMeshObstacle) under the cafe is an obstacle; each
+        /// cell's clearance is its distance to the nearest one; the widest-bottleneck route between each pair of
+        /// stations is found by sweeping the cells from the widest down (union-find), and the lowest clearance on that
+        /// route is its bottleneck. The ground within 0.9 m of a station is exempt (a worker stands there).
+        /// </summary>
+        private static int LaneWidths(Transform root, string tag)
+        {
+            var cafe = root.Find("Cafe");
+            if (cafe == null) return 0;
+
+            float navRadius = 0.5f;
+            var navSettings = UnityEngine.AI.NavMesh.GetSettingsByID(0);
+            if (navSettings.agentRadius > 0f) navRadius = navSettings.agentRadius;
+            const float agentRadius = 0.3f, margin = 0.1f, exempt = 0.9f, cell = 0.05f;
+            float needClear = 2f * navRadius + 2f * agentRadius + margin;
+
+            var rects = new List<Rect>();
+            foreach (var ob in cafe.GetComponentsInChildren<UnityEngine.AI.NavMeshObstacle>(true))
+            {
+                if (ob.shape != UnityEngine.AI.NavMeshObstacleShape.Box) continue;
+                float xMin = float.MaxValue, xMax = float.MinValue, zMin = float.MaxValue, zMax = float.MinValue;
+                for (int i = 0; i < 4; i++)
+                {
+                    Vector3 c = ob.center + new Vector3((i & 1) == 0 ? -ob.size.x : ob.size.x, 0f, (i & 2) == 0 ? -ob.size.z : ob.size.z) * 0.5f;
+                    Vector3 local = root.InverseTransformPoint(ob.transform.TransformPoint(c));
+                    xMin = Mathf.Min(xMin, local.x); xMax = Mathf.Max(xMax, local.x);
+                    zMin = Mathf.Min(zMin, local.z); zMax = Mathf.Max(zMax, local.z);
+                }
+                rects.Add(Rect.MinMaxRect(xMin, zMin, xMax, zMax));
+            }
+
+            const float x0 = 22f, z0 = -2f, x1 = 47f, z1 = 14.6f;
+            int w = Mathf.RoundToInt((x1 - x0) / cell), h = Mathf.RoundToInt((z1 - z0) / cell);
+            var clear = new float[w * h];
+            for (int j = 0; j < h; j++)
+                for (int i = 0; i < w; i++)
+                {
+                    float px = x0 + (i + 0.5f) * cell, pz = z0 + (j + 0.5f) * cell;
+                    float best = 5f;
+                    foreach (var r in rects)
+                    {
+                        float dx = Mathf.Max(Mathf.Max(r.xMin - px, px - r.xMax), 0f);
+                        float dz = Mathf.Max(Mathf.Max(r.yMin - pz, pz - r.yMax), 0f);
+                        float d = Mathf.Sqrt(dx * dx + dz * dz);
+                        if (d < best) best = d;
+                    }
+                    clear[j * w + i] = best;
+                }
+
+            int CellOf(Vector2 p) => Mathf.Clamp(Mathf.FloorToInt((p.y - z0) / cell), 0, h - 1) * w + Mathf.Clamp(Mathf.FloorToInt((p.x - x0) / cell), 0, w - 1);
+
+            // The stations the cafe's hires and customers walk between.
+            var pairs = new List<(Vector2 a, Vector2 b, string label)>();
+            foreach (var worker in cafe.GetComponentsInChildren<Tycoon.Upkeep.WorkerAgent>(true))
+            {
+                var legs = new List<(StationBase, StationBase)>();
+                if (worker.pickup != null && worker.dropoff != null) legs.Add((worker.pickup, worker.dropoff));
+                if (worker.routes != null) foreach (var rt in worker.routes) if (rt != null && rt.pickup != null && rt.dropoff != null) legs.Add((rt.pickup, rt.dropoff));
+                foreach (var (a, b) in legs) pairs.Add((Flat(root, a.transform), Flat(root, b.transform), worker.name + ": " + a.name + " to " + b.name));
+            }
+            var queue = cafe.GetComponentInChildren<Tycoon.Customers.CustomerQueue>(true);
+            if (queue != null && queue.slots != null && queue.slots.Length > 0 && queue.slots[0] != null && queue.exitPoint != null && queue.chairs != null)
+            {
+                // From the last point of the street walk: the waiting stools themselves are seats, not lanes.
+                Vector2 head = Flat(root, queue.slots[0]), gone = Flat(root, queue.exitPoint);
+                if (queue.entryRoute != null && queue.entryRoute.Length > 0 && queue.entryRoute[queue.entryRoute.Length - 1] != null)
+                    head = Flat(root, queue.entryRoute[queue.entryRoute.Length - 1]);
+                foreach (var chair in queue.chairs)
+                {
+                    if (chair == null) continue;
+                    string name = chair.transform.parent != null ? chair.transform.parent.name : chair.name;
+                    if (chair.approach != null && chair.approach.Length > 0 && chair.approach[chair.approach.Length - 1] != null)
+                        pairs.Add((head, Flat(root, chair.approach[chair.approach.Length - 1]), "customer in to " + name));
+                    if (chair.exitRoute != null && chair.exitRoute.Length > 0 && chair.exitRoute[0] != null)
+                        pairs.Add((Flat(root, chair.exitRoute[0]), gone, "customer out of " + name));
+                }
+            }
+
+            // Ground a worker stands on is exempt: lift it to the widest value.
+            var lifted = (float[])clear.Clone();
+            int rad = Mathf.CeilToInt(exempt / cell);
+            void Lift(Vector2 p)
+            {
+                int ci = CellOf(p) % w, cj = CellOf(p) / w;
+                for (int dj = -rad; dj <= rad; dj++)
+                    for (int di = -rad; di <= rad; di++)
+                    {
+                        int ni = ci + di, nj = cj + dj;
+                        if (ni < 0 || nj < 0 || ni >= w || nj >= h || di * di + dj * dj > rad * rad) continue;
+                        lifted[nj * w + ni] = 5f;
+                    }
+            }
+            foreach (var pr in pairs) { Lift(pr.a); Lift(pr.b); }
+
+            // Sweep the cells from the widest down; a pair is joined at the level its two ends first meet.
+            var order = new int[w * h];
+            for (int i = 0; i < order.Length; i++) order[i] = i;
+            System.Array.Sort(order, (p, q) => lifted[q].CompareTo(lifted[p]));
+            var parent = new int[w * h];
+            for (int i = 0; i < parent.Length; i++) parent[i] = -1;
+            int Find(int a) { while (parent[a] != a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; }
+            var joined = new float[pairs.Count];
+            var done = new bool[pairs.Count];
+            int pending = pairs.Count, cursor = 0;
+            for (float level = 5f; level >= 0f && pending > 0; level -= 0.05f)
+            {
+                while (cursor < order.Length && lifted[order[cursor]] >= level - 1e-4f)
+                {
+                    int c = order[cursor++];
+                    parent[c] = c;
+                    int ci = c % w, cj = c / w;
+                    for (int dj = -1; dj <= 1; dj++)
+                        for (int di = -1; di <= 1; di++)
+                        {
+                            int ni = ci + di, nj = cj + dj;
+                            if ((di == 0 && dj == 0) || ni < 0 || nj < 0 || ni >= w || nj >= h) continue;
+                            int n = nj * w + ni;
+                            if (parent[n] < 0) continue;
+                            int ra = Find(c), rb = Find(n);
+                            if (ra != rb) parent[ra] = rb;
+                        }
+                }
+                for (int k = 0; k < pairs.Count; k++)
+                {
+                    if (done[k]) continue;
+                    int a = CellOf(pairs[k].a), b = CellOf(pairs[k].b);
+                    if (parent[a] >= 0 && parent[b] >= 0 && Find(a) == Find(b)) { done[k] = true; joined[k] = level; pending-- ; }
+                }
+            }
+
+            // Where the tightest point of a route is: walk the cells at least as wide as the route's bottleneck from one
+            // end to the other and take the narrowest cell of the walk (a breadth-first search, so the shortest one).
+            Vector2 Pinch(Vector2 from, Vector2 to, float level)
+            {
+                int a = CellOf(from), b = CellOf(to);
+                var prev = new int[w * h];
+                for (int i = 0; i < prev.Length; i++) prev[i] = -2;
+                var queueCells = new Queue<int>();
+                prev[a] = -1; queueCells.Enqueue(a);
+                while (queueCells.Count > 0 && prev[b] == -2)
+                {
+                    int c = queueCells.Dequeue();
+                    int ci = c % w, cj = c / w;
+                    for (int dj = -1; dj <= 1; dj++)
+                        for (int di = -1; di <= 1; di++)
+                        {
+                            int ni = ci + di, nj = cj + dj;
+                            if ((di == 0 && dj == 0) || ni < 0 || nj < 0 || ni >= w || nj >= h) continue;
+                            int n = nj * w + ni;
+                            if (prev[n] != -2 || lifted[n] < level - 1e-4f) continue;
+                            prev[n] = c; queueCells.Enqueue(n);
+                        }
+                }
+                int at = b, worst = b;
+                if (prev[b] == -2) return Vector2.zero;
+                while (at != -1) { if (lifted[at] < lifted[worst]) worst = at; at = prev[at]; }
+                return new Vector2(x0 + (worst % w + 0.5f) * cell, z0 + (worst / w + 0.5f) * cell);
+            }
+
+            int faults = 0;
+            float narrowest = 99f;
+            for (int k = 0; k < pairs.Count; k++)
+            {
+                float width = done[k] ? joined[k] * 2f : 0f;      // clear width between solids at the route's tightest point
+                if (width < narrowest) narrowest = width;
+                if (width + 1e-3f >= needClear) continue;
+                faults++;
+                Debug.LogWarning($"[Audit] LANES {tag} {pairs[k].label}: the best route is only {width:0.00} m wide between solids at its tightest, near ({Pinch(pairs[k].a, pairs[k].b, joined[k]).x:0.0},{Pinch(pairs[k].a, pairs[k].b, joined[k]).y:0.0}) " +
+                                 $"(two agents passing need {needClear:0.00} m).");
+            }
+            Debug.Log($"[Audit] {tag} lane widths: {pairs.Count} routes, narrowest {(pairs.Count == 0 ? 0f : narrowest):0.00} m (need {needClear:0.00} m), {faults} faults.");
+            return faults;
+        }
+
         // ---------------------------------------------------------------- the butcher's chain
 
         /// <summary>
@@ -1660,6 +1849,174 @@ namespace Tycoon.EditorTools
                 }
 
             Debug.Log($"[Audit] {tag} florist chain: {faults} faults.");
+            return faults;
+        }
+
+        /// <summary>
+        /// The cafe's loop, end to end: the queue seats customers by itself at the tables (autoSeat, cafeOrders, every table's SERVE
+        /// square carries goods and names the queue, the one cash pile), every menu item can be made (the machine from the small fridge's
+        /// milk, the oven from the egg fridge's eggs, the premium cup by the LATTE square) and is advertised, the free supply (crates with a
+        /// SupplyFeed, UNPACK squares, the fridges), the dirty cup per table and the dishwasher that takes only dirty cups, the staff's
+        /// routes, and that nothing the loop needs sits behind a purchase: the free steps are live from OPEN.
+        /// </summary>
+        private static int CafeChain(Transform root, List<Entry> entries, Dictionary<StationBase, int> firstLive, string tag)
+        {
+            var cafe = root.Find("Cafe");
+            if (cafe == null) return 0;
+
+            int faults = 0;
+            void Fault(string what)
+            {
+                faults++;
+                Debug.LogWarning($"[Audit] CAFE {tag} {what}");
+            }
+            int LiveAt(StationBase st) => st != null && firstLive.TryGetValue(st, out int r) ? r : -1;
+
+            var queue = cafe.GetComponentInChildren<Tycoon.Customers.CustomerQueue>(true);
+            if (queue == null) { Fault("there is no queue."); return faults; }
+            if (!queue.seatedWaiting || !queue.autoSeat || !queue.cafeOrders) Fault("the queue is not a seated, auto-seating cafe queue.");
+            if (queue.cakeItem == null) Fault("the queue does not know the cake.");
+
+            var tables = new List<ChairServiceStation>();
+            foreach (var st in cafe.GetComponentsInChildren<ChairServiceStation>(true)) if (st.serveFromCarry) tables.Add(st);
+            if (queue.chairs == null || queue.chairs.Length != tables.Count)
+                Fault($"the queue lists {(queue.chairs == null ? 0 : queue.chairs.Length)} chairs for {tables.Count} tables.");
+            if (queue.register == null || tables.IndexOf(queue.register as ChairServiceStation) < 0) Fault("the queue's register is not a table (its menu would be empty).");
+
+            Tycoon.Stations.CashPile pile = null;
+            foreach (var t in tables)
+            {
+                if (t.queue != queue) Fault($"{t.name} does not name the cafe's queue: its orders would be free.");
+                if (t.chair == null || System.Array.IndexOf(queue.chairs, t.chair) < 0) Fault($"{t.name}'s chair is not one of the queue's chairs.");
+                if (t.pile == null) Fault($"{t.name} has no cash pile.");
+                else if (pile != null && t.pile != pile) Fault("the tables do not all pay into the one cash pile.");
+                pile = t.pile;
+                if (t.sells == null || t.sells.Length != 3) Fault($"{t.name} does not sell coffee, premium coffee and cake.");
+                if (t.chair != null && (t.chair.seat == null || t.chair.dirtyWhen == null)) Fault($"{t.name}'s chair has no seat or no dirty-cup marker.");
+            }
+
+            // The dirty cup per table.
+            foreach (var mess in cafe.GetComponentsInChildren<HairMess>(true))
+            {
+                var buffer = mess.GetComponent<ItemBuffer>();
+                var take = mess.square != null ? mess.square.GetComponent<CollectStation>() : null;
+                if (mess.chair == null || mess.chair.dirtyWhen != mess.dirty) Fault($"{mess.name}: its marker is not its chair's dirtyWhen.");
+                if (take == null || take.source != buffer) Fault($"{mess.name}: its CLEAR square does not take the dirty cup.");
+                else if (!take.workerCompatible) Fault($"{mess.name}: the waiter may not use the CLEAR square.");
+                if (buffer == null || buffer.item == null || buffer.item.basePrice > 0d || buffer.capacity != mess.bagsPerService)
+                    Fault($"{mess.name}: a dirty cup must be worthless and the buffer must hold one table's cup.");
+                if (mess.dirty != null && mess.dirty.activeSelf) Fault($"{mess.name}: the table starts out dirty.");
+            }
+
+            // The supply and the machines.
+            Tycoon.Stations.ProducerMachine coffee = null, oven = null;
+            foreach (var m in cafe.GetComponentsInChildren<Tycoon.Stations.ProducerMachine>(true))
+            {
+                if (m.output != null && m.output.item != null && m.output.item.id == "coffee") coffee = m;
+                if (m.output != null && m.output.item != null && m.output.item.id == "cake") oven = m;
+            }
+            if (coffee == null || oven == null) { Fault("the coffee machine or the oven is missing."); return faults; }
+            if (coffee.input == null || coffee.input.item == null || coffee.input.item.id != "milk") Fault("the coffee machine is not fed milk.");
+            if (oven.input == null || oven.input.item == null || oven.input.item.id != "egg") Fault("the oven is not fed eggs.");
+
+            DepositStation DepositFor(ItemBuffer b)
+            {
+                foreach (var d in cafe.GetComponentsInChildren<DepositStation>(true)) if (d.target == b) return d;
+                return null;
+            }
+            CollectStation CollectFrom(ItemBuffer b)
+            {
+                foreach (var c in cafe.GetComponentsInChildren<CollectStation>(true)) if (c.source == b) return c;
+                return null;
+            }
+            var fridgeSq = DepositFor(coffee.input);
+            var eggSq = DepositFor(oven.input);
+            var machineSq = CollectFrom(coffee.output);
+            var ovenSq = CollectFrom(oven.output);
+            if (fridgeSq == null) Fault("nothing puts milk into the small fridge.");
+            if (eggSq == null) Fault("nothing puts eggs into the egg fridge.");
+            if (machineSq == null) Fault("nothing takes the coffee out of the machine.");
+            if (ovenSq == null) Fault("nothing takes the cakes out of the oven.");
+            ItemBuffer caseBuffer = null;
+            foreach (var d in cafe.GetComponentsInChildren<DepositStation>(true))
+                if (d.target != null && d.target.item == oven.output.item) caseBuffer = d.target;
+            if (caseBuffer == null || CollectFrom(caseBuffer) == null) Fault("the display case cannot be restocked and taken from.");
+
+            // The free delivery: a crate for each, fed by a SupplyFeed, with an UNPACK square that is free.
+            foreach (var id in new[] { "milk", "egg" })
+            {
+                ItemBuffer crate = null;
+                foreach (var f in cafe.GetComponentsInChildren<SupplyFeed>(true))
+                    if (f.target != null && f.target.item != null && f.target.item.id == id) crate = f.target;
+                var unpack = crate != null ? CollectFrom(crate) : null;
+                if (crate == null) Fault($"there is no free {id} crate.");
+                else if (unpack == null) Fault($"nothing unpacks the {id} crate.");
+                else if (LiveAt(unpack) < 0) Fault($"the {id} UNPACK square is never live.");
+            }
+            var van = cafe.GetComponentInChildren<DeliveryVan>(true);
+            if (van == null || van.route == null || van.route.Length < 2) Fault("the delivery van has no route.");
+
+            // The dishwasher takes only dirty cups.
+            var dish = cafe.GetComponentInChildren<Dishwasher>(true);
+            DepositStation sink = null;
+            foreach (var d in cafe.GetComponentsInChildren<DepositStation>(true)) if (dish != null && d.target == dish.dirty) sink = d;
+            if (dish == null || dish.dirty == null || sink == null) Fault("there is no dishwasher with a square.");
+            else if (dish.dirty.item == null || dish.dirty.item.id != "dirty_cup") Fault("the dishwasher's sink does not take dirty cups.");
+
+            // The premium machine.
+            var latte = cafe.GetComponentInChildren<LatteStation>(true);
+            if (latte == null) Fault("there is no LATTE square.");
+            else
+            {
+                if (latte.milk != coffee.input) Fault("the LATTE square does not use the machine's milk.");
+                if (latte.premiumItem == null || System.Array.IndexOf(queue.register.sells, latte.premiumItem) < 0) Fault("the premium coffee is not on the menu.");
+            }
+            foreach (var item in queue.register.sells)
+            {
+                if (item == null) { Fault("the menu has an empty entry."); continue; }
+                bool advertised = false;
+                foreach (var o in cafe.GetComponentsInChildren<ProductOffer>(true)) if (o.item == item) advertised = true;
+                if (!advertised) Fault($"nothing advertises {item.displayName} with the open shop.");
+            }
+
+            // The staff.
+            int baristas = 0, waiters = 0, bakers = 0;
+            foreach (var worker in cafe.GetComponentsInChildren<Tycoon.Upkeep.WorkerAgent>(true))
+            {
+                if (worker.routes == null || worker.routes.Length == 0) { Fault($"{worker.name} has no routes."); continue; }
+                foreach (var r in worker.routes)
+                    if (r == null || r.pickup == null || r.dropoff == null) Fault($"{worker.name} has an empty route.");
+                if (!worker.deliverPartialLoads) Fault($"{worker.name} would wait for a full load.");
+                if (worker.name == "barista") baristas++;
+                else if (worker.name == "waiter") waiters++;
+                else if (worker.name == "baker") bakers++;
+            }
+            if (baristas != 1 || waiters != 1 || bakers != 1) Fault($"{baristas} baristas, {waiters} waiters, {bakers} bakers: one of each is the plan.");
+
+            // The free loop is live from OPEN; the purchases are offered one at a time.
+            var open = cafe.GetComponentInChildren<ChoreStation>(true);
+            int openRound = LiveAt(open);
+            if (open == null || openRound < 0) Fault("the OPEN step is never live.");
+            else
+            {
+                foreach (var st in new StationBase[] { fridgeSq, machineSq, tables.Count > 0 ? tables[0] : null, tables.Count > 1 ? tables[1] : null, sink })
+                    if (st != null && LiveAt(st) != openRound + 1)
+                        Fault($"{st.name} (a free step of the loop) is live at stage {LiveAt(st)}, not right after OPEN (stage {openRound}).");
+
+                var perRound = new Dictionary<int, int>();
+                foreach (var u in cafe.GetComponentsInChildren<UnlockStation>(true))
+                {
+                    int r = LiveAt(u);
+                    if (r < 0) { Fault($"{u.name} is never on offer."); continue; }
+                    if (u.name == "UnlockRepair") continue;
+                    if (r <= openRound) Fault($"{u.name} is on offer (stage {r}) before the cafe is open (stage {openRound}).");
+                    perRound[r] = perRound.TryGetValue(r, out int n) ? n + 1 : 1;
+                }
+                foreach (var kv in perRound)
+                    if (kv.Value > 1) Fault($"{kv.Value} purchases are on offer together at stage {kv.Key}; the cafe sells them one at a time.");
+            }
+
+            Debug.Log($"[Audit] {tag} cafe chain: {faults} faults.");
             return faults;
         }
 

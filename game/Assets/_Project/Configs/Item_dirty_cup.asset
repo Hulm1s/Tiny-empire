@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c8154ee2a02895448ef908b10a18e2c, type: 3}
+  m_Name: Item_dirty_cup
+  m_EditorClassIdentifier: 
+  id: dirty_cup
+  displayName: Dirty cup
+  color: {r: 0.62, g: 0.58, b: 0.52, a: 1}
+  visualPrefab: {fileID: 7733538136570417918, guid: 26f5a7d4b565a244ebcfe61421625734, type: 3}
+  carryMaterial: {fileID: 2100000, guid: e2d32e9bf78c49f4c889c6ae76cc2e3d, type: 2}
+  icon: {fileID: 0}
+  stackHeight: 0.23850003
+  basePrice: 0
+  service: 0
+  perishable: 0
+  spoilSeconds: 180

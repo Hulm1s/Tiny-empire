@@ -498,3 +498,11 @@ Both are batch-runnable:
 Hairdressers use the Customer model recoloured (smock and hat tint), the receptionist the Cashier model, the cleaner the
 Farmer model (`FarmSceneBuilder.BuildHire` model mapping). Salon customers sit with the Sit clip. A different hairdresser
 head colour would be a Blender change.
+
+### Café staff, models and goods
+
+The barista uses the Cashier model (cream shirt, espresso trousers, terracotta cap), the waiter the Customer model (white shirt, black trousers), the baker the Farmer
+model (cream, navy trousers) - `FarmSceneBuilder.BuildHire` model mapping, recoloured by `CafeBuilder.CafeDress` with material ASSETS (`Fl_Cafe*_n.mat`; a runtime
+Material renders magenta under URP). Café customers sit on stools and at tables with the Sit clip. The café's furniture and goods are procedural meshes
+(`Editor/FloristModels.Cafe.cs`, `GoodsMeshBuilder`): fittings bake on demand under `Meshes/Florist/Cafe`, the four goods (coffee, premium_coffee, cake, dirty_cup) under
+`Meshes/Goods` with prefabs under `Prefabs/Goods` like every good. Milk and eggs are the farm's existing goods. The baker uses the Customer model (a bare head) with a chef's hat (`FloristModels.ChefHat`, a toque) hung on the rig's `Head` BONE by `CafeBuilder.AttachChefHat`: the rig has 20 named bones and no bone is optimised away, so Head is a real Transform; the hat is a child of it, placed once at the top of the bare head in the rest pose, so it follows Idle, Walk and Sit. (The other roles' hats are skinned meshes joined in Blender and weighted to Head; a prop on the bone is the no-Blender way for one more.)

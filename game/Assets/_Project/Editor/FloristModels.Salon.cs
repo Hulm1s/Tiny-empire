@@ -47,7 +47,7 @@ namespace Tycoon.EditorTools
                 case "sl_stuffing": return M("Sl_Stuffing", C(0.80f, 0.76f, 0.64f), 0.10f);
                 case "sl_dead_bulb": return M("Sl_DeadBulb", C(0.30f, 0.29f, 0.25f), 0.20f);
             }
-            throw new ArgumentException(k);
+            return LibCafe(k);
         }
 
         public const string SalonFolder = "Salon/";

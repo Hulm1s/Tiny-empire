@@ -33,6 +33,11 @@ namespace Tycoon.Stations
         [Tooltip("Seconds of standing here, with a customer in the chair, for one whole service.")]
         [Min(0f)] public float serviceSeconds = 3f;
 
+        [Tooltip("A café table's SERVE square: the customer is served with the goods the player or worker CARRIES " +
+                 "(the same hand-over a till does, RegisterStation.ServeFromArms), not by a timer. The customer in the " +
+                 "chair is still the one served (Serving), and the price, the pile and the queue are the till's.")]
+        public bool serveFromCarry;
+
         private float _work;
         private CustomerAgent _workingOn;
 
@@ -51,6 +56,8 @@ namespace Tycoon.Stations
 
         protected override bool TickWithPlayer()
         {
+            if (serveFromCarry) return ServeFromArms();
+
             var customer = Serving;
             if (customer == null)
             {

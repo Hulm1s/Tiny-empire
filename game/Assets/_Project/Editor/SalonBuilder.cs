@@ -190,7 +190,7 @@ namespace Tycoon.EditorTools
         /// <summary>
         /// Builds the salon (switched off: it appears when the florist's gardener is hired) and returns its root.
         /// </summary>
-        internal static GameObject Build(Transform town, FarmSceneBuilder.Items items)
+        internal static GameObject Build(Transform town, FarmSceneBuilder.Items items, out UnlockStation lastPurchase)
         {
             var root = new GameObject("Salon").transform;
             root.SetParent(town, false);
@@ -254,6 +254,8 @@ namespace Tycoon.EditorTools
                 hdPo.item = styles[i];
                 hdPo.capacity = HairdresserDemand;
             }
+
+            lastPurchase = hairdresserHires[3];          // the street's next business (the cafe) appears when this is bought
 
             var receptionistHire = FarmSceneBuilder.BuildHire(root, "Receptionist", "receptionist", ReceptionistHireAt,
                 price: ReceptionistPrice, pickup: next, dropoff: next,

@@ -1081,3 +1081,21 @@ chair station; an `IProducer` per hairstyle; chair/seat groups need solid names 
 them; the hairdresser hire squares share one footprint on purpose. Minigame art is baked (`HaircutBake`, ASTC settings
 via `BouquetBake.ApplyImportSettings`) - re-run the scene build after changing `HaircutArt`. `SquareAudit.SalonChain`
 checks wiring, the hair loop, staff routes, renovation order and one-purchase-at-a-time.
+
+---
+
+### 11d. The café (`Editor/CafeBuilder.cs`)
+
+1. **A new table.** Add a `TableSpec` in `BuildTableSpecs` (position, approach and exit points - the audit's ChairPaths measures them against every solid,
+   with the customer's radius, so keep 0.3 m clear of walls and chairs), a price, and put it in the `order` list so each purchase reveals the next. Its group
+   (models, `ServiceChair`, SERVE, CLEAR, dirty cup) is built by `BuildTable`; `serveFromCarry` and the queue are set there.
+2. **A new drink or dish.** Make it an item in `FarmSceneBuilder.CreateItems` (a good in `FloristModels.Cafe.cs` `EnsureCafeGoods` + an icon in `IconFactory.Cafe.cs`),
+   add it to every table's `menu` and a `ProductOffer`; something must make it (`ProducerMachine` output, or a `LatteStation`-like square) or customers are
+   turned away (`ProductRegistry.CanProduce`).
+3. **The minigame.** `LatteMinigame` is a `MinigameOverlay` like the haircut's (same frame, same text sizes); change the three patterns in `LatteArt` and the
+   guide in `LatteMinigame.BuildGuide`. Only the player opens it; a worker's cup is made by timer in `LatteStation`.
+4. **A worker route.** Routes are `StockRoute` (pickup, drop-off); a route whose drop-off is a table's SERVE square is only offered while someone there still wants
+   what the pickup brings (`WorkerAgent.RouteUsable`). A worker who serves different tables must carry one item a trip (`CarryStack.capacity = 1`), or it stands at the
+   first table holding cups nobody there wants.
+5. **Verify.** `FarmSceneBuilder.Build`, then `SquareAudit.Run`: expect `[Audit] Nothing overlaps.`, `[town] chair paths: 0 faults`, `[town] cafe chain: 0 faults`, `[town] lane widths: ... 0 faults`.
+   Lane widths: every route a hire or a customer walks must keep 1.7 m clear between solids (the nav mesh is baked for radius 0.5, so two agents of radius 0.3 passing need 2 x 0.5 + 0.6 + 0.1). Moving a table, a chair, a counter or a wall in the cafe can close the lane beside the last chair of the front row (it did at table 4: 1.35 m, workers stood face to face). If the audit names a route and a spot, widen THAT lane; do not weaken the check or the agents' avoidance.
